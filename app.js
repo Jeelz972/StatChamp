@@ -1,4 +1,4 @@
-const { useState, useEffect } = React;
+const { useState, useEffect, useRef } = React;
 
 const ZONES = [
   { id: 'gauche_0', name: 'Gauche 0°', color: '#3b82f6' },
@@ -31,6 +31,8 @@ function BasketballStatsTracker() {
   const [inputTentes, setInputTentes] = useState('');
   const [inputMarques, setInputMarques] = useState('');
   const [view, setView] = useState('main');
+  const tentesRef = useRef(null);
+  const marquesRef = useRef(null);
 
   useEffect(() => {
     loadData();
@@ -86,6 +88,8 @@ function BasketballStatsTracker() {
     
     setInputTentes('');
     setInputMarques('');
+    // remettre le focus sur tentes pour saisie rapide
+    if (tentesRef.current) tentesRef.current.focus();
   };
 
   const exportToCSV = () => {
@@ -168,7 +172,7 @@ function BasketballStatsTracker() {
                         {ZONES.map(zone => {
                           const zoneData = playerShots[zone.id] || { tentes: 0, marques: 0 };
                           const pct = zoneData.tentes > 0 ? ((zoneData.marques / zoneData.tentes) * 100).toFixed(0) : '-';
-                          
+                           
                           return (
                             <td key={zone.id} className="border border-gray-300 p-3 text-center text-sm">
                               <div>{zoneData.marques}/{zoneData.tentes}</div>
@@ -225,7 +229,7 @@ function BasketballStatsTracker() {
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
                           <h3 className="font-bold text-lg">{player.name}</h3>
-                          <p className={`text-sm ${isSelected ? 'text-blue-100' : 'text-gray-600'}`}>
+                          <p className={`text-sm ${isSelected ? 'text-blue-100' : 'text-gray-600'}`}> 
                             {stats.tentes} tirs • {stats.pct}%
                           </p>
                         </div>
@@ -275,7 +279,7 @@ function BasketballStatsTracker() {
                           }}
                         >
                           <h3 className="font-bold text-lg mb-2">{zone.name}</h3>
-                          <div className={`text-sm ${isSelected ? 'opacity-90' : 'opacity-70'}`}>
+                          <div className={`text-sm ${isSelected ? 'opacity-90' : 'opacity-70'}`}> 
                             <div>{zoneData.marques}/{zoneData.tentes}</div>
                             <div className="font-semibold">{pct}%</div>
                           </div>
@@ -296,10 +300,18 @@ function BasketballStatsTracker() {
                             Tirs tentés
                           </label>
                           <input
+                            ref={tentesRef}
                             type="number"
                             min="0"
                             value={inputTentes}
                             onChange={(e) => setInputTentes(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                // si on appuie sur Enter dans Tentes -> passer à Marques
+                                e.preventDefault();
+                                if (marquesRef.current) marquesRef.current.focus();
+                              }
+                            }}
                             placeholder="0"
                             className="w-full px-4 py-3 text-2xl border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-center"
                           />
@@ -310,10 +322,18 @@ function BasketballStatsTracker() {
                             Tirs marqués
                           </label>
                           <input
+                            ref={marquesRef}
                             type="number"
                             min="0"
                             value={inputMarques}
                             onChange={(e) => setInputMarques(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                // si on appuie sur Enter dans Marques -> valider
+                                e.preventDefault();
+                                validateEntry();
+                              }
+                            }}
                             placeholder="0"
                             className="w-full px-4 py-3 text-2xl border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-center"
                           />
@@ -360,8 +380,8 @@ function BasketballStatsTracker() {
           </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  }
 }
 
 ReactDOM.render(<BasketballStatsTracker />, document.getElementById('root'));
