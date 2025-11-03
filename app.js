@@ -1,5 +1,4 @@
 const { useState, useEffect } = React;
-const { Download, Trash2, BarChart3 } = lucideReact;
 
 const ZONES = [
   { id: 'gauche_0', name: 'Gauche 0°', color: '#3b82f6' },
@@ -198,14 +197,14 @@ function BasketballStatsTracker() {
       <div className="max-w-7xl mx-auto">
         <div className="bg-white rounded-lg shadow-2xl overflow-hidden">
           <div className="bg-gradient-to-r from-orange-600 to-blue-600 p-6 text-white">
-            <h1 className="text-4xl font-bold mb-2">Stats de Tir Basketball</h1>
+            <h1 className="text-4xl font-bold mb-2">🏀 Stats de Tir Basketball</h1>
             <p className="text-lg opacity-90">Sélectionnez joueur → zone → entrez les tirs</p>
           </div>
 
           <div className="flex flex-col lg:flex-row">
             <div className="lg:w-80 bg-gray-50 border-r border-gray-200 p-4">
               <div className="mb-4">
-                <h2 className="text-xl font-bold text-gray-800">Joueurs (12)</h2>
+                <h2 className="text-xl font-bold text-gray-800">👥 Joueurs (12)</h2>
               </div>
 
               <div className="space-y-2 max-h-96 overflow-y-auto">
@@ -340,19 +339,19 @@ function BasketballStatsTracker() {
               <div className="flex gap-3 mt-6 flex-wrap">
                 <button
                   onClick={() => setView('stats')}
-                  className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-2 font-semibold"
+                  className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-semibold"
                 >
                   📊 Voir Statistiques
                 </button>
                 <button
                   onClick={exportToCSV}
-                  className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 font-semibold"
+                  className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold"
                 >
                   💾 Exporter CSV
                 </button>
                 <button
                   onClick={resetAllData}
-                  className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2 font-semibold"
+                  className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 font-semibold"
                 >
                   🗑️ Réinitialiser
                 </button>
@@ -364,11 +363,5 @@ function BasketballStatsTracker() {
     </div>
   );
 }
-
-const lucideReact = {
-  Download: () => '💾',
-  Trash2: () => '🗑️',
-  BarChart3: () => '📊'
-};
 
 ReactDOM.render(<BasketballStatsTracker />, document.getElementById('root'));
