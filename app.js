@@ -56,16 +56,46 @@ loadAllData();
 
 const loadAllData = () => {
   try {
-    console.log('Chargement des données...');
+    // Initialiser les états avec des valeurs par défaut
+    let initialShots = {};
+    let initialTeamStats = [];
+    
+    // Tenter de charger les données du localStorage
     const savedShots = localStorage.getItem('basketball_shots');
     const savedTeamStats = localStorage.getItem('basketball_team_stats');
     
-    console.log('Données chargées:', { savedShots, savedTeamStats });
+    // Si des données existent, les parser, sinon garder les valeurs par défaut
+    if (savedShots) {
+      try {
+        const parsedShots = JSON.parse(savedShots);
+        if (parsedShots && typeof parsedShots === 'object') {
+          initialShots = parsedShots;
+        }
+      } catch (parseError) {
+        console.log('Erreur de parsing des tirs:', parseError);
+      }
+    }
     
-    if (savedShots) setShots(JSON.parse(savedShots));
-    if (savedTeamStats) setTeamStats(JSON.parse(savedTeamStats));
+    if (savedTeamStats) {
+      try {
+        const parsedTeamStats = JSON.parse(savedTeamStats);
+        if (Array.isArray(parsedTeamStats)) {
+          initialTeamStats = parsedTeamStats;
+        }
+      } catch (parseError) {
+        console.log('Erreur de parsing des stats d\'équipe:', parseError);
+      }
+    }
+    
+    // Mettre à jour les états avec les données chargées ou les valeurs par défaut
+    setShots(initialShots);
+    setTeamStats(initialTeamStats);
+    
   } catch (error) {
-    console.error('Erreur lors du chargement des données:', error);
+    // En cas d'erreur, initialiser avec des valeurs par défaut
+    console.log('Initialisation avec des valeurs par défaut');
+    setShots({});
+    setTeamStats([]);
   }
 };
 
