@@ -1,6 +1,26 @@
 // app.js - Application Complète Stats Basketball
 const { useState, useEffect } = React;
-
+const getDefaultCurrentMatch = () => ({
+  date: new Date().toISOString().split('T')[0],
+  time: new Date().toLocaleTimeString('fr-FR', { 
+    hour: '2-digit', 
+    minute: '2-digit',
+    hour12: false 
+  }),
+  nous: {
+    troisPoints: { marques: 0, tentes: 0 },
+    lancersFrancs: { marques: 0, tentes: 0 },
+    rebondsOffensifs: { pris: 0, marques: 0 },
+    pertesDeBalle: { total: 0, paniersEncaisses: 0 },
+    paniersFaciles: 0,
+    statsIndividuelles: {}
+  },
+  adversaire: {
+    nom: '',
+    troisPoints: { marques: 0, tentes: 0 },
+    rebonds: { subis: 0, marques: 0 }
+  }
+});
 // Configuration des constantes
 const ZONES = [
 { id: ‘gauche_0’, name: ‘Gauche 0°’, color: ‘#3b82f6’ },
@@ -99,13 +119,11 @@ const loadAllData = () => {
   }
 };
 
-```
   if (savedShots) setShots(JSON.parse(savedShots));
   if (savedTeamStats) setTeamStats(JSON.parse(savedTeamStats));
 } catch (error) {
   console.log('Initialisation des données');
 }
-```
 
 };
 
@@ -123,7 +141,7 @@ const exportAllDataToCSV = () => {
 let csv = ‘=== STATISTIQUES DE TIR ===\n’;
 csv += ‘Joueur,Zone,Tirs Tentés,Tirs Marqués,Pourcentage\n’;
 
-```
+
 PLAYERS.forEach(player => {
   const playerShots = shots[player.id] || {};
   ZONES.forEach(zone => {
@@ -156,8 +174,6 @@ const link = document.createElement('a');
 link.href = URL.createObjectURL(blob);
 link.download = `stats_basketball_complet_${new Date().toISOString().split('T')[0]}.csv`;
 link.click();
-```
-
 };
 
 const resetAllData = () => {
@@ -214,8 +230,6 @@ className={`px-6 py-2 rounded-lg font-semibold transition-all ${ activeModule ==
 </div>
 </div>
 </div>
-
-```
   {/* Contenu Principal */}
   <div className="p-4">
     {activeModule === 'shooting' && (
@@ -243,8 +257,6 @@ className={`px-6 py-2 rounded-lg font-semibold transition-all ${ activeModule ==
     )}
   </div>
 </div>
-```
-
 );
 }
 
@@ -259,7 +271,6 @@ const [viewStats, setViewStats] = useState(false);
 const validateEntry = () => {
 if (!selectedPlayer || !selectedZone) return;
 
-```
 const tentes = parseInt(inputTentes) || 0;
 const marques = parseInt(inputMarques) || 0;
 
@@ -286,7 +297,7 @@ const newShots = {
 saveShots(newShots);
 setInputTentes('');
 setInputMarques('');
-```
+
 
 };
 
@@ -295,7 +306,7 @@ const playerShots = shots[playerId] || {};
 let tentes = 0;
 let marques = 0;
 
-```
+
 ZONES.forEach(zone => {
   const zoneData = playerShots[zone.id] || { tentes: 0, marques: 0 };
   tentes += zoneData.tentes;
@@ -303,7 +314,7 @@ ZONES.forEach(zone => {
 });
 
 return { tentes, marques, pct: tentes > 0 ? ((marques / tentes) * 100).toFixed(1) : '0' };
-```
+
 
 };
 
@@ -321,7 +332,7 @@ Retour
 </button>
 </div>
 
-```
+
       <div className="overflow-x-auto">
         <table className="w-full border-collapse">
           <thead>
@@ -367,7 +378,7 @@ Retour
     </div>
   </div>
 );
-```
+
 
 }
 
@@ -382,7 +393,6 @@ return (
 const stats = getPlayerStats(player.id);
 const isSelected = selectedPlayer?.id === player.id;
 
-```
             return (
               <div
                 key={player.id}
@@ -513,7 +523,6 @@ const isSelected = selectedPlayer?.id === player.id;
     </div>
   </div>
 </div>
-```
 
 );
 }
@@ -536,7 +545,7 @@ setCurrentMatchStats(newStats);
 const addIndividualStat = () => {
 if (!selectedPlayer || !defResponsability) return;
 
-```
+
 const newStats = { ...currentMatchStats };
 if (!newStats.nous.statsIndividuelles[selectedPlayer.id]) {
   newStats.nous.statsIndividuelles[selectedPlayer.id] = {
@@ -548,7 +557,7 @@ if (!newStats.nous.statsIndividuelles[selectedPlayer.id]) {
 newStats.nous.statsIndividuelles[selectedPlayer.id].responsabilitesDefensives.push(defResponsability);
 setCurrentMatchStats(newStats);
 setDefResponsability('');
-```
+
 
 };
 
@@ -558,7 +567,7 @@ alert(‘Veuillez entrer le nom de l'adversaire’);
 return;
 }
 
-```
+
 const newTeamStats = [...teamStats, { ...currentMatchStats }];
 saveTeamStats(newTeamStats);
 
@@ -582,7 +591,7 @@ setCurrentMatchStats({
 });
 
 alert('Match enregistré avec succès !');
-```
+
 
 };
 
@@ -591,7 +600,6 @@ return (
 <div className="bg-white rounded-lg shadow-lg p-6">
 <h2 className="text-3xl font-bold text-gray-800 mb-6">📊 Stats du Match</h2>
 
-```
     {/* Infos du match */}
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
       <div>
@@ -835,7 +843,7 @@ return (
     </button>
   </div>
 </div>
-```
+
 
 );
 }
@@ -856,7 +864,7 @@ let totalLF = { marques: 0, tentes: 0 };
 let totalRebonds = 0;
 let totalPertes = 0;
 
-```
+
 // Stats de tir
 Object.values(shots).forEach(playerShots => {
   Object.values(playerShots).forEach(zoneData => {
@@ -883,7 +891,7 @@ return {
   pertes: totalPertes,
   matchs: teamStats.length
 };
-```
+
 
 };
 
@@ -896,7 +904,7 @@ return (
 <div className="bg-white rounded-lg shadow-lg p-6">
 <h2 className="text-3xl font-bold text-gray-800 mb-6">📈 Statistiques Globales</h2>
 
-```
+
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
       <div className="bg-blue-50 p-4 rounded-lg text-center">
         <div className="text-3xl font-bold text-blue-600">
@@ -1010,7 +1018,7 @@ return (
     </button>
   </div>
 </div>
-```
+
 
 );
 }
