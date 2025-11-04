@@ -51,23 +51,8 @@ function BasketballStatsApp() {
 const [activeModule, setActiveModule] = useState(‘shooting’); // shooting, team, history
 const [shots, setShots] = useState({});
 const [teamStats, setTeamStats] = useState([]);
-const [currentMatchStats, setCurrentMatchStats] = useState({
-date: new Date().toISOString().split(‘T’)[0],
-time: new Date().toLocaleTimeString(‘fr-FR’, { hour: ‘2-digit’, minute: ‘2-digit’ }),
-nous: {
-troisPoints: { marques: 0, tentes: 0 },
-lancersFrancs: { marques: 0, tentes: 0 },
-rebondsOffensifs: { pris: 0, marques: 0 },
-pertesDeBalle: { total: 0, paniersEncaisses: 0 },
-paniersFaciles: 0,
-statsIndividuelles: {}
-},
-adversaire: {
-nom: ‘’,
-troisPoints: { marques: 0, tentes: 0 },
-rebonds: { subis: 0, marques: 0 }
-}
-});
+const [currentMatchStats, setCurrentMatchStats] = useState(getDefaultCurrentMatch());
+
 
 // Chargement initial des données
 useEffect(() => {
@@ -76,46 +61,53 @@ loadAllData();
 
 const loadAllData = () => {
   try {
-    // Initialiser les états avec des valeurs par défaut
+    // Initialisation des valeurs par défaut
     let initialShots = {};
     let initialTeamStats = [];
     
-    // Tenter de charger les données du localStorage
-    const savedShots = localStorage.getItem('basketball_shots');
-    const savedTeamStats = localStorage.getItem('basketball_team_stats');
-    
-    // Si des données existent, les parser, sinon garder les valeurs par défaut
-    if (savedShots) {
-      try {
+    // Récupération des données du localStorage avec gestion des erreurs
+    try {
+      const savedShots = localStorage.getItem('basketball_shots');
+      if (savedShots) {
         const parsedShots = JSON.parse(savedShots);
         if (parsedShots && typeof parsedShots === 'object') {
           initialShots = parsedShots;
         }
-      } catch (parseError) {
-        console.log('Erreur de parsing des tirs:', parseError);
       }
+    } catch (e) {
+      console.log('Erreur lors du chargement des tirs:', e);
     }
     
-    if (savedTeamStats) {
-      try {
+    try {
+      const savedTeamStats = localStorage.getItem('basketball_team_stats');
+      if (savedTeamStats) {
         const parsedTeamStats = JSON.parse(savedTeamStats);
         if (Array.isArray(parsedTeamStats)) {
-          initialTeamStats = parsedTeamStats;
+          // Valider et corriger chaque entrée
+          initialTeamStats = parsedTeamStats.map(match => {
+            if (!match.date) match.date = new Date().toISOString().split('T')[0];
+            if (!match.time) match.time = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+            return match;
+          });
         }
-      } catch (parseError) {
-        console.log('Erreur de parsing des stats d\'équipe:', parseError);
       }
+    } catch (e) {
+      console.log('Erreur lors du chargement des stats d\'équipe:', e);
     }
     
-    // Mettre à jour les états avec les données chargées ou les valeurs par défaut
+    // Mise à jour des états avec validation
     setShots(initialShots);
     setTeamStats(initialTeamStats);
     
+    // Réinitialisation du match courant avec des valeurs par défaut valides
+    setCurrentMatchStats(getDefaultCurrentMatch());
+    
   } catch (error) {
-    // En cas d'erreur, initialiser avec des valeurs par défaut
-    console.log('Initialisation avec des valeurs par défaut');
+    console.log('Erreur globale, réinitialisation complète:', error);
+    // Réinitialisation complète en cas d'erreur
     setShots({});
     setTeamStats([]);
+    setCurrentMatchStats(getDefaultCurrentMatch());
   }
 };
 
