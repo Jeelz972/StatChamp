@@ -55,9 +55,19 @@ loadAllData();
 }, []);
 
 const loadAllData = () => {
-try {
-const savedShots = localStorage.getItem(‘basketball_shots’);
-const savedTeamStats = localStorage.getItem(‘basketball_team_stats’);
+  try {
+    console.log('Chargement des données...');
+    const savedShots = localStorage.getItem('basketball_shots');
+    const savedTeamStats = localStorage.getItem('basketball_team_stats');
+    
+    console.log('Données chargées:', { savedShots, savedTeamStats });
+    
+    if (savedShots) setShots(JSON.parse(savedShots));
+    if (savedTeamStats) setTeamStats(JSON.parse(savedTeamStats));
+  } catch (error) {
+    console.error('Erreur lors du chargement des données:', error);
+  }
+};
 
 ```
   if (savedShots) setShots(JSON.parse(savedShots));
