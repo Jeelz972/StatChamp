@@ -275,7 +275,7 @@ return (
 <h2 className="text-3xl font-bold text-gray-800">Tableau des Statistiques</h2>
 <button
 onClick={() => setViewStats(false)}
-className=“px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 font-semibold”
+className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 font-semibold"
 >
 Retour
 </button>
