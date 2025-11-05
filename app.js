@@ -514,7 +514,7 @@ setDefResponsability('');
 
 const saveMatch = () => {
 if (!currentMatchStats.adversaire.nom) {
-alert('Veuillez entrer le nom de l'adversaire');
+alert("Veuillez entrer le nom de l'adversaire");
 return;
 }
 
