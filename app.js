@@ -1,58 +1,53 @@
 // app.js - Application Complète Stats Basketball
 const { useState, useEffect } = React;
-const getDefaultCurrentMatch = () => ({
-  date: new Date().toISOString().split('T')[0],
-  time: new Date().toLocaleTimeString('fr-FR', { 
-    hour: '2-digit', 
-    minute: '2-digit',
-    hour12: false 
-  }),
-  nous: {
-    troisPoints: { marques: 0, tentes: 0 },
-    lancersFrancs: { marques: 0, tentes: 0 },
-    rebondsOffensifs: { pris: 0, marques: 0 },
-    pertesDeBalle: { total: 0, paniersEncaisses: 0 },
-    paniersFaciles: 0,
-    statsIndividuelles: {}
-  },
-  adversaire: {
-    nom: '',
-    troisPoints: { marques: 0, tentes: 0 },
-    rebonds: { subis: 0, marques: 0 }
-  }
-});
+
 // Configuration des constantes
 const ZONES = [
-{ id: ‘gauche_0’, name: ‘Gauche 0°’, color: ‘#3b82f6’ },
-{ id: ‘droit_0’, name: ‘Droit 0°’, color: ‘#ec4899’ },
-{ id: ‘gauche_45’, name: ‘Gauche 45°’, color: ‘#10b981’ },
-{ id: ‘droit_45’, name: ‘Droit 45°’, color: ‘#f59e0b’ },
-{ id: ‘gauche_70’, name: ‘Gauche 70°’, color: ‘#06b6d4’ },
-{ id: ‘droit_70’, name: ‘Droit 70°’, color: ‘#ef4444’ },
-{ id: ‘axe’, name: ‘Axe’, color: ‘#6366f1’ }
+{ id: 'gauche_0', name: 'Gauche 0°', color: '#3b82f6' },
+{ id: 'droit_0', name: 'Droit 0°', color: '#ec4899' },
+{ id: 'gauche_45', name: 'Gauche 45°', color: '#10b981' },
+{ id: 'droit_45', name: 'Droit 45°', color: '#f59e0b' },
+{ id: 'gauche_70', name: 'Gauche 70°', color: '#06b6d4' },
+{ id: 'droit_70', name: 'Droit 70°', color: '#ef4444' },
+{ id: 'axe', name: 'Axe', color: '#6366f1' }
 ];
 
 const PLAYERS = [
-{ id: 1, name: ‘Maxime’ },
-{ id: 2, name: ‘Sasha’ },
-{ id: 3, name: ‘Théotime’ },
-{ id: 4, name: ‘Noé’ },
-{ id: 5, name: ‘Keziah’ },
-{ id: 6, name: ‘Nathan’ },
-{ id: 7, name: ‘Valentin’ },
-{ id: 8, name: ‘Jad’ },
-{ id: 9, name: ‘Marco’ },
-{ id: 10, name: ‘Thierno’ },
-{ id: 11, name: ‘Peniel’ },
-{ id: 12, name: ‘Nat’ }
+{ id: 1, name: 'Maxime' },
+{ id: 2, name: 'Sasha' },
+{ id: 3, name: 'Théotime' },
+{ id: 4, name: 'Noé' },
+{ id: 5, name: 'Keziah' },
+{ id: 6, name: 'Nathan' },
+{ id: 7, name: 'Valentin' },
+{ id: 8, name: 'Jad' },
+{ id: 9, name: 'Marco' },
+{ id: 10, name: 'Thierno' },
+{ id: 11, name: 'Peniel' },
+{ id: 12, name: 'Nat' }
 ];
 
 function BasketballStatsApp() {
-const [activeModule, setActiveModule] = useState(‘shooting’); // shooting, team, history
+const [activeModule, setActiveModule] = useState('shooting'); // shooting, team, history
 const [shots, setShots] = useState({});
 const [teamStats, setTeamStats] = useState([]);
-const [currentMatchStats, setCurrentMatchStats] = useState(getDefaultCurrentMatch());
-
+const [currentMatchStats, setCurrentMatchStats] = useState({
+date: new Date().toISOString().split('T')[0],
+time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+nous: {
+troisPoints: { marques: 0, tentes: 0 },
+lancersFrancs: { marques: 0, tentes: 0 },
+rebondsOffensifs: { pris: 0, marques: 0 },
+pertesDeBalle: { total: 0, paniersEncaisses: 0 },
+paniersFaciles: 0,
+statsIndividuelles: {}
+},
+adversaire: {
+nom: '',
+troisPoints: { marques: 0, tentes: 0 },
+rebonds: { subis: 0, marques: 0 }
+}
+});
 
 // Chargement initial des données
 useEffect(() => {
@@ -60,56 +55,10 @@ loadAllData();
 }, []);
 
 const loadAllData = () => {
-  try {
-    // Initialisation des valeurs par défaut
-    let initialShots = {};
-    let initialTeamStats = [];
-    
-    // Récupération des données du localStorage avec gestion des erreurs
-    try {
-      const savedShots = localStorage.getItem('basketball_shots');
-      if (savedShots) {
-        const parsedShots = JSON.parse(savedShots);
-        if (parsedShots && typeof parsedShots === 'object') {
-          initialShots = parsedShots;
-        }
-      }
-    } catch (e) {
-      console.log('Erreur lors du chargement des tirs:', e);
-    }
-    
-    try {
-      const savedTeamStats = localStorage.getItem('basketball_team_stats');
-      if (savedTeamStats) {
-        const parsedTeamStats = JSON.parse(savedTeamStats);
-        if (Array.isArray(parsedTeamStats)) {
-          // Valider et corriger chaque entrée
-          initialTeamStats = parsedTeamStats.map(match => {
-            if (!match.date) match.date = new Date().toISOString().split('T')[0];
-            if (!match.time) match.time = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-            return match;
-          });
-        }
-      }
-    } catch (e) {
-      console.log('Erreur lors du chargement des stats d\'équipe:', e);
-    }
-    
-    // Mise à jour des états avec validation
-    setShots(initialShots);
-    setTeamStats(initialTeamStats);
-    
-    // Réinitialisation du match courant avec des valeurs par défaut valides
-    setCurrentMatchStats(getDefaultCurrentMatch());
-    
-  } catch (error) {
-    console.log('Erreur globale, réinitialisation complète:', error);
-    // Réinitialisation complète en cas d'erreur
-    setShots({});
-    setTeamStats([]);
-    setCurrentMatchStats(getDefaultCurrentMatch());
-  }
-};
+try {
+const savedShots = localStorage.getItem('basketball_shots');
+const savedTeamStats = localStorage.getItem('basketball_team_stats');
+
 
   if (savedShots) setShots(JSON.parse(savedShots));
   if (savedTeamStats) setTeamStats(JSON.parse(savedTeamStats));
@@ -117,21 +66,22 @@ const loadAllData = () => {
   console.log('Initialisation des données');
 }
 
+
 };
 
 const saveShots = (newShots) => {
 setShots(newShots);
-localStorage.setItem(‘basketball_shots’, JSON.stringify(newShots));
+localStorage.setItem('basketball_shots', JSON.stringify(newShots));
 };
 
 const saveTeamStats = (newStats) => {
 setTeamStats(newStats);
-localStorage.setItem(‘basketball_team_stats’, JSON.stringify(newStats));
+localStorage.setItem('basketball_team_stats', JSON.stringify(newStats));
 };
 
 const exportAllDataToCSV = () => {
-let csv = ‘=== STATISTIQUES DE TIR ===\n’;
-csv += ‘Joueur,Zone,Tirs Tentés,Tirs Marqués,Pourcentage\n’;
+let csv = '=== STATISTIQUES DE TIR ===\n';
+csv += 'Joueur,Zone,Tirs Tentés,Tirs Marqués,Pourcentage\n';
 
 
 PLAYERS.forEach(player => {
@@ -166,15 +116,17 @@ const link = document.createElement('a');
 link.href = URL.createObjectURL(blob);
 link.download = `stats_basketball_complet_${new Date().toISOString().split('T')[0]}.csv`;
 link.click();
+
+
 };
 
 const resetAllData = () => {
-if (confirm(‘Êtes-vous sûr de vouloir effacer TOUTES les données (tirs et matchs) ?’)) {
+if (confirm('Êtes-vous sûr de vouloir effacer TOUTES les données (tirs et matchs) ?')) {
 setShots({});
 setTeamStats([]);
 setCurrentMatchStats({
-date: new Date().toISOString().split(‘T’)[0],
-time: new Date().toLocaleTimeString(‘fr-FR’, { hour: ‘2-digit’, minute: ‘2-digit’ }),
+date: new Date().toISOString().split('T')[0],
+time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
 nous: {
 troisPoints: { marques: 0, tentes: 0 },
 lancersFrancs: { marques: 0, tentes: 0 },
@@ -184,13 +136,13 @@ paniersFaciles: 0,
 statsIndividuelles: {}
 },
 adversaire: {
-nom: ‘’,
+nom: '',
 troisPoints: { marques: 0, tentes: 0 },
 rebonds: { subis: 0, marques: 0 }
 }
 });
-localStorage.removeItem(‘basketball_shots’);
-localStorage.removeItem(‘basketball_team_stats’);
+localStorage.removeItem('basketball_shots');
+localStorage.removeItem('basketball_team_stats');
 }
 };
 
@@ -202,19 +154,19 @@ return (
 <h1 className="text-3xl font-bold mb-4">🏀 Stats Basketball Pro</h1>
 <div className="flex flex-wrap gap-2">
 <button
-onClick={() => setActiveModule(‘shooting’)}
+onClick={() => setActiveModule('shooting')}
 className={`px-6 py-2 rounded-lg font-semibold transition-all ${ activeModule === 'shooting' ? 'bg-white text-blue-600 shadow-lg' : 'bg-white/20 hover:bg-white/30' }`}
 >
 📊 Stats de Tir
 </button>
 <button
-onClick={() => setActiveModule(‘team’)}
+onClick={() => setActiveModule('team')}
 className={`px-6 py-2 rounded-lg font-semibold transition-all ${ activeModule === 'team' ? 'bg-white text-blue-600 shadow-lg' : 'bg-white/20 hover:bg-white/30' }`}
 >
-👥 Stats d’Équipe
+👥 Stats d'Équipe
 </button>
 <button
-onClick={() => setActiveModule(‘history’)}
+onClick={() => setActiveModule('history')}
 className={`px-6 py-2 rounded-lg font-semibold transition-all ${ activeModule === 'history' ? 'bg-white text-blue-600 shadow-lg' : 'bg-white/20 hover:bg-white/30' }`}
 >
 📅 Historique
@@ -222,6 +174,8 @@ className={`px-6 py-2 rounded-lg font-semibold transition-all ${ activeModule ==
 </div>
 </div>
 </div>
+
+
   {/* Contenu Principal */}
   <div className="p-4">
     {activeModule === 'shooting' && (
@@ -249,6 +203,8 @@ className={`px-6 py-2 rounded-lg font-semibold transition-all ${ activeModule ==
     )}
   </div>
 </div>
+
+
 );
 }
 
@@ -256,12 +212,13 @@ className={`px-6 py-2 rounded-lg font-semibold transition-all ${ activeModule ==
 function ShootingModule({ shots, saveShots, exportToCSV, resetData }) {
 const [selectedPlayer, setSelectedPlayer] = useState(PLAYERS[0]);
 const [selectedZone, setSelectedZone] = useState(null);
-const [inputTentes, setInputTentes] = useState(’’);
-const [inputMarques, setInputMarques] = useState(’’);
+const [inputTentes, setInputTentes] = useState('');
+const [inputMarques, setInputMarques] = useState('');
 const [viewStats, setViewStats] = useState(false);
 
 const validateEntry = () => {
 if (!selectedPlayer || !selectedZone) return;
+
 
 const tentes = parseInt(inputTentes) || 0;
 const marques = parseInt(inputMarques) || 0;
@@ -384,6 +341,7 @@ return (
 {PLAYERS.map(player => {
 const stats = getPlayerStats(player.id);
 const isSelected = selectedPlayer?.id === player.id;
+
 
             return (
               <div
@@ -516,13 +474,14 @@ const isSelected = selectedPlayer?.id === player.id;
   </div>
 </div>
 
+
 );
 }
 
-// Module Stats d’Équipe
+// Module Stats d'Équipe
 function TeamStatsModule({ teamStats, currentMatchStats, setCurrentMatchStats, saveTeamStats }) {
 const [selectedPlayer, setSelectedPlayer] = useState(null);
-const [defResponsability, setDefResponsability] = useState(’’);
+const [defResponsability, setDefResponsability] = useState('');
 
 const updateStat = (category, field, subfield, value) => {
 const newStats = { …currentMatchStats };
@@ -555,7 +514,7 @@ setDefResponsability('');
 
 const saveMatch = () => {
 if (!currentMatchStats.adversaire.nom) {
-alert(‘Veuillez entrer le nom de l'adversaire’);
+alert('Veuillez entrer le nom de l'adversaire');
 return;
 }
 
@@ -591,6 +550,7 @@ return (
 <div className="max-w-6xl mx-auto">
 <div className="bg-white rounded-lg shadow-lg p-6">
 <h2 className="text-3xl font-bold text-gray-800 mb-6">📊 Stats du Match</h2>
+
 
     {/* Infos du match */}
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -842,7 +802,7 @@ return (
 
 // Module Historique
 function HistoryModule({ shots, teamStats, exportToCSV }) {
-const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split(‘T’)[0]);
+const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
 
 const getMatchesByDate = (date) => {
 return teamStats.filter(match => match.date === date);
@@ -1015,6 +975,5 @@ return (
 );
 }
 
-// Rendu de l’application
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<BasketballStatsApp />);
+// Rendu de l'application
+ReactDOM.render(<BasketballStatsApp />, document.getElementById('root'));
