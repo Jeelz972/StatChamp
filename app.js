@@ -484,7 +484,7 @@ const [selectedPlayer, setSelectedPlayer] = useState(null);
 const [defResponsability, setDefResponsability] = useState('');
 
 const updateStat = (category, field, subfield, value) => {
-const newStats = { …currentMatchStats };
+const newStats = { ...currentMatchStats };
 if (subfield) {
 newStats[category][field][subfield] = parseInt(value) || 0;
 } else {
