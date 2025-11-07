@@ -1,979 +1,628 @@
-// app.js - Application Complète Stats Basketball
-const { useState, useEffect } = React;
+import React, { useState, useEffect } from 'react';
+import { Plus, BarChart3, ArrowLeft, Trophy, Trash2, Home, MapPin, X, Check } from 'lucide-react';
 
-// Configuration des constantes
-const ZONES = [
-{ id: 'gauche_0', name: 'Gauche 0°', color: '#3b82f6' },
-{ id: 'droit_0', name: 'Droit 0°', color: '#ec4899' },
-{ id: 'gauche_45', name: 'Gauche 45°', color: '#10b981' },
-{ id: 'droit_45', name: 'Droit 45°', color: '#f59e0b' },
-{ id: 'gauche_70', name: 'Gauche 70°', color: '#06b6d4' },
-{ id: 'droit_70', name: 'Droit 70°', color: '#ef4444' },
-{ id: 'axe', name: 'Axe', color: '#6366f1' }
-];
-
-const PLAYERS = [
-{ id: 1, name: 'Maxime' },
-{ id: 2, name: 'Sasha' },
-{ id: 3, name: 'Théotime' },
-{ id: 4, name: 'Noé' },
-{ id: 5, name: 'Keziah' },
-{ id: 6, name: 'Nathan' },
-{ id: 7, name: 'Valentin' },
-{ id: 8, name: 'Jad' },
-{ id: 9, name: 'Marco' },
-{ id: 10, name: 'Thierno' },
-{ id: 11, name: 'Peniel' },
-{ id: 12, name: 'Nat' }
-];
-
-function BasketballStatsApp() {
-const [activeModule, setActiveModule] = useState('shooting'); // shooting, team, history
-const [shots, setShots] = useState({});
-const [teamStats, setTeamStats] = useState([]);
-const [currentMatchStats, setCurrentMatchStats] = useState({
-date: new Date().toISOString().split('T')[0],
-time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
-nous: {
-troisPoints: { marques: 0, tentes: 0 },
-lancersFrancs: { marques: 0, tentes: 0 },
-rebondsOffensifs: { pris: 0, marques: 0 },
-pertesDeBalle: { total: 0, paniersEncaisses: 0 },
-paniersFaciles: 0,
-statsIndividuelles: {}
-},
-adversaire: {
-nom: '',
-troisPoints: { marques: 0, tentes: 0 },
-rebonds: { subis: 0, marques: 0 }
-}
-});
-
-// Chargement initial des données
-useEffect(() => {
-loadAllData();
-}, []);
-
-const loadAllData = () => {
-try {
-const savedShots = localStorage.getItem('basketball_shots');
-const savedTeamStats = localStorage.getItem('basketball_team_stats');
-
-
-  if (savedShots) setShots(JSON.parse(savedShots));
-  if (savedTeamStats) setTeamStats(JSON.parse(savedTeamStats));
-} catch (error) {
-  console.log('Initialisation des données');
-}
-
-
-};
-
-const saveShots = (newShots) => {
-setShots(newShots);
-localStorage.setItem('basketball_shots', JSON.stringify(newShots));
-};
-
-const saveTeamStats = (newStats) => {
-setTeamStats(newStats);
-localStorage.setItem('basketball_team_stats', JSON.stringify(newStats));
-};
-
-const exportAllDataToCSV = () => {
-let csv = '=== STATISTIQUES DE TIR ===\n';
-csv += 'Joueur,Zone,Tirs Tentés,Tirs Marqués,Pourcentage\n';
-
-
-PLAYERS.forEach(player => {
-  const playerShots = shots[player.id] || {};
-  ZONES.forEach(zone => {
-    const zoneData = playerShots[zone.id] || { tentes: 0, marques: 0 };
-    if (zoneData.tentes > 0) {
-      const pct = ((zoneData.marques / zoneData.tentes) * 100).toFixed(1);
-      csv += `${player.name},${zone.name},${zoneData.tentes},${zoneData.marques},${pct}%\n`;
-    }
+const MatchStatsApp = () => {
+  const [matches, setMatches] = useState({});
+  const [currentScreen, setCurrentScreen] = useState('home');
+  const [currentMatchId, setCurrentMatchId] = useState(null);
+  const [currentQuarter, setCurrentQuarter] = useState(1);
+  const [selectedTeam, setSelectedTeam] = useState(null);
+  const [pendingConsequence, setPendingConsequence] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [showMatchSetup, setShowMatchSetup] = useState(false);
+  const [matchToDelete, setMatchToDelete] = useState(null);
+  const [matchSetup, setMatchSetup] = useState({
+    adversaire: '',
+    lieu: 'domicile'
   });
-});
 
-csv += '\n=== STATISTIQUES D\'ÉQUIPE PAR MATCH ===\n';
-csv += 'Date,Heure,Adversaire,3pts Nous,LF Nous,Reb Off,Pertes,Paniers Faciles,3pts Adv,Reb Adv\n';
+  // Charger les données depuis le stockage persistant
+  useEffect(() => {
+    loadData();
+  }, []);
 
-teamStats.forEach(match => {
-  const nous = match.nous;
-  const adv = match.adversaire;
-  csv += `${match.date},${match.time},${adv.nom || 'N/A'},`;
-  csv += `${nous.troisPoints.marques}/${nous.troisPoints.tentes},`;
-  csv += `${nous.lancersFrancs.marques}/${nous.lancersFrancs.tentes},`;
-  csv += `${nous.rebondsOffensifs.pris}(${nous.rebondsOffensifs.marques}),`;
-  csv += `${nous.pertesDeBalle.total}(${nous.pertesDeBalle.paniersEncaisses}),`;
-  csv += `${nous.paniersFaciles},`;
-  csv += `${adv.troisPoints.marques}/${adv.troisPoints.tentes},`;
-  csv += `${adv.rebonds.subis}(${adv.rebonds.marques})\n`;
-});
-
-const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-const link = document.createElement('a');
-link.href = URL.createObjectURL(blob);
-link.download = `stats_basketball_complet_${new Date().toISOString().split('T')[0]}.csv`;
-link.click();
-
-
-};
-
-const resetAllData = () => {
-if (confirm('Êtes-vous sûr de vouloir effacer TOUTES les données (tirs et matchs) ?')) {
-setShots({});
-setTeamStats([]);
-setCurrentMatchStats({
-date: new Date().toISOString().split('T')[0],
-time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
-nous: {
-troisPoints: { marques: 0, tentes: 0 },
-lancersFrancs: { marques: 0, tentes: 0 },
-rebondsOffensifs: { pris: 0, marques: 0 },
-pertesDeBalle: { total: 0, paniersEncaisses: 0 },
-paniersFaciles: 0,
-statsIndividuelles: {}
-},
-adversaire: {
-nom: '',
-troisPoints: { marques: 0, tentes: 0 },
-rebonds: { subis: 0, marques: 0 }
-}
-});
-localStorage.removeItem('basketball_shots');
-localStorage.removeItem('basketball_team_stats');
-}
-};
-
-return (
-<div className="min-h-screen bg-gradient-to-br from-orange-50 to-blue-50">
-{/* Header avec Navigation */}
-<div className="bg-gradient-to-r from-orange-600 to-blue-600 p-4 text-white shadow-lg">
-<div className="max-w-7xl mx-auto">
-<h1 className="text-3xl font-bold mb-4">🏀 Stats Basketball Pro</h1>
-<div className="flex flex-wrap gap-2">
-<button
-onClick={() => setActiveModule('shooting')}
-className={`px-6 py-2 rounded-lg font-semibold transition-all ${ activeModule === 'shooting' ? 'bg-white text-blue-600 shadow-lg' : 'bg-white/20 hover:bg-white/30' }`}
->
-📊 Stats de Tir
-</button>
-<button
-onClick={() => setActiveModule('team')}
-className={`px-6 py-2 rounded-lg font-semibold transition-all ${ activeModule === 'team' ? 'bg-white text-blue-600 shadow-lg' : 'bg-white/20 hover:bg-white/30' }`}
->
-👥 Stats d'Équipe
-</button>
-<button
-onClick={() => setActiveModule('history')}
-className={`px-6 py-2 rounded-lg font-semibold transition-all ${ activeModule === 'history' ? 'bg-white text-blue-600 shadow-lg' : 'bg-white/20 hover:bg-white/30' }`}
->
-📅 Historique
-</button>
-</div>
-</div>
-</div>
-
-
-  {/* Contenu Principal */}
-  <div className="p-4">
-    {activeModule === 'shooting' && (
-      <ShootingModule 
-        shots={shots} 
-        saveShots={saveShots}
-        exportToCSV={exportAllDataToCSV}
-        resetData={resetAllData}
-      />
-    )}
-    {activeModule === 'team' && (
-      <TeamStatsModule 
-        teamStats={teamStats}
-        currentMatchStats={currentMatchStats}
-        setCurrentMatchStats={setCurrentMatchStats}
-        saveTeamStats={saveTeamStats}
-      />
-    )}
-    {activeModule === 'history' && (
-      <HistoryModule 
-        shots={shots}
-        teamStats={teamStats}
-        exportToCSV={exportAllDataToCSV}
-      />
-    )}
-  </div>
-</div>
-
-
-);
-}
-
-// Module de Stats de Tir
-function ShootingModule({ shots, saveShots, exportToCSV, resetData }) {
-const [selectedPlayer, setSelectedPlayer] = useState(PLAYERS[0]);
-const [selectedZone, setSelectedZone] = useState(null);
-const [inputTentes, setInputTentes] = useState('');
-const [inputMarques, setInputMarques] = useState('');
-const [viewStats, setViewStats] = useState(false);
-
-const validateEntry = () => {
-if (!selectedPlayer || !selectedZone) return;
-
-
-const tentes = parseInt(inputTentes) || 0;
-const marques = parseInt(inputMarques) || 0;
-
-if (tentes === 0) return;
-if (marques > tentes) {
-  alert('Le nombre de tirs marqués ne peut pas dépasser le nombre de tirs tentés');
-  return;
-}
-
-const playerShots = shots[selectedPlayer.id] || {};
-const zoneShots = playerShots[selectedZone] || { tentes: 0, marques: 0 };
-
-const newShots = {
-  ...shots,
-  [selectedPlayer.id]: {
-    ...playerShots,
-    [selectedZone]: {
-      tentes: zoneShots.tentes + tentes,
-      marques: zoneShots.marques + marques
+  const loadData = async () => {
+    try {
+      const result = await window.storage.get('basketball_matches');
+      if (result) {
+        setMatches(JSON.parse(result.value));
+      }
+    } catch (error) {
+      console.log('Pas de données sauvegardées ou erreur de chargement');
     }
-  }
-};
-
-saveShots(newShots);
-setInputTentes('');
-setInputMarques('');
-
-
-};
-
-const getPlayerStats = (playerId) => {
-const playerShots = shots[playerId] || {};
-let tentes = 0;
-let marques = 0;
-
-
-ZONES.forEach(zone => {
-  const zoneData = playerShots[zone.id] || { tentes: 0, marques: 0 };
-  tentes += zoneData.tentes;
-  marques += zoneData.marques;
-});
-
-return { tentes, marques, pct: tentes > 0 ? ((marques / tentes) * 100).toFixed(1) : '0' };
-
-
-};
-
-if (viewStats) {
-return (
-<div className="max-w-6xl mx-auto">
-<div className="bg-white rounded-lg shadow-lg p-6">
-<div className="flex justify-between items-center mb-6">
-<h2 className="text-3xl font-bold text-gray-800">Tableau des Statistiques</h2>
-<button
-onClick={() => setViewStats(false)}
-className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 font-semibold"
->
-Retour
-</button>
-</div>
-
-
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="bg-gray-100">
-              <th className="border border-gray-300 p-3 text-left">Joueur</th>
-              {ZONES.map(zone => (
-                <th key={zone.id} className="border border-gray-300 p-3 text-center" style={{ color: zone.color }}>
-                  {zone.name}
-                </th>
-              ))}
-              <th className="border border-gray-300 p-3 text-center bg-gray-200">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {PLAYERS.map(player => {
-              const playerShots = shots[player.id] || {};
-              const stats = getPlayerStats(player.id);
-              
-              return (
-                <tr key={player.id} className="hover:bg-gray-50">
-                  <td className="border border-gray-300 p-3 font-semibold">{player.name}</td>
-                  {ZONES.map(zone => {
-                    const zoneData = playerShots[zone.id] || { tentes: 0, marques: 0 };
-                    const pct = zoneData.tentes > 0 ? ((zoneData.marques / zoneData.tentes) * 100).toFixed(0) : '-';
-                    
-                    return (
-                      <td key={zone.id} className="border border-gray-300 p-3 text-center text-sm">
-                        <div>{zoneData.marques}/{zoneData.tentes}</div>
-                        <div className="text-xs text-gray-600">{pct !== '-' ? `${pct}%` : '-'}</div>
-                      </td>
-                    );
-                  })}
-                  <td className="border border-gray-300 p-3 text-center font-semibold bg-gray-50">
-                    <div>{stats.marques}/{stats.tentes}</div>
-                    <div className="text-sm text-gray-600">{stats.pct}%</div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-);
-
-
-}
-
-return (
-<div className="max-w-7xl mx-auto">
-<div className="bg-white rounded-lg shadow-2xl overflow-hidden">
-<div className="flex flex-col lg:flex-row">
-<div className="lg:w-80 bg-gray-50 border-r border-gray-200 p-4">
-<h2 className="text-xl font-bold text-gray-800 mb-4">👥 Joueurs</h2>
-<div className="space-y-2 max-h-96 overflow-y-auto">
-{PLAYERS.map(player => {
-const stats = getPlayerStats(player.id);
-const isSelected = selectedPlayer?.id === player.id;
-
-
-            return (
-              <div
-                key={player.id}
-                className={`p-3 rounded-lg cursor-pointer transition-all ${
-                  isSelected
-                    ? 'bg-blue-600 text-white shadow-lg'
-                    : 'bg-white hover:bg-gray-100'
-                }`}
-                onClick={() => setSelectedPlayer(player)}
-              >
-                <h3 className="font-bold">{player.name}</h3>
-                <p className={`text-sm ${isSelected ? 'text-blue-100' : 'text-gray-600'}`}>
-                  {stats.tentes} tirs • {stats.pct}%
-                </p>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="flex-1 p-6">
-        {selectedPlayer && (
-          <>
-            <div className="mb-6 bg-blue-50 p-4 rounded-lg">
-              <h2 className="text-2xl font-bold text-gray-800">
-                {selectedPlayer.name} - Sélectionnez une zone
-              </h2>
-            </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-              {ZONES.map(zone => {
-                const zoneData = (shots[selectedPlayer.id] || {})[zone.id] || { tentes: 0, marques: 0 };
-                const pct = zoneData.tentes > 0 ? ((zoneData.marques / zoneData.tentes) * 100).toFixed(1) : '0';
-                const isSelected = selectedZone === zone.id;
-
-                return (
-                  <button
-                    key={zone.id}
-                    onClick={() => setSelectedZone(zone.id)}
-                    className={`p-4 rounded-lg border-4 transition-all ${
-                      isSelected ? 'shadow-2xl scale-105' : 'shadow-md'
-                    }`}
-                    style={{
-                      borderColor: zone.color,
-                      backgroundColor: isSelected ? zone.color : 'white',
-                      color: isSelected ? 'white' : zone.color
-                    }}
-                  >
-                    <h3 className="font-bold">{zone.name}</h3>
-                    <div className={`text-sm ${isSelected ? 'opacity-90' : 'opacity-70'}`}>
-                      <div>{zoneData.marques}/{zoneData.tentes}</div>
-                      <div className="font-semibold">{pct}%</div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            {selectedZone && (
-              <div className="bg-gradient-to-r from-green-50 to-blue-50 p-6 rounded-lg border-2 border-blue-500">
-                <h3 className="text-xl font-bold text-gray-800 mb-4">
-                  Zone : {ZONES.find(z => z.id === selectedZone)?.name}
-                </h3>
-                
-                <div className="flex flex-col md:flex-row gap-4 items-end">
-                  <div className="flex-1">
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Tirs tentés
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={inputTentes}
-                      onChange={(e) => setInputTentes(e.target.value)}
-                      placeholder="0"
-                      className="w-full px-4 py-3 text-2xl border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-center"
-                    />
-                  </div>
-
-                  <div className="flex-1">
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Tirs marqués
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={inputMarques}
-                      onChange={(e) => setInputMarques(e.target.value)}
-                      placeholder="0"
-                      className="w-full px-4 py-3 text-2xl border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-center"
-                    />
-                  </div>
-
-                  <button
-                    onClick={validateEntry}
-                    disabled={!inputTentes}
-                    className="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-xl font-bold"
-                  >
-                    ✓ VALIDER
-                  </button>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-
-        <div className="flex gap-3 mt-6 flex-wrap">
-          <button
-            onClick={() => setViewStats(true)}
-            className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-semibold"
-          >
-            📊 Voir Tableau
-          </button>
-          <button
-            onClick={exportToCSV}
-            className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold"
-          >
-            💾 Exporter CSV
-          </button>
-          <button
-            onClick={resetData}
-            className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 font-semibold"
-          >
-            🗑️ Réinitialiser Tout
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-
-);
-}
-
-// Module Stats d'Équipe
-function TeamStatsModule({ teamStats, currentMatchStats, setCurrentMatchStats, saveTeamStats }) {
-const [selectedPlayer, setSelectedPlayer] = useState(null);
-const [defResponsability, setDefResponsability] = useState('');
-
-const updateStat = (category, field, subfield, value) => {
-const newStats = { ...currentMatchStats };
-if (subfield) {
-newStats[category][field][subfield] = parseInt(value) || 0;
-} else {
-newStats[category][field] = parseInt(value) || 0;
-}
-setCurrentMatchStats(newStats);
-};
-
-const addIndividualStat = () => {
-if (!selectedPlayer || !defResponsability) return;
-
-
-const newStats = { ...currentMatchStats };
-if (!newStats.nous.statsIndividuelles[selectedPlayer.id]) {
-  newStats.nous.statsIndividuelles[selectedPlayer.id] = {
-    name: selectedPlayer.name,
-    responsabilitesDefensives: []
   };
-}
 
-newStats.nous.statsIndividuelles[selectedPlayer.id].responsabilitesDefensives.push(defResponsability);
-setCurrentMatchStats(newStats);
-setDefResponsability('');
+  // Sauvegarder les données
+  const saveData = async (data) => {
+    try {
+      await window.storage.set('basketball_matches', JSON.stringify(data));
+      setMatches(data);
+    } catch (error) {
+      console.error('Erreur de sauvegarde:', error);
+      // Fallback sur le state local
+      setMatches(data);
+    }
+  };
 
+  // Créer un nouveau match
+  const createNewMatch = () => {
+    setMatchSetup({ adversaire: '', lieu: 'domicile' });
+    setShowMatchSetup(true);
+  };
 
-};
+  const confirmMatchSetup = () => {
+    if (!matchSetup.adversaire.trim()) {
+      alert('Veuillez entrer le nom de l\'adversaire');
+      return;
+    }
 
-const saveMatch = () => {
-if (!currentMatchStats.adversaire.nom) {
-alert("Veuillez entrer le nom de l'adversaire");
-return;
-}
+    const matchId = `match_${Date.now()}`;
+    const newMatch = {
+      id: matchId,
+      date: new Date().toLocaleString('fr-FR'),
+      adversaire: matchSetup.adversaire,
+      lieu: matchSetup.lieu,
+      quarters: {
+        1: { equipe: 0, adversaire: 0 },
+        2: { equipe: 0, adversaire: 0 },
+        3: { equipe: 0, adversaire: 0 },
+        4: { equipe: 0, adversaire: 0 }
+      },
+      equipe: {
+        pts3_made: 0,
+        pts3_taken: 0,
+        lf_made: 0,
+        lf_taken: 0,
+        perte_panier2: 0,
+        perte_panier3: 0,
+        perte_faute: 0,
+        perte_rien: 0,
+        reb_panier2: 0,
+        reb_panier3: 0,
+        reb_faute: 0,
+        reb_rien: 0,
+        inter_panier2: 0,
+        inter_panier3: 0,
+        inter_faute: 0,
+        inter_rien: 0,
+        panier_facile_loupe: 0
+      },
+      adversaire_stats: {
+        pts3_made: 0,
+        pts3_taken: 0,
+        lf_made: 0,
+        lf_taken: 0,
+        reb_panier2: 0,
+        reb_panier3: 0,
+        reb_faute: 0,
+        reb_rien: 0
+      }
+    };
 
+    const updatedMatches = { ...matches, [matchId]: newMatch };
+    saveData(updatedMatches);
+    setCurrentMatchId(matchId);
+    setShowMatchSetup(false);
+    setCurrentScreen('match');
+    setCurrentQuarter(1);
+    setHistory([]);
+  };
 
-const newTeamStats = [...teamStats, { ...currentMatchStats }];
-saveTeamStats(newTeamStats);
+  // Supprimer un match
+  const deleteMatch = (matchId) => {
+    const updatedMatches = { ...matches };
+    delete updatedMatches[matchId];
+    saveData(updatedMatches);
+    setMatchToDelete(null);
+  };
 
-// Réinitialiser pour un nouveau match
-setCurrentMatchStats({
-  date: new Date().toISOString().split('T')[0],
-  time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
-  nous: {
-    troisPoints: { marques: 0, tentes: 0 },
-    lancersFrancs: { marques: 0, tentes: 0 },
-    rebondsOffensifs: { pris: 0, marques: 0 },
-    pertesDeBalle: { total: 0, paniersEncaisses: 0 },
-    paniersFaciles: 0,
-    statsIndividuelles: {}
-  },
-  adversaire: {
-    nom: '',
-    troisPoints: { marques: 0, tentes: 0 },
-    rebonds: { subis: 0, marques: 0 }
-  }
-});
+  // Modifier le score
+  const updateScore = (team, delta) => {
+    const match = { ...matches[currentMatchId] };
+    match.quarters[currentQuarter][team] = Math.max(0, match.quarters[currentQuarter][team] + delta);
+    saveData({ ...matches, [currentMatchId]: match });
+  };
 
-alert('Match enregistré avec succès !');
+  // Ajouter une stat simple
+  const addSimpleStat = (team, statName, value = 1) => {
+    const match = { ...matches[currentMatchId] };
+    const targetStats = team === 'adversaire' ? match.adversaire_stats : match[team];
+    const oldValue = targetStats[statName];
+    targetStats[statName] += value;
+    
+    setHistory([...history, { 
+      matchId: currentMatchId,
+      team, 
+      statName, 
+      oldValue, 
+      newValue: targetStats[statName] 
+    }]);
+    
+    saveData({ ...matches, [currentMatchId]: match });
+  };
 
+  // Ajouter shot marqué
+  const addMadeShot = (team, shotType) => {
+    const match = { ...matches[currentMatchId] };
+    const targetStats = team === 'adversaire' ? match.adversaire_stats : match[team];
+    const madeKey = `${shotType}_made`;
+    const takenKey = `${shotType}_taken`;
+    
+    const oldMade = targetStats[madeKey];
+    const oldTaken = targetStats[takenKey];
+    
+    targetStats[madeKey] += 1;
+    targetStats[takenKey] += 1;
+    
+    setHistory([...history, { 
+      matchId: currentMatchId,
+      team, 
+      stats: [
+        { statName: madeKey, oldValue: oldMade, newValue: targetStats[madeKey] },
+        { statName: takenKey, oldValue: oldTaken, newValue: targetStats[takenKey] }
+      ]
+    }]);
+    
+    saveData({ ...matches, [currentMatchId]: match });
+  };
 
-};
+  // Ajouter une conséquence
+  const addConsequence = (consequence) => {
+    const match = { ...matches[currentMatchId] };
+    const { team, action } = pendingConsequence;
+    const targetStats = team === 'adversaire' ? match.adversaire_stats : match[team];
+    const statName = `${action}_${consequence}`;
+    
+    const oldValue = targetStats[statName];
+    targetStats[statName] += 1;
+    
+    setHistory([...history, { 
+      matchId: currentMatchId,
+      team, 
+      statName, 
+      oldValue, 
+      newValue: targetStats[statName] 
+    }]);
+    
+    saveData({ ...matches, [currentMatchId]: match });
+    setPendingConsequence(null);
+  };
 
-return (
-<div className="max-w-6xl mx-auto">
-<div className="bg-white rounded-lg shadow-lg p-6">
-<h2 className="text-3xl font-bold text-gray-800 mb-6">📊 Stats du Match</h2>
+  // Annuler la dernière action
+  const undoLastAction = () => {
+    if (history.length === 0) return;
+    
+    const lastAction = history[history.length - 1];
+    if (lastAction.matchId !== currentMatchId) return;
+    
+    const match = { ...matches[currentMatchId] };
+    const targetStats = lastAction.team === 'adversaire' ? match.adversaire_stats : match[lastAction.team];
+    
+    if (lastAction.stats) {
+      lastAction.stats.forEach(stat => {
+        targetStats[stat.statName] = stat.oldValue;
+      });
+    } else {
+      targetStats[lastAction.statName] = lastAction.oldValue;
+    }
+    
+    saveData({ ...matches, [currentMatchId]: match });
+    setHistory(history.slice(0, -1));
+  };
 
+  // Calculer le score total
+  const calculateTotalScore = (match) => {
+    let equipe = 0, adversaire = 0;
+    Object.values(match.quarters).forEach(q => {
+      equipe += q.equipe;
+      adversaire += q.adversaire;
+    });
+    return { equipe, adversaire };
+  };
 
-    {/* Infos du match */}
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-      <div>
-        <label className="block text-sm font-semibold text-gray-700 mb-1">Date</label>
-        <input
-          type="date"
-          value={currentMatchStats.date}
-          onChange={(e) => setCurrentMatchStats({...currentMatchStats, date: e.target.value})}
-          className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg"
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-semibold text-gray-700 mb-1">Heure</label>
-        <input
-          type="time"
-          value={currentMatchStats.time}
-          onChange={(e) => setCurrentMatchStats({...currentMatchStats, time: e.target.value})}
-          className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg"
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-semibold text-gray-700 mb-1">Adversaire</label>
-        <input
-          type="text"
-          value={currentMatchStats.adversaire.nom}
-          onChange={(e) => {
-            const newStats = {...currentMatchStats};
-            newStats.adversaire.nom = e.target.value;
-            setCurrentMatchStats(newStats);
-          }}
-          placeholder="Nom de l'équipe adverse"
-          className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg"
-        />
-      </div>
-    </div>
+  // Calculer les stats globales
+  const calculateGlobalStats = () => {
+    const global = {
+      equipe: {
+        pts3_made: 0,
+        pts3_taken: 0,
+        lf_made: 0,
+        lf_taken: 0,
+        pertes: 0,
+        rebonds: 0,
+        interceptions: 0,
+        paniers_loupes: 0,
+        victories: 0,
+        defeats: 0,
+        totalMatches: 0
+      },
+      adversaire: {
+        pts3_made: 0,
+        pts3_taken: 0,
+        lf_made: 0,
+        lf_taken: 0,
+        rebonds: 0
+      }
+    };
 
-    {/* Section NOUS */}
-    <div className="bg-blue-50 p-4 rounded-lg mb-6">
-      <h3 className="text-xl font-bold text-blue-800 mb-4">🏀 Notre Équipe</h3>
-      
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-1">3 Points</label>
-          <div className="flex gap-2">
-            <input
-              type="number"
-              min="0"
-              value={currentMatchStats.nous.troisPoints.marques}
-              onChange={(e) => updateStat('nous', 'troisPoints', 'marques', e.target.value)}
-              placeholder="Marqués"
-              className="w-1/2 px-3 py-2 border rounded"
-            />
-            <input
-              type="number"
-              min="0"
-              value={currentMatchStats.nous.troisPoints.tentes}
-              onChange={(e) => updateStat('nous', 'troisPoints', 'tentes', e.target.value)}
-              placeholder="Tentés"
-              className="w-1/2 px-3 py-2 border rounded"
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-1">Lancers Francs</label>
-          <div className="flex gap-2">
-            <input
-              type="number"
-              min="0"
-              value={currentMatchStats.nous.lancersFrancs.marques}
-              onChange={(e) => updateStat('nous', 'lancersFrancs', 'marques', e.target.value)}
-              placeholder="Marqués"
-              className="w-1/2 px-3 py-2 border rounded"
-            />
-            <input
-              type="number"
-              min="0"
-              value={currentMatchStats.nous.lancersFrancs.tentes}
-              onChange={(e) => updateStat('nous', 'lancersFrancs', 'tentes', e.target.value)}
-              placeholder="Tentés"
-              className="w-1/2 px-3 py-2 border rounded"
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-1">Rebonds Offensifs</label>
-          <div className="flex gap-2">
-            <input
-              type="number"
-              min="0"
-              value={currentMatchStats.nous.rebondsOffensifs.pris}
-              onChange={(e) => updateStat('nous', 'rebondsOffensifs', 'pris', e.target.value)}
-              placeholder="Pris"
-              className="w-1/2 px-3 py-2 border rounded"
-            />
-            <input
-              type="number"
-              min="0"
-              value={currentMatchStats.nous.rebondsOffensifs.marques}
-              onChange={(e) => updateStat('nous', 'rebondsOffensifs', 'marques', e.target.value)}
-              placeholder="→ Marqués"
-              className="w-1/2 px-3 py-2 border rounded"
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-1">Pertes de Balle</label>
-          <div className="flex gap-2">
-            <input
-              type="number"
-              min="0"
-              value={currentMatchStats.nous.pertesDeBalle.total}
-              onChange={(e) => updateStat('nous', 'pertesDeBalle', 'total', e.target.value)}
-              placeholder="Total"
-              className="w-1/2 px-3 py-2 border rounded"
-            />
-            <input
-              type="number"
-              min="0"
-              value={currentMatchStats.nous.pertesDeBalle.paniersEncaisses}
-              onChange={(e) => updateStat('nous', 'pertesDeBalle', 'paniersEncaisses', e.target.value)}
-              placeholder="→ Encaissés"
-              className="w-1/2 px-3 py-2 border rounded"
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-1">Paniers Faciles</label>
-          <input
-            type="number"
-            min="0"
-            value={currentMatchStats.nous.paniersFaciles}
-            onChange={(e) => updateStat('nous', 'paniersFaciles', null, e.target.value)}
-            className="w-full px-3 py-2 border rounded"
-          />
-        </div>
-      </div>
-
-      {/* Stats Individuelles */}
-      <div className="mt-6 border-t pt-4">
-        <h4 className="font-bold text-gray-700 mb-3">Stats Individuelles</h4>
-        <div className="flex gap-2 mb-3">
-          <select
-            value={selectedPlayer?.id || ''}
-            onChange={(e) => setSelectedPlayer(PLAYERS.find(p => p.id === parseInt(e.target.value)))}
-            className="flex-1 px-3 py-2 border rounded"
-          >
-            <option value="">Sélectionner un joueur</option>
-            {PLAYERS.map(player => (
-              <option key={player.id} value={player.id}>{player.name}</option>
-            ))}
-          </select>
-          <input
-            type="text"
-            value={defResponsability}
-            onChange={(e) => setDefResponsability(e.target.value)}
-            placeholder="Responsabilité défensive"
-            className="flex-1 px-3 py-2 border rounded"
-          />
-          <button
-            onClick={addIndividualStat}
-            disabled={!selectedPlayer || !defResponsability}
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-300"
-          >
-            Ajouter
-          </button>
-        </div>
+    Object.values(matches).forEach(match => {
+      if (match.equipe && match.adversaire_stats) {
+        global.equipe.totalMatches++;
         
-        {Object.values(currentMatchStats.nous.statsIndividuelles).length > 0 && (
-          <div className="bg-white p-3 rounded">
-            {Object.values(currentMatchStats.nous.statsIndividuelles).map((stat, idx) => (
-              <div key={idx} className="mb-2">
-                <span className="font-semibold">{stat.name}:</span>
-                <span className="ml-2">{stat.responsabilitesDefensives.join(', ')}</span>
-              </div>
-            ))}
+        // Calculer victoires/défaites
+        const totals = calculateTotalScore(match);
+        if (totals.equipe > totals.adversaire) {
+          global.equipe.victories++;
+        } else if (totals.equipe < totals.adversaire) {
+          global.equipe.defeats++;
+        }
+        
+        // Stats équipe
+        global.equipe.pts3_made += match.equipe.pts3_made || 0;
+        global.equipe.pts3_taken += match.equipe.pts3_taken || 0;
+        global.equipe.lf_made += match.equipe.lf_made || 0;
+        global.equipe.lf_taken += match.equipe.lf_taken || 0;
+        global.equipe.pertes += (match.equipe.perte_panier2 || 0) + (match.equipe.perte_panier3 || 0) + 
+                                 (match.equipe.perte_faute || 0) + (match.equipe.perte_rien || 0);
+        global.equipe.rebonds += (match.equipe.reb_panier2 || 0) + (match.equipe.reb_panier3 || 0) + 
+                                  (match.equipe.reb_faute || 0) + (match.equipe.reb_rien || 0);
+        global.equipe.interceptions += (match.equipe.inter_panier2 || 0) + (match.equipe.inter_panier3 || 0) + 
+                                        (match.equipe.inter_faute || 0) + (match.equipe.inter_rien || 0);
+        global.equipe.paniers_loupes += match.equipe.panier_facile_loupe || 0;
+
+        // Stats adversaire
+        global.adversaire.pts3_made += match.adversaire_stats.pts3_made || 0;
+        global.adversaire.pts3_taken += match.adversaire_stats.pts3_taken || 0;
+        global.adversaire.lf_made += match.adversaire_stats.lf_made || 0;
+        global.adversaire.lf_taken += match.adversaire_stats.lf_taken || 0;
+        global.adversaire.rebonds += (match.adversaire_stats.reb_panier2 || 0) + 
+                                      (match.adversaire_stats.reb_panier3 || 0) + 
+                                      (match.adversaire_stats.reb_faute || 0) + 
+                                      (match.adversaire_stats.reb_rien || 0);
+      }
+    });
+
+    return global;
+  };
+
+  const formatPercentage = (made, taken) => {
+    if (taken === 0) return '0%';
+    return `${Math.round((made / taken) * 100)}%`;
+  };
+
+  // Modal de configuration du match
+  if (showMatchSetup) {
+    return (
+      <div className="min-h-screen bg-gray-950 text-white p-6 flex items-center justify-center">
+        <div className="bg-gray-900 rounded-2xl p-8 max-w-md w-full shadow-2xl">
+          <h2 className="text-2xl font-bold mb-6 text-center">Nouveau Match</h2>
+          
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-400 mb-2">
+              Nom de l'adversaire
+            </label>
+            <input
+              type="text"
+              value={matchSetup.adversaire}
+              onChange={(e) => setMatchSetup({ ...matchSetup, adversaire: e.target.value })}
+              className="w-full bg-gray-800 text-white px-4 py-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500"
+              placeholder="Ex: Lakers"
+              autoFocus
+            />
           </div>
-        )}
-      </div>
-    </div>
 
-    {/* Section ADVERSAIRE */}
-    <div className="bg-red-50 p-4 rounded-lg mb-6">
-      <h3 className="text-xl font-bold text-red-800 mb-4">⚔️ Équipe Adverse</h3>
-      
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-1">3 Points</label>
-          <div className="flex gap-2">
-            <input
-              type="number"
-              min="0"
-              value={currentMatchStats.adversaire.troisPoints.marques}
-              onChange={(e) => updateStat('adversaire', 'troisPoints', 'marques', e.target.value)}
-              placeholder="Marqués"
-              className="w-1/2 px-3 py-2 border rounded"
-            />
-            <input
-              type="number"
-              min="0"
-              value={currentMatchStats.adversaire.troisPoints.tentes}
-              onChange={(e) => updateStat('adversaire', 'troisPoints', 'tentes', e.target.value)}
-              placeholder="Tentés"
-              className="w-1/2 px-3 py-2 border rounded"
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-1">Rebonds Subis</label>
-          <div className="flex gap-2">
-            <input
-              type="number"
-              min="0"
-              value={currentMatchStats.adversaire.rebonds.subis}
-              onChange={(e) => updateStat('adversaire', 'rebonds', 'subis', e.target.value)}
-              placeholder="Subis"
-              className="w-1/2 px-3 py-2 border rounded"
-            />
-            <input
-              type="number"
-              min="0"
-              value={currentMatchStats.adversaire.rebonds.marques}
-              onChange={(e) => updateStat('adversaire', 'rebonds', 'marques', e.target.value)}
-              placeholder="→ Marqués"
-              className="w-1/2 px-3 py-2 border rounded"
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <button
-      onClick={saveMatch}
-      className="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-bold text-lg"
-    >
-      💾 Enregistrer le Match
-    </button>
-  </div>
-</div>
-
-
-);
-}
-
-// Module Historique
-function HistoryModule({ shots, teamStats, exportToCSV }) {
-const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-
-const getMatchesByDate = (date) => {
-return teamStats.filter(match => match.date === date);
-};
-
-const getGlobalStats = () => {
-let totalTirs = 0;
-let totalMarques = 0;
-let total3pts = { marques: 0, tentes: 0 };
-let totalLF = { marques: 0, tentes: 0 };
-let totalRebonds = 0;
-let totalPertes = 0;
-
-
-// Stats de tir
-Object.values(shots).forEach(playerShots => {
-  Object.values(playerShots).forEach(zoneData => {
-    totalTirs += zoneData.tentes || 0;
-    totalMarques += zoneData.marques || 0;
-  });
-});
-
-// Stats d'équipe
-teamStats.forEach(match => {
-  total3pts.marques += match.nous.troisPoints.marques;
-  total3pts.tentes += match.nous.troisPoints.tentes;
-  totalLF.marques += match.nous.lancersFrancs.marques;
-  totalLF.tentes += match.nous.lancersFrancs.tentes;
-  totalRebonds += match.nous.rebondsOffensifs.pris;
-  totalPertes += match.nous.pertesDeBalle.total;
-});
-
-return {
-  tirs: { total: totalTirs, marques: totalMarques },
-  troisPoints: total3pts,
-  lancersFrancs: totalLF,
-  rebonds: totalRebonds,
-  pertes: totalPertes,
-  matchs: teamStats.length
-};
-
-
-};
-
-const globalStats = getGlobalStats();
-const dailyMatches = getMatchesByDate(selectedDate);
-
-return (
-<div className="max-w-6xl mx-auto space-y-6">
-{/* Statistiques Globales */}
-<div className="bg-white rounded-lg shadow-lg p-6">
-<h2 className="text-3xl font-bold text-gray-800 mb-6">📈 Statistiques Globales</h2>
-
-
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-      <div className="bg-blue-50 p-4 rounded-lg text-center">
-        <div className="text-3xl font-bold text-blue-600">
-          {globalStats.matchs}
-        </div>
-        <div className="text-sm text-gray-600">Matchs Joués</div>
-      </div>
-      
-      <div className="bg-green-50 p-4 rounded-lg text-center">
-        <div className="text-3xl font-bold text-green-600">
-          {globalStats.tirs.total > 0 ? 
-            ((globalStats.tirs.marques / globalStats.tirs.total) * 100).toFixed(1) : '0'}%
-        </div>
-        <div className="text-sm text-gray-600">Réussite Tirs</div>
-      </div>
-      
-      <div className="bg-purple-50 p-4 rounded-lg text-center">
-        <div className="text-3xl font-bold text-purple-600">
-          {globalStats.troisPoints.tentes > 0 ? 
-            ((globalStats.troisPoints.marques / globalStats.troisPoints.tentes) * 100).toFixed(1) : '0'}%
-        </div>
-        <div className="text-sm text-gray-600">3 Points</div>
-      </div>
-      
-      <div className="bg-orange-50 p-4 rounded-lg text-center">
-        <div className="text-3xl font-bold text-orange-600">
-          {globalStats.lancersFrancs.tentes > 0 ? 
-            ((globalStats.lancersFrancs.marques / globalStats.lancersFrancs.tentes) * 100).toFixed(1) : '0'}%
-        </div>
-        <div className="text-sm text-gray-600">Lancers Francs</div>
-      </div>
-      
-      <div className="bg-cyan-50 p-4 rounded-lg text-center">
-        <div className="text-3xl font-bold text-cyan-600">
-          {globalStats.rebonds}
-        </div>
-        <div className="text-sm text-gray-600">Rebonds Off.</div>
-      </div>
-      
-      <div className="bg-red-50 p-4 rounded-lg text-center">
-        <div className="text-3xl font-bold text-red-600">
-          {globalStats.pertes}
-        </div>
-        <div className="text-sm text-gray-600">Pertes de Balle</div>
-      </div>
-    </div>
-  </div>
-
-  {/* Historique par Jour */}
-  <div className="bg-white rounded-lg shadow-lg p-6">
-    <div className="flex justify-between items-center mb-6">
-      <h2 className="text-2xl font-bold text-gray-800">📅 Historique par Jour</h2>
-      <input
-        type="date"
-        value={selectedDate}
-        onChange={(e) => setSelectedDate(e.target.value)}
-        className="px-4 py-2 border-2 border-gray-300 rounded-lg"
-      />
-    </div>
-
-    {dailyMatches.length === 0 ? (
-      <div className="text-center py-8 text-gray-500">
-        Aucun match enregistré pour cette date
-      </div>
-    ) : (
-      <div className="space-y-4">
-        {dailyMatches.map((match, idx) => (
-          <div key={idx} className="border rounded-lg p-4 hover:bg-gray-50">
-            <div className="flex justify-between items-start mb-3">
-              <div>
-                <h3 className="font-bold text-lg">vs {match.adversaire.nom}</h3>
-                <p className="text-sm text-gray-600">{match.time}</p>
-              </div>
+          <div className="mb-8">
+            <label className="block text-sm font-medium text-gray-400 mb-3">
+              Lieu du match
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => setMatchSetup({ ...matchSetup, lieu: 'domicile' })}
+                className={`py-3 px-4 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all ${
+                  matchSetup.lieu === 'domicile'
+                    ? 'bg-green-600 text-white shadow-lg'
+                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                }`}
+              >
+                <Home size={20} />
+                Domicile
+              </button>
+              <button
+                onClick={() => setMatchSetup({ ...matchSetup, lieu: 'exterieur' })}
+                className={`py-3 px-4 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all ${
+                  matchSetup.lieu === 'exterieur'
+                    ? 'bg-blue-600 text-white shadow-lg'
+                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                }`}
+              >
+                <MapPin size={20} />
+                Extérieur
+              </button>
             </div>
-            
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-              <div>
-                <span className="font-semibold">3pts:</span> {match.nous.troisPoints.marques}/{match.nous.troisPoints.tentes}
-              </div>
-              <div>
-                <span className="font-semibold">LF:</span> {match.nous.lancersFrancs.marques}/{match.nous.lancersFrancs.tentes}
-              </div>
-              <div>
-                <span className="font-semibold">Reb Off:</span> {match.nous.rebondsOffensifs.pris}
-              </div>
-              <div>
-                <span className="font-semibold">Pertes:</span> {match.nous.pertesDeBalle.total}
-              </div>
-            </div>
+          </div>
 
-            {Object.values(match.nous.statsIndividuelles).length > 0 && (
-              <div className="mt-3 pt-3 border-t text-sm">
-                <span className="font-semibold">Stats individuelles:</span>
-                {Object.values(match.nous.statsIndividuelles).map((stat, i) => (
-                  <span key={i} className="ml-2">
-                    {stat.name} ({stat.responsabilitesDefensives.length} resp.)
-                  </span>
-                ))}
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={() => setShowMatchSetup(false)}
+              className="bg-gray-800 hover:bg-gray-700 py-3 rounded-xl font-semibold transition-all"
+            >
+              Annuler
+            </button>
+            <button
+              onClick={confirmMatchSetup}
+              className="bg-orange-600 hover:bg-orange-700 py-3 rounded-xl font-bold transition-all"
+            >
+              Commencer
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Modal de suppression
+  if (matchToDelete) {
+    const match = matches[matchToDelete];
+    const totals = calculateTotalScore(match);
+    return (
+      <div className="min-h-screen bg-gray-950 text-white p-6 flex items-center justify-center">
+        <div className="bg-gray-900 rounded-2xl p-8 max-w-md w-full shadow-2xl">
+          <h2 className="text-2xl font-bold mb-4 text-red-400">Confirmer la suppression</h2>
+          <p className="text-gray-300 mb-6">
+            Êtes-vous sûr de vouloir supprimer ce match ?
+          </p>
+          <div className="bg-gray-800 rounded-xl p-4 mb-6">
+            <p className="font-semibold">{match.adversaire}</p>
+            <p className="text-sm text-gray-400">{match.date}</p>
+            <p className="text-sm mt-2">
+              Score: <span className="text-green-400">{totals.equipe}</span> - <span className="text-red-400">{totals.adversaire}</span>
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={() => setMatchToDelete(null)}
+              className="bg-gray-800 hover:bg-gray-700 py-3 rounded-xl font-semibold transition-all"
+            >
+              Annuler
+            </button>
+            <button
+              onClick={() => deleteMatch(matchToDelete)}
+              className="bg-red-600 hover:bg-red-700 py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2"
+            >
+              <Trash2 size={20} />
+              Supprimer
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ÉCRAN D'ACCUEIL
+  if (currentScreen === 'home') {
+    return (
+      <div className="min-h-screen bg-gray-950 text-white p-6">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-8">
+            <h1 className="text-4xl font-bold mb-2 flex items-center justify-center gap-3">
+              <BarChart3 className="text-orange-500" size={40} />
+              Stats Match Basket
+            </h1>
+            <p className="text-gray-400">Module de statistiques de match</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+            <button
+              onClick={createNewMatch}
+              className="bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 p-6 rounded-2xl font-bold text-xl flex items-center justify-center gap-3 transition-all shadow-lg transform hover:scale-105"
+            >
+              <Plus size={28} />
+              Nouveau Match
+            </button>
+            <button
+              onClick={() => setCurrentScreen('global')}
+              className="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 p-6 rounded-2xl font-bold text-xl flex items-center justify-center gap-3 transition-all shadow-lg transform hover:scale-105"
+            >
+              <Trophy size={28} />
+              Vue Globale
+            </button>
+          </div>
+
+          <div className="bg-gray-900 rounded-2xl p-6 shadow-xl">
+            <h2 className="text-2xl font-bold mb-4">Matchs enregistrés</h2>
+            {Object.keys(matches).length === 0 ? (
+              <div className="text-center py-12 text-gray-500">
+                <BarChart3 size={48} className="mx-auto mb-4 opacity-50" />
+                <p className="text-lg">Aucun match enregistré</p>
+                <p className="text-sm mt-2">Créez votre premier match pour commencer</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {Object.values(matches).reverse().map(match => {
+                  const totals = calculateTotalScore(match);
+                  const isVictory = totals.equipe > totals.adversaire;
+                  return (
+                    <div
+                      key={match.id}
+                      className="bg-gray-800 hover:bg-gray-750 p-4 rounded-xl transition-all group relative"
+                    >
+                      <div
+                        className="cursor-pointer"
+                        onClick={() => {
+                          setCurrentMatchId(match.id);
+                          setCurrentScreen('match');
+                          setHistory([]);
+                        }}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <p className="font-bold text-lg">{match.adversaire}</p>
+                              <span className={`px-2 py-1 rounded-lg text-xs font-semibold ${
+                                match.lieu === 'domicile' 
+                                  ? 'bg-green-900 text-green-300' 
+                                  : 'bg-blue-900 text-blue-300'
+                              }`}>
+                                {match.lieu === 'domicile' ? <Home size={14} className="inline mr-1" /> : <MapPin size={14} className="inline mr-1" />}
+                                {match.lieu === 'domicile' ? 'Domicile' : 'Extérieur'}
+                              </span>
+                              {isVictory && (
+                                <span className="bg-yellow-900 text-yellow-400 px-2 py-1 rounded-lg text-xs font-semibold">
+                                  <Trophy size={14} className="inline mr-1" />
+                                  Victoire
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-gray-500 text-sm">{match.date}</p>
+                            <p className="text-sm mt-2">
+                              Score final: <span className={`font-bold ${isVictory ? 'text-green-400' : 'text-green-500'}`}>{totals.equipe}</span> 
+                              <span className="text-gray-500 mx-2">-</span> 
+                              <span className={`font-bold ${!isVictory ? 'text-red-400' : 'text-red-500'}`}>{totals.adversaire}</span>
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setMatchToDelete(match.id);
+                              }}
+                              className="opacity-0 group-hover:opacity-100 bg-red-600 hover:bg-red-700 p-2 rounded-lg transition-all"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                            <div className="text-blue-400 font-semibold">
+                              →
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
-        ))}
+        </div>
       </div>
-    )}
+    );
+  }
+
+  // ÉCRAN VUE GLOBALE
+  if (currentScreen === 'global') {
+    const globalStats = calculateGlobalStats();
     
-    <button
-      onClick={exportToCSV}
-      className="mt-6 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold"
-    >
-      💾 Exporter Toutes les Données
-    </button>
-  </div>
-</div>
+    return (
+      <div className="min-h-screen bg-gray-950 text-white p-6">
+        <div className="max-w-6xl mx-auto">
+          <button
+            onClick={() => setCurrentScreen('home')}
+            className="mb-6 bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded-xl flex items-center gap-2 transition-all"
+          >
+            <ArrowLeft size={20} />
+            Retour
+          </button>
 
+          <h1 className="text-3xl font-bold mb-8 flex items-center gap-3">
+            <Trophy className="text-yellow-500" size={36} />
+            Vue Globale - Tous les matchs
+          </h1>
 
-);
-}
+          {/* Statistiques de victoires */}
+          <div className="bg-gray-900 rounded-2xl p-6 shadow-xl mb-6">
+            <h2 className="text-xl font-bold mb-4">Bilan général</h2>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="bg-gray-800 rounded-xl p-4 text-center">
+                <p className="text-gray-400 text-sm mb-1">Matchs joués</p>
+                <p className="text-3xl font-bold">{globalStats.equipe.totalMatches}</p>
+              </div>
+              <div className="bg-green-900 bg-opacity-30 rounded-xl p-4 text-center">
+                <p className="text-gray-400 text-sm mb-1">Victoires</p>
+                <p className="text-3xl font-bold text-green-400">{globalStats.equipe.victories}</p>
+              </div>
+              <div className="bg-red-900 bg-opacity-30 rounded-xl p-4 text-center">
+                <p className="text-gray-400 text-sm mb-1">Défaites</p>
+                <p className="text-3xl font-bold text-red-400">{globalStats.equipe.defeats}</p>
+              </div>
+            </div>
+          </div>
 
-// Rendu de l'application
-ReactDOM.render(<BasketballStatsApp />, document.getElementById('root'));
+          <div className="mb-8 bg-gray-900 rounded-2xl p-6 shadow-xl">
+            <h2 className="text-2xl font-bold mb-6 text-green-400">Notre Équipe</h2>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              <div className="bg-gray-800 rounded-xl p-4">
+                <p className="text-gray-400 text-sm mb-1">3 Points</p>
+                <p className="text-2xl font-bold">{globalStats.equipe.pts3_made}/{globalStats.equipe.pts3_taken}</p>
+                <p className="text-green-400 text-sm font-semibold">{formatPercentage(globalStats.equipe.pts3_made, globalStats.equipe.pts3_taken)}</p>
+              </div>
+              <div className="bg-gray-800 rounded-xl p-4">
+                <p className="text-gray-400 text-sm mb-1">Lancers Francs</p>
+                <p className="text-2xl font-bold">{globalStats.equipe.lf_made}/{globalStats.equipe.lf_taken}</p>
+                <p className="text-green-400 text-sm font-semibold">{formatPercentage(globalStats.equipe.lf_made, globalStats.equipe.lf_taken)}</p>
+              </div>
+              <div className="bg-gray-800 rounded-xl p-4">
+                <p className="text-gray-400 text-sm mb-1">Pertes de balle</p>
+                <p className="text-2xl font-bold text-red-400">{globalStats.equipe.pertes}</p>
+                <p className="text-gray-500 text-xs">Total cumulé</p>
+              </div>
+              <div className="bg-gray-800 rounded-xl p-4">
+                <p className="text-gray-400 text-sm mb-1">Rebonds Off.</p>
+                <p className="text-2xl font-bold text-purple-400">{globalStats.equipe.rebonds}</p>
+                <p className="text-gray-500 text-xs">Total cumulé</p>
+              </div>
+              <div className="bg-gray-800 rounded-xl p-4">
+                <p className="text-gray-400 text-sm mb-1">Interceptions</p>
+                <p className="text-2xl font-bold text-blue-400">{globalStats.equipe.interceptions}</p>
+                <p className="text-gray-500 text-xs">Total cumulé</p>
+              </div>
+              <div className="bg-gray-800 rounded-xl p-4">
+                <p className="text-gray-400 text-sm mb-1">Paniers Faciles Loupés</p>
+                <p className="text-2xl font-bold text-orange-400">{globalStats.equipe.paniers_loupes}</p>
+                <p className="text-gray-500 text-xs">Total cumulé</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-gray-900 rounded-2xl p-6 shadow-xl">
+            <h2 className="text-2xl font-bold mb-6 text-red-400">Adversaires (cumulé)</h2>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <div className="bg-gray-800 rounded-xl p-4">
+                <p className="text-gray-400 text-sm mb-1">3 Points</p>
+                <p className="text-2xl font-bold">{globalStats.adversaire.pts3_made}/{globalStats.adversaire.pts3_taken}</p>
+                <p className="text-red-400 text-sm font-semibold">{formatPercentage(globalStats.adversaire.pts3_made, globalStats.adversaire.pts3_taken)}</p>
+              </div>
+              <div className="bg-gray-800 rounded-xl p-4">
+                <p className="text-gray-400 text-sm mb-1">Lancers Francs</p>
+                <p className="text-2xl font-bold">{globalStats.adversaire.lf_made}/{globalStats.adversaire.lf_taken}</p>
+                <p className="text-red-400 text-sm font-semibold">{formatPercentage(globalStats.adversaire.lf_made, globalStats.adversaire.lf_taken)}</p>
+              </div>
+              <div className="bg-gray-800 rounded-xl p-4">
+                <p className="text-gray-400 text-sm mb-1">Rebonds Off.</p>
+                <p className="text-2xl font-bold text-purple-400">{globalStats.adversaire.rebonds}</p>
+                <p className="text-gray-500 text-xs">Total cumulé</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ÉCRAN MATCH
+  const currentMatch = matches[currentMatchId];
+  if (!currentMatch) {
+    setCurrentScreen('home');
+    return null;
+  }
+  
+  const totalScore = calculateTotalScore(currentMatch);
+
+  return (
+    <div className="min-h-screen bg-gray-950 text-white p-4">
+      <div className="max-w-4xl mx-auto">
+        <button
+          onClick={() => {
+            setCurrentScreen('home');
+            setSelectedTeam(null);
+            setPendingConsequence(null);
+          }}
+          className="mb-4 bg-gray-800 hover:bg-gray-700 px-4 py-2
