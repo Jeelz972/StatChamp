@@ -1,5 +1,6 @@
 // app.js - Application Complète Stats Basketball
 // app.js - Application Complète Stats Basketball
+// app.js - Application Complète Stats Basketball
 const { useState, useEffect } = React;
 
 // Configuration des constantes
@@ -46,6 +47,21 @@ quartersData: [
 overtime: null,
 activeQuarter: 0
 });
+const [globalStats, setGlobalStats] = useState({
+    rebonds: 0,
+    rebondsConsequences: {
+      panier2pts: 0,
+      panier3pts: 0,
+      faute: 0,
+      rien: 0
+    },
+    interceptions: 0,
+    passesDecisives: 0,
+    pertesDeBalle: 0,
+    fautes: 0,
+    tirs2pts: { reussis: 0, rates: 0 },
+    tirs3pts: { reussis: 0, rates: 0 },
+  });
 
 // Chargement initial des données
 useEffect(() => {
