@@ -1,4 +1,5 @@
 // app.js - Application Complète Stats Basketball
+// app.js - Application Complète Stats Basketball
 const { useState, useEffect } = React;
 
 // Configuration des constantes
@@ -857,7 +858,7 @@ setMissedShotTeam(null);
 };
 
 const undoLastAction = () => {
-const newStats = { …currentMatchStats };
+const newStats = { ...currentMatchStats };
 const quarter = newStats.quartersData[currentMatchStats.activeQuarter];
 
 
@@ -909,7 +910,7 @@ setCurrentMatchStats(newStats);
 };
 
 const addOvertime = () => {
-const newStats = { …currentMatchStats };
+const newStats = {...currentMatchStats };
 if (!newStats.overtime) {
 newStats.overtime = { nous: 0, adversaire: 0, actions: [] };
 newStats.quartersData.push({ quarter: 5, nous: 0, adversaire: 0, actions: [] });
@@ -920,7 +921,7 @@ setCurrentMatchStats(newStats);
 
 const saveMatch = () => {
 if (!currentMatchStats.adversaire.nom) {
-alert(“Veuillez entrer le nom de l'adversaire");
+alert("Veuillez entrer le nom de l'adversaire");
 return;
 }
 
@@ -958,32 +959,32 @@ return (
 <h2 className="text-2xl font-bold text-gray-800 mb-3">🏀 Match en Cours</h2>
 <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
 <input
-type=“date"
+type="date"
 value={currentMatchStats.date}
-onChange={(e) => setCurrentMatchStats({…currentMatchStats, date: e.target.value})}
-className=“px-3 py-2 border-2 border-gray-300 rounded-lg"
+onChange={(e) => setCurrentMatchStats({...currentMatchStats, date: e.target.value})}
+className="px-3 py-2 border-2 border-gray-300 rounded-lg"
 />
 <input
-type=“time"
+type="time"
 value={currentMatchStats.time}
-onChange={(e) => setCurrentMatchStats({…currentMatchStats, time: e.target.value})}
-className=“px-3 py-2 border-2 border-gray-300 rounded-lg"
+onChange={(e) => setCurrentMatchStats({...currentMatchStats, time: e.target.value})}
+className="px-3 py-2 border-2 border-gray-300 rounded-lg"
 />
 <input
-type=“text"
+type="text"
 value={currentMatchStats.adversaire.nom}
 onChange={(e) => {
-const newStats = {…currentMatchStats};
+const newStats = {...currentMatchStats};
 newStats.adversaire.nom = e.target.value;
 setCurrentMatchStats(newStats);
 }}
-placeholder=“Nom de l'équipe adverse"
-className=“px-3 py-2 border-2 border-gray-300 rounded-lg"
+placeholder="Nom de l'équipe adverse"
+className="px-3 py-2 border-2 border-gray-300 rounded-lg"
 />
 <select
 value={currentMatchStats.location}
-onChange={(e) => setCurrentMatchStats({…currentMatchStats, location: e.target.value})}
-className=“px-3 py-2 border-2 border-gray-300 rounded-lg font-semibold"
+onChange={(e) => setCurrentMatchStats({...currentMatchStats, location: e.target.value})}
+className="px-3 py-2 border-2 border-gray-300 rounded-lg font-semibold"
 >
 <option value="home">🏠 Domicile</option>
 <option value="away">✈️ Extérieur</option>
