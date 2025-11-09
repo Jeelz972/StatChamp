@@ -3,38 +3,38 @@ const { useState, useEffect } = React;
 
 // Configuration des constantes
 const ZONES = [
-{ id: ‘gauche_0’, name: ‘Gauche 0°’, color: ‘#3b82f6’ },
-{ id: ‘droit_0’, name: ‘Droit 0°’, color: ‘#ec4899’ },
-{ id: ‘gauche_45’, name: ‘Gauche 45°’, color: ‘#10b981’ },
-{ id: ‘droit_45’, name: ‘Droit 45°’, color: ‘#f59e0b’ },
-{ id: ‘gauche_70’, name: ‘Gauche 70°’, color: ‘#06b6d4’ },
-{ id: ‘droit_70’, name: ‘Droit 70°’, color: ‘#ef4444’ },
-{ id: ‘axe’, name: ‘Axe’, color: ‘#6366f1’ }
+{ id: 'gauche_0', name: 'Gauche 0°', color: '#3b82f6' },
+{ id: 'droit_0', name: 'Droit 0°', color: '#ec4899' },
+{ id: 'gauche_45', name: 'Gauche 45°', color: '#10b981' },
+{ id: 'droit_45', name: 'Droit 45°', color: '#f59e0b' },
+{ id: 'gauche_70', name: 'Gauche 70°', color: '#06b6d4' },
+{ id: 'droit_70', name: 'Droit 70°', color: '#ef4444' },
+{ id: 'axe', name: 'Axe', color: '#6366f1' }
 ];
 
 const PLAYERS = [
-{ id: 1, name: ‘Maxime’ },
-{ id: 2, name: ‘Sasha’ },
-{ id: 3, name: ‘Théotime’ },
-{ id: 4, name: ‘Noé’ },
-{ id: 5, name: ‘Keziah’ },
-{ id: 6, name: ‘Nathan’ },
-{ id: 7, name: ‘Valentin’ },
-{ id: 8, name: ‘Jad’ },
-{ id: 9, name: ‘Marco’ },
-{ id: 10, name: ‘Thierno’ },
-{ id: 11, name: ‘Peniel’ },
-{ id: 12, name: ‘Nat’ }
+{ id: 1, name: 'Maxime' },
+{ id: 2, name: 'Sasha' },
+{ id: 3, name: 'Théotime' },
+{ id: 4, name: 'Noé' },
+{ id: 5, name: 'Keziah' },
+{ id: 6, name: 'Nathan' },
+{ id: 7, name: 'Valentin' },
+{ id: 8, name: 'Jad' },
+{ id: 9, name: 'Marco' },
+{ id: 10, name: 'Thierno' },
+{ id: 11, name: 'Peniel' },
+{ id: 12, name: 'Nat' }
 ];
 
 function BasketballStatsApp() {
-const [activeModule, setActiveModule] = useState(‘team’);
+const [activeModule, setActiveModule] = useState('team');
 const [shots, setShots] = useState({});
 const [teamStats, setTeamStats] = useState([]);
 const [currentMatchStats, setCurrentMatchStats] = useState({
-date: new Date().toISOString().split(‘T’)[0],
-time: new Date().toLocaleTimeString(‘fr-FR’, { hour: ‘2-digit’, minute: ‘2-digit’ }),
-adversaire: { nom: ‘’ },
+date: new Date().toISOString().split('T')[0],
+time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+adversaire: { nom: '' },
 quartersData: [
 { quarter: 1, nous: 0, adversaire: 0, actions: [] },
 { quarter: 2, nous: 0, adversaire: 0, actions: [] },
@@ -48,28 +48,28 @@ activeQuarter: 0
 // Chargement initial des données
 useEffect(() => {
 try {
-const savedShots = localStorage.getItem(‘basketball_shots’);
-const savedTeamStats = localStorage.getItem(‘basketball_team_stats’);
+const savedShots = localStorage.getItem('basketball_shots');
+const savedTeamStats = localStorage.getItem('basketball_team_stats');
 if (savedShots) setShots(JSON.parse(savedShots));
 if (savedTeamStats) setTeamStats(JSON.parse(savedTeamStats));
 } catch (error) {
-console.log(‘Initialisation des données’);
+console.log('Initialisation des données');
 }
 }, []);
 
 const saveShots = (newShots) => {
 setShots(newShots);
-localStorage.setItem(‘basketball_shots’, JSON.stringify(newShots));
+localStorage.setItem('basketball_shots', JSON.stringify(newShots));
 };
 
 const saveTeamStats = (newStats) => {
 setTeamStats(newStats);
-localStorage.setItem(‘basketball_team_stats’, JSON.stringify(newStats));
+localStorage.setItem('basketball_team_stats', JSON.stringify(newStats));
 };
 
 const exportAllDataToCSV = () => {
-let csv = ‘=== STATISTIQUES DE TIR ===\n’;
-csv += ‘Joueur,Zone,Tirs Tentés,Tirs Marqués,Pourcentage\n’;
+let csv = '=== STATISTIQUES DE TIR ===\n';
+csv += 'Joueur,Zone,Tirs Tentés,Tirs Marqués,Pourcentage\n';
 
 
 PLAYERS.forEach(player => {
@@ -106,13 +106,13 @@ link.click();
 };
 
 const resetAllData = () => {
-if (confirm(‘Êtes-vous sûr de vouloir effacer TOUTES les données ?’)) {
+if (confirm('Êtes-vous sûr de vouloir effacer TOUTES les données ?')) {
 setShots({});
 setTeamStats([]);
 setCurrentMatchStats({
-date: new Date().toISOString().split(‘T’)[0],
-time: new Date().toLocaleTimeString(‘fr-FR’, { hour: ‘2-digit’, minute: ‘2-digit’ }),
-adversaire: { nom: ‘’ },
+date: new Date().toISOString().split('T')[0],
+time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+adversaire: { nom: '' },
 quartersData: [
 { quarter: 1, nous: 0, adversaire: 0, actions: [] },
 { quarter: 2, nous: 0, adversaire: 0, actions: [] },
@@ -134,19 +134,19 @@ return (
 <h1 className="text-3xl font-bold mb-4">🏀 Stats Basketball Pro</h1>
 <div className="flex flex-wrap gap-2">
 <button
-onClick={() => setActiveModule(‘team’)}
+onClick={() => setActiveModule('team')}
 className={`px-6 py-2 rounded-lg font-semibold transition-all ${ activeModule === 'team' ? 'bg-white text-blue-600 shadow-lg' : 'bg-white/20 hover:bg-white/30' }`}
 >
 🏀 Match en Cours
 </button>
 <button
-onClick={() => setActiveModule(‘shooting’)}
+onClick={() => setActiveModule('shooting')}
 className={`px-6 py-2 rounded-lg font-semibold transition-all ${ activeModule === 'shooting' ? 'bg-white text-blue-600 shadow-lg' : 'bg-white/20 hover:bg-white/30' }`}
 >
 🎯 Stats de Tir
 </button>
 <button
-onClick={() => setActiveModule(‘history’)}
+onClick={() => setActiveModule('history')}
 className={`px-6 py-2 rounded-lg font-semibold transition-all ${ activeModule === 'history' ? 'bg-white text-blue-600 shadow-lg' : 'bg-white/20 hover:bg-white/30' }`}
 >
 📊 Historique
@@ -193,8 +193,8 @@ className={`px-6 py-2 rounded-lg font-semibold transition-all ${ activeModule ==
 function ShootingModule({ shots, saveShots, exportToCSV, resetData }) {
 const [selectedPlayer, setSelectedPlayer] = useState(PLAYERS[0]);
 const [selectedZone, setSelectedZone] = useState(null);
-const [inputTentes, setInputTentes] = useState(’’);
-const [inputMarques, setInputMarques] = useState(’’);
+const [inputTentes, setInputTentes] = useState('');
+const [inputMarques, setInputMarques] = useState('');
 const [viewStats, setViewStats] = useState(false);
 
 const validateEntry = () => {
@@ -256,7 +256,7 @@ return (
 <h2 className="text-3xl font-bold text-gray-800">Tableau des Statistiques</h2>
 <button
 onClick={() => setViewStats(false)}
-className=“px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 font-semibold”
+className='px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 font-semibold'
 >
 Retour
 </button>
@@ -286,8 +286,7 @@ Retour
                   <td className="border border-gray-300 p-3 font-semibold">{player.name}</td>
                   {ZONES.map(zone => {
                     const zoneData = playerShots[zone.id] || { tentes: 0, marques: 0 };
-                    const pct = zoneData.tentes > 0 ? ((zoneData.marques / zoneData.tentes) * 100).toFixed(0) : '-';
-                    
+                    const pct = zoneData.tentes > 0 ? ((zoneData.marques / zoneData.tentes) * 100).toFixed(0) : '-';                    
                     return (
                       <td key={zone.id} className="border border-gray-300 p-3 text-center text-sm">
                         <div>{zoneData.marques}/{zoneData.tentes}</div>
@@ -459,7 +458,7 @@ const isSelected = selectedPlayer?.id === player.id;
 );
 }
 
-// Module Stats d’Équipe
+// Module Stats d'Équipe
 function TeamStatsModule({ teamStats, currentMatchStats, setCurrentMatchStats, saveTeamStats }) {
 const [showActionModal, setShowActionModal] = useState(false);
 const [showMissedShotModal, setShowMissedShotModal] = useState(false);
@@ -599,19 +598,19 @@ return stats
 // Sauvegarde automatique
 useEffect(() => {
 const timer = setTimeout(() => {
-localStorage.setItem(‘basketball_current_match’, JSON.stringify(currentMatchStats));
+localStorage.setItem('basketball_current_match', JSON.stringify(currentMatchStats));
 }, 1000);
 return () => clearTimeout(timer);
 }, [currentMatchStats]);
 
 // Chargement du match en cours
 useEffect(() => {
-const saved = localStorage.getItem(‘basketball_current_match’);
+const saved = localStorage.getItem('basketball_current_match');
 if (saved) {
 try {
 setCurrentMatchStats(JSON.parse(saved));
 } catch (e) {
-console.log(‘Erreur chargement match en cours’);
+console.log('Erreur chargement match en cours');
 }
 }
 }, []);
@@ -659,7 +658,7 @@ setMissedShotTeam(null);
 };
 
 const undoLastAction = () => {
-const newStats = { …currentMatchStats };
+const newStats = { ...currentMatchStats };
 const quarter = newStats.quartersData[currentMatchStats.activeQuarter];
 
 
@@ -689,7 +688,7 @@ setCurrentMatchStats(newStats);
 };
 
 const addOvertime = () => {
-const newStats = { …currentMatchStats };
+const newStats = { ...currentMatchStats };
 if (!newStats.overtime) {
 newStats.overtime = { nous: 0, adversaire: 0, actions: [] };
 newStats.quartersData.push({ quarter: 5, nous: 0, adversaire: 0, actions: [] });
@@ -700,7 +699,7 @@ setCurrentMatchStats(newStats);
 
 const saveMatch = () => {
 if (!currentMatchStats.adversaire.nom) {
-alert(“Veuillez entrer le nom de l’adversaire”);
+alert("Veuillez entrer le nom de l'adversaire");
 return;
 }
 
@@ -737,27 +736,27 @@ return (
 <h2 className="text-2xl font-bold text-gray-800 mb-3">🏀 Match en Cours</h2>
 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
 <input
-type=“date”
+type='date'
 value={currentMatchStats.date}
-onChange={(e) => setCurrentMatchStats({…currentMatchStats, date: e.target.value})}
-className=“px-3 py-2 border-2 border-gray-300 rounded-lg”
+onChange={(e) => setCurrentMatchStats({...currentMatchStats, date: e.target.value})}
+className='px-3 py-2 border-2 border-gray-300 rounded-lg'
 />
 <input
-type=“time”
+type='time'
 value={currentMatchStats.time}
-onChange={(e) => setCurrentMatchStats({…currentMatchStats, time: e.target.value})}
-className=“px-3 py-2 border-2 border-gray-300 rounded-lg”
+onChange={(e) => setCurrentMatchStats({...currentMatchStats, time: e.target.value})}
+className='px-3 py-2 border-2 border-gray-300 rounded-lg'
 />
 <input
-type=“text”
+type='text'
 value={currentMatchStats.adversaire.nom}
 onChange={(e) => {
-const newStats = {…currentMatchStats};
+const newStats = {...currentMatchStats};
 newStats.adversaire.nom = e.target.value;
 setCurrentMatchStats(newStats);
 }}
-placeholder=“Nom de l’équipe adverse”
-className=“px-3 py-2 border-2 border-gray-300 rounded-lg”
+placeholder="Nom de l'équipe adverse"
+className='px-3 py-2 border-2 border-gray-300 rounded-lg'
 />
 </div>
 </div>
@@ -1403,14 +1402,14 @@ className=“px-3 py-2 border-2 border-gray-300 rounded-lg”
 
 // Module Historique
 function HistoryModule({ shots, teamStats, exportToCSV, saveTeamStats }) {
-const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split(‘T’)[0]);
+const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
 const [expandedMatch, setExpandedMatch] = useState(null);
 
 const deleteMatch = (matchIndex) => {
-if (confirm(‘Supprimer ce match ?’)) {
+if (confirm('Supprimer ce match ?')) {
 const newStats = teamStats.filter((_, idx) => idx !== matchIndex);
 saveTeamStats(newStats);
-alert(‘Match supprimé !’);
+alert('Match supprimé !');
 }
 };
 
@@ -1673,5 +1672,5 @@ return (
 );
 }
 
-// Rendu de l’application
-ReactDOM.render(<BasketballStatsApp />, document.getElementById(‘root’));
+// Rendu de l'application
+ReactDOM.render(<BasketballStatsApp />, document.getElementById('root'));
