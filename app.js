@@ -3,20 +3,20 @@ const { useState, useEffect } = React;
 
 // Configuration des constantes
 const ZONES = [
-{ id: 'gauche_0', name: 'Gauche 0°', color: '#3b82f6' },
-{ id: 'droit_0', name: 'Droit 0°', color: '#ec4899' },
-{ id: 'gauche_45', name: 'Gauche 45°', color: '#10b981' },
-{ id: 'droit_45', name: 'Droit 45°', color: '#f59e0b' },
-{ id: 'gauche_70', name: 'Gauche 70°', color: '#06b6d4' },
-{ id: 'droit_70', name: 'Droit 70°', color: '#ef4444' },
+{ id: 'gauche_0', name: 'Gauche 0deg', color: '#3b82f6' },
+{ id: 'droit_0', name: 'Droit 0deg', color: '#ec4899' },
+{ id: 'gauche_45', name: 'Gauche 45deg', color: '#10b981' },
+{ id: 'droit_45', name: 'Droit 45deg', color: '#f59e0b' },
+{ id: 'gauche_70', name: 'Gauche 70deg', color: '#06b6d4' },
+{ id: 'droit_70', name: 'Droit 70deg', color: '#ef4444' },
 { id: 'axe', name: 'Axe', color: '#6366f1' }
 ];
 
 const PLAYERS = [
 { id: 1, name: 'Maxime' },
 { id: 2, name: 'Sasha' },
-{ id: 3, name: 'Théotime' },
-{ id: 4, name: 'Noé' },
+{ id: 3, name: 'Theotime' },
+{ id: 4, name: 'Noe' },
 { id: 5, name: 'Keziah' },
 { id: 6, name: 'Nathan' },
 { id: 7, name: 'Valentin' },
@@ -35,6 +35,7 @@ const [currentMatchStats, setCurrentMatchStats] = useState({
 date: new Date().toISOString().split('T')[0],
 time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
 adversaire: { nom: '' },
+location: 'home', // 'home' ou 'away'
 quartersData: [
 { quarter: 1, nous: 0, adversaire: 0, actions: [] },
 { quarter: 2, nous: 0, adversaire: 0, actions: [] },
@@ -113,6 +114,7 @@ setCurrentMatchStats({
 date: new Date().toISOString().split('T')[0],
 time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
 adversaire: { nom: '' },
+location: 'home',
 quartersData: [
 { quarter: 1, nous: 0, adversaire: 0, actions: [] },
 { quarter: 2, nous: 0, adversaire: 0, actions: [] },
@@ -153,8 +155,127 @@ className={`px-6 py-2 rounded-lg font-semibold transition-all ${ activeModule ==
 </button>
 </div>
 </div>
-</div>
 
+
+    {/* Statistiques détaillées avec conséquences */}
+    <div className="mt-6 space-y-4">
+      <h3 className="text-xl font-bold text-gray-700">📊 Détail des Conséquences</h3>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Rebonds Offensifs NOUS */}
+        <div className="bg-cyan-50 p-4 rounded-lg border-2 border-cyan-200">
+          <div className="flex justify-between items-center mb-2">
+            <h4 className="font-bold text-cyan-800">🔄 Rebonds Offensifs (Nous)</h4>
+            <span className="text-2xl font-bold text-cyan-600">{globalStats.rebonds}</span>
+          </div>
+          <div className="space-y-1 text-sm">
+            <div className="flex justify-between">
+              <span className="text-gray-700">→ Panier 2pts:</span>
+              <span className="font-semibold text-green-600">{globalStats.rebondsConsequences.panier2pts}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-700">→ Panier 3pts:</span>
+              <span className="font-semibold text-green-700">{globalStats.rebondsConsequences.panier3pts}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-700">→ Faute:</span>
+              <span className="font-semibold text-yellow-600">{globalStats.rebondsConsequences.faute}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-700">→ Rien:</span>
+              <span className="font-semibold text-gray-500">{globalStats.rebondsConsequences.rien}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Pertes de Balle */}
+        <div className="bg-orange-50 p-4 rounded-lg border-2 border-orange-200">
+          <div className="flex justify-between items-center mb-2">
+            <h4 className="font-bold text-orange-800">⚠️ Pertes de Balle</h4>
+            <span className="text-2xl font-bold text-orange-600">{globalStats.pertes}</span>
+          </div>
+          <div className="space-y-1 text-sm">
+            <div className="flex justify-between">
+              <span className="text-gray-700">→ Panier 2pts Nous:</span>
+              <span className="font-semibold text-green-600">{globalStats.pertesConsequences.panier2ptsNous}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-700">→ Panier 3pts Nous:</span>
+              <span className="font-semibold text-green-700">{globalStats.pertesConsequences.panier3ptsNous}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-700">→ Panier 2pts Adv:</span>
+              <span className="font-semibold text-red-600">{globalStats.pertesConsequences.panier2ptsAdv}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-700">→ Panier 3pts Adv:</span>
+              <span className="font-semibold text-red-700">{globalStats.pertesConsequences.panier3ptsAdv}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-700">→ Faute:</span>
+              <span className="font-semibold text-yellow-600">{globalStats.pertesConsequences.faute}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-700">→ Rien:</span>
+              <span className="font-semibold text-gray-500">{globalStats.pertesConsequences.rien}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Interceptions */}
+        <div className="bg-purple-50 p-4 rounded-lg border-2 border-purple-200">
+          <div className="flex justify-between items-center mb-2">
+            <h4 className="font-bold text-purple-800">🎯 Interceptions</h4>
+            <span className="text-2xl font-bold text-purple-600">{globalStats.interceptions}</span>
+          </div>
+          <div className="space-y-1 text-sm">
+            <div className="flex justify-between">
+              <span className="text-gray-700">→ Panier 2pts:</span>
+              <span className="font-semibold text-green-600">{globalStats.interceptionsConsequences.panier2pts}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-700">→ Panier 3pts:</span>
+              <span className="font-semibold text-green-700">{globalStats.interceptionsConsequences.panier3pts}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-700">→ Faute:</span>
+              <span className="font-semibold text-yellow-600">{globalStats.interceptionsConsequences.faute}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-700">→ Rien:</span>
+              <span className="font-semibold text-gray-500">{globalStats.interceptionsConsequences.rien}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Rebonds Offensifs Adversaire */}
+        <div className="bg-rose-50 p-4 rounded-lg border-2 border-rose-200">
+          <div className="flex justify-between items-center mb-2">
+            <h4 className="font-bold text-rose-800">🔄 Rebonds Offensifs (Adv)</h4>
+            <span className="text-2xl font-bold text-rose-600">{globalStats.rebondsAdv}</span>
+          </div>
+          <div className="space-y-1 text-sm">
+            <div className="flex justify-between">
+              <span className="text-gray-700">→ Panier 2pts:</span>
+              <span className="font-semibold text-red-600">{globalStats.rebondsAdvConsequences.panier2pts}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-700">→ Panier 3pts:</span>
+              <span className="font-semibold text-red-700">{globalStats.rebondsAdvConsequences.panier3pts}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-700">→ Faute:</span>
+              <span className="font-semibold text-yellow-600">{globalStats.rebondsAdvConsequences.faute}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-700">→ Rien:</span>
+              <span className="font-semibold text-gray-500">{globalStats.rebondsAdvConsequences.rien}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   {/* Contenu Principal */}
   <div className="p-4">
@@ -256,7 +377,7 @@ return (
 <h2 className="text-3xl font-bold text-gray-800">Tableau des Statistiques</h2>
 <button
 onClick={() => setViewStats(false)}
-className='px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 font-semibold'
+className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 font-semibold"
 >
 Retour
 </button>
@@ -286,7 +407,8 @@ Retour
                   <td className="border border-gray-300 p-3 font-semibold">{player.name}</td>
                   {ZONES.map(zone => {
                     const zoneData = playerShots[zone.id] || { tentes: 0, marques: 0 };
-                    const pct = zoneData.tentes > 0 ? ((zoneData.marques / zoneData.tentes) * 100).toFixed(0) : '-';                    
+                    const pct = zoneData.tentes > 0 ? ((zoneData.marques / zoneData.tentes) * 100).toFixed(0) : '-';
+                    
                     return (
                       <td key={zone.id} className="border border-gray-300 p-3 text-center text-sm">
                         <div>{zoneData.marques}/{zoneData.tentes}</div>
@@ -591,7 +713,8 @@ currentMatchStats.quartersData.forEach(quarter => {
   });
 });
 
-return stats
+return stats;
+
 
 };
 
@@ -633,18 +756,94 @@ const newStats = { ...currentMatchStats };
 const quarter = newStats.quartersData[currentMatchStats.activeQuarter];
 quarter.actions.push(action);
 
+// Ajouter les points de l'action principale
 if (team === 'nous') {
   quarter.nous += points;
 } else if (team === 'adversaire') {
   quarter.adversaire += points;
 }
 
-// Gérer les conséquences
+// Gérer les conséquences ET incrémenter automatiquement les compteurs
 if (consequence) {
+  // Ajouter les points de la conséquence
   if (consequence.team === 'nous') {
-    quarter.nous += consequence.points;
+    quarter.nous += consequence.points || 0;
+    
+    // Créer automatiquement l'action correspondante
+    if (consequence.points === 2) {
+      quarter.actions.push({
+        id: Date.now() + 1,
+        timestamp: new Date().toISOString(),
+        type: 'panier_2pts',
+        team: 'nous',
+        points: 2,
+        consequence: null,
+        shotType: null,
+        player: selectedPlayer?.name || null,
+        quarter: currentMatchStats.activeQuarter + 1,
+        autoGenerated: true
+      });
+    } else if (consequence.points === 3) {
+      quarter.actions.push({
+        id: Date.now() + 1,
+        timestamp: new Date().toISOString(),
+        type: 'panier_3pts',
+        team: 'nous',
+        points: 3,
+        consequence: null,
+        shotType: null,
+        player: selectedPlayer?.name || null,
+        quarter: currentMatchStats.activeQuarter + 1,
+        autoGenerated: true
+      });
+    }
   } else if (consequence.team === 'adversaire') {
-    quarter.adversaire += consequence.points;
+    quarter.adversaire += consequence.points || 0;
+    
+    // Créer automatiquement l'action correspondante
+    if (consequence.points === 2) {
+      quarter.actions.push({
+        id: Date.now() + 1,
+        timestamp: new Date().toISOString(),
+        type: 'panier_2pts',
+        team: 'adversaire',
+        points: 2,
+        consequence: null,
+        shotType: null,
+        player: null,
+        quarter: currentMatchStats.activeQuarter + 1,
+        autoGenerated: true
+      });
+    } else if (consequence.points === 3) {
+      quarter.actions.push({
+        id: Date.now() + 1,
+        timestamp: new Date().toISOString(),
+        type: 'panier_3pts',
+        team: 'adversaire',
+        points: 3,
+        consequence: null,
+        shotType: null,
+        player: null,
+        quarter: currentMatchStats.activeQuarter + 1,
+        autoGenerated: true
+      });
+    }
+  }
+  
+  // Si la conséquence est une faute, créer une action faute
+  if (consequence.type === 'faute') {
+    quarter.actions.push({
+      id: Date.now() + 2,
+      timestamp: new Date().toISOString(),
+      type: 'faute',
+      team: team === 'nous' ? 'adversaire' : 'nous',
+      points: 0,
+      consequence: null,
+      shotType: null,
+      player: null,
+      quarter: currentMatchStats.activeQuarter + 1,
+      autoGenerated: true
+    });
   }
 }
 
@@ -658,29 +857,51 @@ setMissedShotTeam(null);
 };
 
 const undoLastAction = () => {
-const newStats = { ...currentMatchStats };
+const newStats = { …currentMatchStats };
 const quarter = newStats.quartersData[currentMatchStats.activeQuarter];
 
 
 if (quarter.actions.length === 0) return;
 
-const lastAction = quarter.actions.pop();
+// Trouver la dernière action non auto-générée
+let lastActionIndex = -1;
+for (let i = quarter.actions.length - 1; i >= 0; i--) {
+  if (!quarter.actions[i].autoGenerated) {
+    lastActionIndex = i;
+    break;
+  }
+}
 
-// Annuler les points
+if (lastActionIndex === -1) return;
+
+const lastAction = quarter.actions[lastActionIndex];
+
+// Annuler les points de l'action principale
 if (lastAction.team === 'nous') {
   quarter.nous -= lastAction.points;
 } else if (lastAction.team === 'adversaire') {
   quarter.adversaire -= lastAction.points;
 }
 
-// Annuler la conséquence
-if (lastAction.consequence) {
-  if (lastAction.consequence.team === 'nous') {
-    quarter.nous -= lastAction.consequence.points;
-  } else if (lastAction.consequence.team === 'adversaire') {
-    quarter.adversaire -= lastAction.consequence.points;
+// Compter combien d'actions auto-générées suivent cette action
+let autoGeneratedCount = 0;
+for (let i = lastActionIndex + 1; i < quarter.actions.length; i++) {
+  if (quarter.actions[i].autoGenerated) {
+    const autoAction = quarter.actions[i];
+    // Annuler les points des actions auto-générées
+    if (autoAction.team === 'nous') {
+      quarter.nous -= autoAction.points;
+    } else if (autoAction.team === 'adversaire') {
+      quarter.adversaire -= autoAction.points;
+    }
+    autoGeneratedCount++;
+  } else {
+    break; // Arrêter si on trouve une action non auto-générée
   }
 }
+
+// Supprimer l'action principale et toutes les actions auto-générées qui suivent
+quarter.actions.splice(lastActionIndex, 1 + autoGeneratedCount);
 
 setCurrentMatchStats(newStats);
 
@@ -688,7 +909,7 @@ setCurrentMatchStats(newStats);
 };
 
 const addOvertime = () => {
-const newStats = { ...currentMatchStats };
+const newStats = { …currentMatchStats };
 if (!newStats.overtime) {
 newStats.overtime = { nous: 0, adversaire: 0, actions: [] };
 newStats.quartersData.push({ quarter: 5, nous: 0, adversaire: 0, actions: [] });
@@ -699,7 +920,7 @@ setCurrentMatchStats(newStats);
 
 const saveMatch = () => {
 if (!currentMatchStats.adversaire.nom) {
-alert("Veuillez entrer le nom de l'adversaire");
+alert(“Veuillez entrer le nom de l'adversaire");
 return;
 }
 
@@ -712,6 +933,7 @@ setCurrentMatchStats({
   date: new Date().toISOString().split('T')[0],
   time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
   adversaire: { nom: '' },
+  location: 'home',
   quartersData: [
     { quarter: 1, nous: 0, adversaire: 0, actions: [] },
     { quarter: 2, nous: 0, adversaire: 0, actions: [] },
@@ -734,30 +956,38 @@ return (
 {/* En-tête du match */}
 <div className="mb-4">
 <h2 className="text-2xl font-bold text-gray-800 mb-3">🏀 Match en Cours</h2>
-<div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+<div className="grid grid-cols-1 md:grid-cols-4 gap-3">
 <input
-type='date'
+type=“date"
 value={currentMatchStats.date}
-onChange={(e) => setCurrentMatchStats({...currentMatchStats, date: e.target.value})}
-className='px-3 py-2 border-2 border-gray-300 rounded-lg'
+onChange={(e) => setCurrentMatchStats({…currentMatchStats, date: e.target.value})}
+className=“px-3 py-2 border-2 border-gray-300 rounded-lg"
 />
 <input
-type='time'
+type=“time"
 value={currentMatchStats.time}
-onChange={(e) => setCurrentMatchStats({...currentMatchStats, time: e.target.value})}
-className='px-3 py-2 border-2 border-gray-300 rounded-lg'
+onChange={(e) => setCurrentMatchStats({…currentMatchStats, time: e.target.value})}
+className=“px-3 py-2 border-2 border-gray-300 rounded-lg"
 />
 <input
-type='text'
+type=“text"
 value={currentMatchStats.adversaire.nom}
 onChange={(e) => {
-const newStats = {...currentMatchStats};
+const newStats = {…currentMatchStats};
 newStats.adversaire.nom = e.target.value;
 setCurrentMatchStats(newStats);
 }}
-placeholder="Nom de l'équipe adverse"
-className='px-3 py-2 border-2 border-gray-300 rounded-lg'
+placeholder=“Nom de l'équipe adverse"
+className=“px-3 py-2 border-2 border-gray-300 rounded-lg"
 />
+<select
+value={currentMatchStats.location}
+onChange={(e) => setCurrentMatchStats({…currentMatchStats, location: e.target.value})}
+className=“px-3 py-2 border-2 border-gray-300 rounded-lg font-semibold"
+>
+<option value="home">🏠 Domicile</option>
+<option value="away">✈️ Extérieur</option>
+</select>
 </div>
 </div>
 
@@ -1053,19 +1283,21 @@ className='px-3 py-2 border-2 border-gray-300 rounded-lg'
         ) : (
           activeQuarter.actions.slice().reverse().map((action) => (
             <div key={action.id} className="bg-white p-2 rounded border-l-4 text-sm" style={{
-              borderColor: action.team === 'nous' ? '#3b82f6' : '#ef4444'
+              borderColor: action.team === 'nous' ? '#3b82f6' : '#ef4444',
+              opacity: action.autoGenerated ? 0.7 : 1
             }}>
               <div className="flex justify-between items-start">
                 <div>
+                  {action.autoGenerated && <span className="text-xs text-gray-500 italic">[Auto] </span>}
                   <span className="font-semibold">
                     {action.type === 'tir_loupe' 
-                      ? `TIR LOUPÉ ${action.shotType ? action.shotType.toUpperCase() : ''}`
+                      ? `TIR LOUPE ${action.shotType ? action.shotType.toUpperCase() : ''}`
                       : action.type.replace(/_/g, ' ').toUpperCase()
                     }
                   </span>
                   {action.player && <span className="text-xs text-gray-600"> - {action.player}</span>}
                   {action.points > 0 && <span className="ml-1 font-bold text-green-600">+{action.points}</span>}
-                  {action.consequence && (
+                  {action.consequence && !action.autoGenerated && (
                     <span className="ml-1 text-xs text-gray-700">
                       → {action.consequence.points ? `+${action.consequence.points}pts` : action.consequence.type}
                     </span>
@@ -1109,6 +1341,16 @@ className='px-3 py-2 border-2 border-gray-300 rounded-lg'
             >
               ×
             </button>
+          </div>
+
+          {/* Info du match */}
+          <div className="mb-4 text-center">
+            <span className="inline-block px-4 py-2 rounded-lg text-sm font-semibold" style={{
+              backgroundColor: currentMatchStats.location === 'home' ? '#dbeafe' : '#fee2e2',
+              color: currentMatchStats.location === 'home' ? '#1e40af' : '#991b1b'
+            }}>
+              {currentMatchStats.location === 'home' ? '🏠 Match à Domicile' : '✈️ Match à l\'Extérieur'}
+            </span>
           </div>
 
           {/* Score Final */}
@@ -1404,6 +1646,7 @@ className='px-3 py-2 border-2 border-gray-300 rounded-lg'
 function HistoryModule({ shots, teamStats, exportToCSV, saveTeamStats }) {
 const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
 const [expandedMatch, setExpandedMatch] = useState(null);
+const [locationFilter, setLocationFilter] = useState('all'); // 'all', 'home', 'away'
 
 const deleteMatch = (matchIndex) => {
 if (confirm('Supprimer ce match ?')) {
@@ -1435,18 +1678,79 @@ let totalTirsLoupes = 0;
 let totalRebondsAdv = 0;
 let totalTirsLoupesAdv = 0;
 
-teamStats.forEach(match => {
+// Nouvelles statistiques pour les conséquences globales
+let rebondsConsequences = { panier2pts: 0, panier3pts: 0, faute: 0, rien: 0 };
+let pertesConsequences = { panier2ptsNous: 0, panier3ptsNous: 0, panier2ptsAdv: 0, panier3ptsAdv: 0, faute: 0, rien: 0 };
+let interceptionsConsequences = { panier2pts: 0, panier3pts: 0, faute: 0, rien: 0 };
+let rebondsAdvConsequences = { panier2pts: 0, panier3pts: 0, faute: 0, rien: 0 };
+
+// Filtrer les matchs selon le lieu
+const filteredMatches = teamStats.filter(match => {
+  if (locationFilter === 'all') return true;
+  return (match.location || 'home') === locationFilter; // Par défaut 'home' pour les anciens matchs
+});
+
+filteredMatches.forEach(match => {
   match.quartersData.forEach(quarter => {
     quarter.actions.forEach(action => {
-      if (action.type === 'panier_3pts' && action.team === 'nous') total3pts++;
-      if (action.type === 'lancer_franc' && action.team === 'nous') totalLF++;
-      if (action.type === 'rebond_offensif_nous') totalRebonds++;
-      if (action.type === 'perte_balle') totalPertes++;
-      if (action.type === 'interception') totalInterceptions++;
-      if (action.type === 'panier_facile_loupe') totalPaniersFacilesLoupes++;
-      if (action.type === 'tir_loupe' && action.team === 'nous') totalTirsLoupes++;
-      if (action.type === 'rebond_offensif_adv') totalRebondsAdv++;
-      if (action.type === 'tir_loupe' && action.team === 'adversaire') totalTirsLoupesAdv++;
+      // Ne compter que les actions non auto-générées
+      if (!action.autoGenerated) {
+        if (action.type === 'panier_3pts' && action.team === 'nous') total3pts++;
+        if (action.type === 'lancer_franc' && action.team === 'nous') totalLF++;
+        if (action.type === 'tir_loupe' && action.team === 'nous') totalTirsLoupes++;
+        if (action.type === 'tir_loupe' && action.team === 'adversaire') totalTirsLoupesAdv++;
+        if (action.type === 'panier_facile_loupe') totalPaniersFacilesLoupes++;
+        
+        // Rebonds offensifs avec conséquences
+        if (action.type === 'rebond_offensif_nous') {
+          totalRebonds++;
+          if (action.consequence) {
+            if (action.consequence.points === 2) rebondsConsequences.panier2pts++;
+            if (action.consequence.points === 3) rebondsConsequences.panier3pts++;
+            if (action.consequence.type === 'faute') rebondsConsequences.faute++;
+          } else {
+            rebondsConsequences.rien++;
+          }
+        }
+        
+        // Pertes de balle avec conséquences
+        if (action.type === 'perte_balle') {
+          totalPertes++;
+          if (action.consequence) {
+            if (action.consequence.team === 'nous' && action.consequence.points === 2) pertesConsequences.panier2ptsNous++;
+            if (action.consequence.team === 'nous' && action.consequence.points === 3) pertesConsequences.panier3ptsNous++;
+            if (action.consequence.team === 'adversaire' && action.consequence.points === 2) pertesConsequences.panier2ptsAdv++;
+            if (action.consequence.team === 'adversaire' && action.consequence.points === 3) pertesConsequences.panier3ptsAdv++;
+            if (action.consequence.type === 'faute') pertesConsequences.faute++;
+          } else {
+            pertesConsequences.rien++;
+          }
+        }
+        
+        // Interceptions avec conséquences
+        if (action.type === 'interception') {
+          totalInterceptions++;
+          if (action.consequence) {
+            if (action.consequence.points === 2) interceptionsConsequences.panier2pts++;
+            if (action.consequence.points === 3) interceptionsConsequences.panier3pts++;
+            if (action.consequence.type === 'faute') interceptionsConsequences.faute++;
+          } else {
+            interceptionsConsequences.rien++;
+          }
+        }
+        
+        // Rebonds offensifs adversaires avec conséquences
+        if (action.type === 'rebond_offensif_adv') {
+          totalRebondsAdv++;
+          if (action.consequence) {
+            if (action.consequence.points === 2) rebondsAdvConsequences.panier2pts++;
+            if (action.consequence.points === 3) rebondsAdvConsequences.panier3pts++;
+            if (action.consequence.type === 'faute') rebondsAdvConsequences.faute++;
+          } else {
+            rebondsAdvConsequences.rien++;
+          }
+        }
+      }
     });
   });
 });
@@ -1462,7 +1766,11 @@ return {
   tirsLoupes: totalTirsLoupes,
   rebondsAdv: totalRebondsAdv,
   tirsLoupesAdv: totalTirsLoupesAdv,
-  matchs: teamStats.length
+  matchs: filteredMatches.length,
+  rebondsConsequences: rebondsConsequences,
+  pertesConsequences: pertesConsequences,
+  interceptionsConsequences: interceptionsConsequences,
+  rebondsAdvConsequences: rebondsAdvConsequences
 };
 
 
@@ -1475,8 +1783,21 @@ return (
 <div className="max-w-6xl mx-auto space-y-6">
 {/* Statistiques Globales */}
 <div className="bg-white rounded-lg shadow-lg p-6">
-<h2 className="text-3xl font-bold text-gray-800 mb-6">📈 Statistiques Globales</h2>
+<div className="flex justify-between items-center mb-6">
+<h2 className="text-3xl font-bold text-gray-800">📈 Statistiques Globales</h2>
 
+
+      {/* Filtre par lieu */}
+      <select
+        value={locationFilter}
+        onChange={(e) => setLocationFilter(e.target.value)}
+        className="px-4 py-2 border-2 border-gray-300 rounded-lg font-semibold"
+      >
+        <option value="all">🌍 Tous les matchs</option>
+        <option value="home">🏠 Matchs à domicile</option>
+        <option value="away">✈️ Matchs à l'extérieur</option>
+      </select>
+    </div>
 
     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
       <div className="bg-blue-50 p-4 rounded-lg text-center">
@@ -1654,7 +1975,15 @@ return (
               <div className="flex justify-between items-center">
                 <div>
                   <h3 className="font-bold text-lg">vs {match.adversaire.nom}</h3>
-                  <p className="text-sm text-gray-600">{match.time}</p>
+                  <p className="text-sm text-gray-600">
+                    {match.time}
+                    <span className="ml-2 px-2 py-1 rounded text-xs font-semibold" style={{
+                      backgroundColor: (match.location || 'home') === 'home' ? '#dbeafe' : '#fee2e2',
+                      color: (match.location || 'home') === 'home' ? '#1e40af' : '#991b1b'
+                    }}>
+                      {(match.location || 'home') === 'home' ? '🏠 Domicile' : '✈️ Extérieur'}
+                    </span>
+                  </p>
                 </div>
                 <div className={`text-2xl font-bold ${scoreNous > scoreAdv ? 'text-green-600' : scoreNous < scoreAdv ? 'text-red-600' : 'text-gray-600'}`}>
                   {scoreNous} - {scoreAdv}
