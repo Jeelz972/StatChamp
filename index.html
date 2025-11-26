@@ -98,7 +98,8 @@
             Robot: "M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1H2a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z",
             Eye: "M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8-11-8-11-8z M12 5c-3.866 0-7 3.134-7 7s3.134 7 7 7 7-3.134 7-7-3.134-7-7-7z M12 15c-1.657 0-3-1.343-3-3s1.343-3 3-3 3 1.343 3 3-1.343 3-3 3z",
             List: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01",
-            Check: "M20 6L9 17l-5-5"
+            Check: "M20 6L9 17l-5-5",
+            Edit: "M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7 M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"
         };
 
         // --- UTILS ---
@@ -246,7 +247,7 @@
             return { playerStats: pStats, opponentStats: oppStats, homeScore: home, awayScore: away };
         };
 
-        const LiveTracker = ({ players, onSaveGame }) => {
+        const LiveTracker = ({ players, onSaveGame, initialGame }) => {
             const [gameState, setGameState] = useState({
                 quarter: 1, opponent: "Adversaire", location: "Domicile",
                 actions: []
@@ -260,6 +261,20 @@
             const [showLog, setShowLog] = useState(false);
             const [showMinutes, setShowMinutes] = useState(false);
             const [minutesInput, setMinutesInput] = useState({});
+
+            // --- LOAD INITIAL GAME (EDIT MODE) ---
+            useEffect(() => {
+                if (initialGame) {
+                    setGameState({
+                        quarter: initialGame.quarter || 1, // Keep quarter if saved, else 1
+                        opponent: initialGame.opponent,
+                        location: initialGame.location,
+                        actions: initialGame.actions || []
+                    });
+                    // Need to recalculate derived immediately
+                    setDerived(recalculateStats(initialGame.actions || [], players));
+                }
+            }, [initialGame, players]);
 
             useEffect(() => {
                 setDerived(recalculateStats(gameState.actions, players));
@@ -290,7 +305,11 @@
             const handleFinishGame = () => {
                 // Pre-fill minutes
                 const mins = {};
-                players.forEach(p => mins[p.id] = 0);
+                players.forEach(p => {
+                    // Try to get existing minutes if editing
+                    const existing = initialGame?.playerStats?.[p.id]?.minutes || 0;
+                    mins[p.id] = existing;
+                });
                 setMinutesInput(mins);
                 setShowMinutes(true);
             };
@@ -332,6 +351,20 @@
                 </div>
             );
 
+            // --- STATS TOTALS CALCULATION ---
+            const teamTotals = useMemo(() => {
+                const totals = { pts: 0, reb: 0, ast: 0, pf: 0, stl: 0, tov: 0 };
+                Object.values(derived.playerStats).forEach(s => {
+                    totals.pts += s.pts;
+                    totals.reb += s.reb;
+                    totals.ast += s.ast;
+                    totals.pf += s.pf;
+                    totals.stl += s.stl;
+                    totals.tov += s.tov;
+                });
+                return totals;
+            }, [derived.playerStats]);
+
             return (
                 <div className="flex flex-col h-full gap-4 relative">
                     {/* Header Scoreboard */}
@@ -346,8 +379,18 @@
                                 <button onClick={() => setGameState(p=>({...p, quarter: p.quarter+1}))} className="text-xs text-slate-500 hover:text-white">+</button>
                             </div>
                         </div>
-                        <div className="text-center">
-                            <div className="text-4xl font-bold text-red-500">{derived.awayScore}</div>
+                        <div className="text-center flex flex-col items-end">
+                            <input 
+                                className="text-4xl font-bold text-red-500 bg-transparent text-right w-24 focus:outline-none focus:border-b border-slate-700"
+                                value={derived.awayScore}
+                                readOnly // Score is computed, not edited directly here
+                            />
+                            <input 
+                                type="text" 
+                                className="text-xs text-slate-500 bg-transparent text-right focus:text-white focus:outline-none border-b border-transparent focus:border-slate-500 w-32"
+                                value={gameState.opponent}
+                                onChange={(e) => setGameState(prev => ({...prev, opponent: e.target.value}))}
+                            />
                         </div>
                     </Card>
 
@@ -377,14 +420,14 @@
                         })}
                         {/* Opponent Card */}
                         <div onClick={() => setModal({ type: "ACTION_MENU", data: "opponent" })} className="bg-red-900/40 p-3 rounded-xl border border-red-700 shadow-md hover:border-red-500 cursor-pointer flex flex-col items-center justify-center text-center">
-                            <span className="font-bold text-red-200">ADVERSAIRE</span>
+                            <span className="font-bold text-red-200">{gameState.opponent.toUpperCase()}</span>
                             <div className="text-xs mt-1 text-red-300">Fautes: {derived.opponentStats.fouls}</div>
                         </div>
                     </div>
 
                     {/* Footer */}
                     <div className="fixed bottom-0 left-0 right-0 bg-slate-900 p-4 border-t border-slate-800 flex justify-end z-20">
-                        <Button variant="success" onClick={handleFinishGame}><Icon path={Icons.Check} /> Finir Match</Button>
+                        <Button variant="success" onClick={handleFinishGame}><Icon path={Icons.Check} /> Finir / Sauvegarder</Button>
                     </div>
 
                     {/* --- MODALS --- */}
@@ -450,22 +493,36 @@
                                         <th className="p-2">Pts</th>
                                         <th className="p-2">Reb</th>
                                         <th className="p-2">Ast</th>
+                                        <th className="p-2">Int</th>
+                                        <th className="p-2">BP</th>
                                         <th className="p-2">Fte</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-700">
                                     {players.map(p => {
-                                        const s = derived.playerStats[p.id] || { pts: 0, reb: 0, ast: 0, pf: 0 };
+                                        const s = derived.playerStats[p.id] || { pts: 0, reb: 0, ast: 0, pf: 0, stl: 0, tov: 0 };
                                         return (
                                             <tr key={p.id}>
                                                 <td className="p-2 font-bold">{p.name}</td>
                                                 <td className="p-2">{s.pts}</td>
                                                 <td className="p-2">{s.reb}</td>
                                                 <td className="p-2">{s.ast}</td>
+                                                <td className="p-2">{s.stl}</td>
+                                                <td className="p-2">{s.tov}</td>
                                                 <td className="p-2 text-red-400">{s.pf}</td>
                                             </tr>
                                         );
                                     })}
+                                    {/* TOTAL ROW */}
+                                    <tr className="bg-slate-800 border-t-2 border-slate-600 font-bold text-white">
+                                        <td className="p-2">TOTAL</td>
+                                        <td className="p-2">{teamTotals.pts}</td>
+                                        <td className="p-2">{teamTotals.reb}</td>
+                                        <td className="p-2">{teamTotals.ast}</td>
+                                        <td className="p-2">{teamTotals.stl}</td>
+                                        <td className="p-2">{teamTotals.tov}</td>
+                                        <td className="p-2">{teamTotals.pf}</td>
+                                    </tr>
                                 </tbody>
                             </table>
                         </div>
@@ -774,9 +831,10 @@
             );
         };
 
-        const History = ({ games, setGames, apiKey }) => {
+        const History = ({ games, setGames, apiKey, onEditGame }) => {
             const [analyzing, setAnalyzing] = useState(null);
             const [modalContent, setModalContent] = useState(null);
+            const [viewDetail, setViewDetail] = useState(null); // State for viewing detailed stats
 
             const analyzeMatch = async (game) => {
                 if (!apiKey) { alert("Configurez votre clé API dans les paramètres !"); return; }
@@ -806,17 +864,75 @@
                                     <div className="text-sm text-slate-400">{g.date} - {g.location}</div>
                                     <div className="text-xl font-bold text-white"><span className="text-green-400">{g.homeScore}</span> - <span className="text-red-400">{g.awayScore}</span> vs {g.opponent}</div>
                                 </div>
-                                <div className="flex gap-2">
+                                <div className="flex flex-col md:flex-row gap-2">
+                                    <Button variant="secondary" size="sm" onClick={() => setViewDetail(g)}><Icon path={Icons.Chart} /> Détails</Button>
+                                    <Button variant="secondary" size="sm" onClick={() => onEditGame(g)}><Icon path={Icons.Edit} /> Modifier</Button>
                                     <Button variant="magic" size="sm" onClick={() => analyzeMatch(g)} disabled={analyzing === g.id}>
-                                        {analyzing === g.id ? "..." : <><Icon path={Icons.Sparkles} /> Analyser</>}
+                                        {analyzing === g.id ? "..." : <><Icon path={Icons.Sparkles} /> IA</>}
                                     </Button>
                                     <Button variant="danger" size="sm" onClick={() => confirm("Supprimer ?") && setGames(games.filter(x => x.id !== g.id))}><Icon path={Icons.Trash} /></Button>
                                 </div>
                             </div>
                         </Card>
                     ))}
+                    
+                    {/* AI ANALYSIS MODAL */}
                     <Modal isOpen={!!modalContent} onClose={() => setModalContent(null)} title={modalContent?.title}>
                         <div className="markdown-body text-slate-300 leading-relaxed" dangerouslySetInnerHTML={{ __html: marked.parse(modalContent?.body || "") }} />
+                    </Modal>
+
+                    {/* DETAIL VIEW MODAL */}
+                    <Modal isOpen={!!viewDetail} onClose={() => setViewDetail(null)} title={`Détails vs ${viewDetail?.opponent}`}>
+                        {viewDetail && (
+                            <div className="space-y-4">
+                                <div className="bg-slate-900 p-4 rounded-lg text-center border border-slate-700">
+                                    <h4 className="text-slate-400 uppercase text-xs">Score Final</h4>
+                                    <div className="text-3xl font-bold text-white">
+                                        <span className="text-green-400">{viewDetail.homeScore}</span> - <span className="text-red-400">{viewDetail.awayScore}</span>
+                                    </div>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-xs text-slate-300">
+                                        <thead className="bg-slate-700 text-white uppercase">
+                                            <tr>
+                                                <th className="p-2">Joueur</th>
+                                                <th className="p-2">MIN</th>
+                                                <th className="p-2">PTS</th>
+                                                <th className="p-2">REB</th>
+                                                <th className="p-2">AST</th>
+                                                <th className="p-2">STL</th>
+                                                <th className="p-2">BLK</th>
+                                                <th className="p-2">TOV</th>
+                                                <th className="p-2 text-green-400">EFF</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-700">
+                                            {Object.entries(viewDetail.playerStats).map(([pid, s]) => {
+                                                // Calculate basic eff for display
+                                                const eff = (s.pts + s.reb + s.ast + s.stl + s.blk) - ((s.fga - s.fgm) + (s.fta - s.ftm) + s.tov);
+                                                // Find player name if possible, else use ID
+                                                // We don't have players list prop here easily, so relies on saved stat object if it had name, or just assume standard structure
+                                                // In live tracker we didn't save names in playerStats object, only keys.
+                                                // So we might just show ID or basic stats. Ideally we pass players to History too.
+                                                return (
+                                                    <tr key={pid}>
+                                                        <td className="p-2 font-bold">#{pid}</td> {/* Simplified for now */}
+                                                        <td className="p-2">{s.minutes}</td>
+                                                        <td className="p-2">{s.pts}</td>
+                                                        <td className="p-2">{s.reb}</td>
+                                                        <td className="p-2">{s.ast}</td>
+                                                        <td className="p-2">{s.stl}</td>
+                                                        <td className="p-2">{s.blk}</td>
+                                                        <td className="p-2">{s.tov}</td>
+                                                        <td className="p-2 font-bold text-green-400">{eff}</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
                     </Modal>
                 </div>
             );
@@ -827,6 +943,9 @@
             const [players, setPlayers] = useState([]);
             const [games, setGames] = useState([]);
             const [apiKey, setApiKey] = useState("");
+            
+            // State for editing a game
+            const [activeGame, setActiveGame] = useState(null);
 
             useEffect(() => {
                 setPlayers(JSON.parse(localStorage.getItem('basket_players')) || defaultPlayers);
@@ -838,9 +957,33 @@
             useEffect(() => { localStorage.setItem('basket_games', JSON.stringify(games)); }, [games]);
             useEffect(() => { localStorage.setItem('gemini_api_key', apiKey); }, [apiKey]);
 
-            const handleSaveGame = (gs) => {
-                setGames([{ id: generateId(), date: new Date().toLocaleDateString(), ...gs }, ...games]);
-                window.location.reload();
+            const handleSaveGame = (gameState) => {
+                // Check if we are updating an existing game (Edit Mode)
+                const gameId = activeGame?.id || generateId();
+                const date = activeGame?.date || new Date().toLocaleDateString();
+
+                const newGameData = {
+                    ...gameState,
+                    id: gameId,
+                    date: date
+                };
+
+                setGames(prev => {
+                    const exists = prev.find(g => g.id === gameId);
+                    if (exists) {
+                        return prev.map(g => g.id === gameId ? newGameData : g);
+                    }
+                    return [newGameData, ...prev];
+                });
+
+                // Reset active game and go to history to confirm save
+                setActiveGame(null);
+                setView('history');
+            };
+
+            const handleEditGame = (game) => {
+                setActiveGame(game);
+                setView('live');
             };
 
             return (
@@ -861,16 +1004,22 @@
                     <main className="flex-1 flex flex-col h-full overflow-hidden relative">
                         <header className="h-16 bg-slate-900/80 backdrop-blur border-b border-slate-800 flex items-center px-6 shrink-0">
                             <h1 className="font-bold text-lg text-white flex items-center gap-2">
-                                {view === 'live' && "🔴 Match en Direct"}
+                                {view === 'live' && (activeGame ? "✏️ Modification de Match" : "🔴 Match en Direct")}
                                 {view === 'intelligent' && "🧠 Coach OS + IA"}
                                 {view === 'history' && "📜 Historique"}
                                 {view === 'settings' && "⚙️ Paramètres"}
                             </h1>
                         </header>
                         <div className="flex-1 p-4 overflow-y-auto bg-slate-950 no-scrollbar">
-                            {view === 'live' && <LiveTracker players={players} onSaveGame={handleSaveGame} />}
+                            {view === 'live' && (
+                                <LiveTracker 
+                                    players={players} 
+                                    onSaveGame={handleSaveGame} 
+                                    initialGame={activeGame} 
+                                />
+                            )}
                             {view === 'intelligent' && <CoachOS players={players} games={games} apiKey={apiKey} />}
-                            {view === 'history' && <History games={games} setGames={setGames} apiKey={apiKey} />}
+                            {view === 'history' && <History games={games} setGames={setGames} apiKey={apiKey} onEditGame={handleEditGame} />}
                             {view === 'settings' && <Settings players={players} onUpdatePlayers={setPlayers} apiKey={apiKey} setApiKey={setApiKey} />}
                         </div>
                     </main>
