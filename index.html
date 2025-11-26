@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BasketCoach Pro - Analytics & Live Stats + Gemini AI</title>
+    <title>BasketCoach Pro - Live Tracker & Analytics</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -34,6 +34,7 @@
                         'court-orange': '#e65100',
                         'coach-dark': '#1e293b',
                         'coach-accent': '#f97316',
+                        'active-player': '#c2410c', // Couleur pour joueurs sur le terrain
                     },
                     animation: {
                         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
@@ -49,7 +50,6 @@
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         .markdown-body p { margin-bottom: 0.5rem; }
         .markdown-body strong { color: #f97316; }
-        .markdown-body ul { list-style-type: disc; padding-left: 1.5rem; margin-bottom: 0.5rem; }
     </style>
 </head>
 <body>
@@ -58,19 +58,14 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        // --- FIX RECHARTS & DESTRUCTURING ---
-        // On récupère tout ce qui est nécessaire depuis window.Recharts
         const {
-            BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-            LineChart, Line, PieChart, Pie, Cell, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis
+            BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer
         } = window.Recharts || {};
 
-        // Fix pour supprimer les warnings "defaultProps" dans la console avec React 18.3+
+        // Fix console warnings
         const originalConsoleError = console.error;
         console.error = (...args) => {
-            if (typeof args[0] === "string" && /defaultProps/.test(args[0])) {
-                return;
-            }
+            if (typeof args[0] === "string" && /defaultProps/.test(args[0])) return;
             originalConsoleError(...args);
         };
 
@@ -89,7 +84,6 @@
             Save: "M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z M17 21v-8H7v8 M7 3v5h8V3",
             Chart: "M18 20V10 M12 20V4 M6 20v-6",
             Zap: "M13 2L3 14h9l-1 8 10-12h-9l1-8z",
-            Swords: "M14.5 17.5L3 6V3h3l11.5 11.5 M13 19l6-6 M16 16l4 4 M19 21l2-2",
             Undo: "M3 7v6h6 M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13",
             Sparkles: "M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z",
             MessageSquare: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
@@ -99,10 +93,11 @@
             Eye: "M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8-11-8-11-8z M12 5c-3.866 0-7 3.134-7 7s3.134 7 7 7 7-3.134 7-7-3.134-7-7-7z M12 15c-1.657 0-3-1.343-3-3s1.343-3 3-3 3 1.343 3 3-1.343 3-3 3z",
             List: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01",
             Check: "M20 6L9 17l-5-5",
-            Edit: "M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7 M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"
+            Edit: "M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7 M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z",
+            Pause: "M10 9v6 M14 9v6",
+            Timer: "M12 2v2M12 22v-2M2 12h2M22 12h-2M4.93 4.93l1.41 1.41M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41M19.07 4.93l-1.41 1.41"
         };
 
-        // --- UTILS ---
         const generateId = () => Math.random().toString(36).substr(2, 9);
 
         const callGemini = async (prompt, apiKey) => {
@@ -118,37 +113,20 @@
         };
 
         const defaultPlayers = [
-            { id: 1, name: "Meneur A", number: 4, pos: "PG", style: "Playmaker", height: 185 },
-            { id: 2, name: "Arrière B", number: 5, pos: "SG", style: "Sharpshooter", height: 192 },
-            { id: 3, name: "Ailier C", number: 8, pos: "SF", style: "Two-Way", height: 201 },
-            { id: 4, name: "Intérieur D", number: 12, pos: "PF", style: "Rim Protector", height: 206 },
-            { id: 5, name: "Pivot E", number: 15, pos: "C", style: "Paint Beast", height: 213 },
-            { id: 6, name: "Remplaçant F", number: 6, pos: "PG", style: "Slasher", height: 188 },
-            { id: 7, name: "Remplaçant G", number: 7, pos: "SF", style: "3&D", height: 198 },
-            { id: 8, name: "Remplaçant H", number: 9, pos: "PF", style: "Stretch Four", height: 203 },
-            { id: 9, name: "Joueur I", number: 10, pos: "SG", style: "Scorer", height: 190 },
-            { id: 10, name: "Joueur J", number: 11, pos: "SF", style: "Defense", height: 200 },
-            { id: 11, name: "Joueur K", number: 13, pos: "PF", style: "Rebounder", height: 205 },
-            { id: 12, name: "Joueur L", number: 14, pos: "C", style: "Big Man", height: 210 },
-            { id: 13, name: "Joueur M", number: 16, pos: "PG", style: "Rookie", height: 182 },
+            { id: 1, name: "Meneur A", number: 4, pos: "PG" },
+            { id: 2, name: "Arrière B", number: 5, pos: "SG" },
+            { id: 3, name: "Ailier C", number: 8, pos: "SF" },
+            { id: 4, name: "Intérieur D", number: 12, pos: "PF" },
+            { id: 5, name: "Pivot E", number: 15, pos: "C" },
+            { id: 6, name: "Remplaçant F", number: 6, pos: "PG" },
+            { id: 7, name: "Remplaçant G", number: 7, pos: "SF" },
+            { id: 8, name: "Remplaçant H", number: 9, pos: "PF" },
+            { id: 9, name: "Joueur I", number: 10, pos: "SG" },
+            { id: 10, name: "Joueur J", number: 11, pos: "SF" },
+            { id: 11, name: "Joueur K", number: 13, pos: "PF" },
+            { id: 12, name: "Joueur L", number: 14, pos: "C" },
+            { id: 13, name: "Joueur M", number: 16, pos: "PG" },
         ];
-
-        const calculateAdvancedStats = (stats, minOverride = null) => {
-            const min = minOverride !== null ? minOverride : (stats.minutes || 0);
-            const eff = (stats.pts + (stats.oreb + stats.dreb) + stats.ast + stats.stl + stats.blk) - 
-                        ((stats.fga - stats.fgm) + (stats.fta - stats.ftm) + stats.tov);
-            const poss = stats.fga + (0.44 * stats.fta) + stats.tov;
-            const ortg = poss > 0 ? (stats.pts / poss) * 100 : 0;
-            const drtg = poss > 0 ? (stats.pointsAllowed / poss) * 100 : 100;
-            return {
-                eff: eff,
-                effPerMin: min > 0 ? (eff / min) : 0,
-                ortg: parseFloat(ortg.toFixed(1)),
-                drtg: parseFloat(drtg.toFixed(1)),
-                netRtg: parseFloat((ortg - drtg).toFixed(1)),
-                poss: parseFloat(poss.toFixed(1))
-            };
-        };
 
         const Card = ({ children, className = "" }) => (
             <div className={`bg-slate-800 rounded-lg border border-slate-700 shadow-lg overflow-hidden ${className}`}>
@@ -191,44 +169,54 @@
             );
         };
 
-        // --- CORE LOGIC: REBUILD STATS FROM ACTIONS ---
+        // --- LOGIC STATS ---
         const recalculateStats = (actions, players) => {
             const pStats = {};
-            // Init safely
+            // Init with detail fields
             players.forEach(p => {
-                pStats[p.id] = { pts: 0, reb: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, tov: 0, fga: 0, fgm: 0, fta: 0, ftm: 0, pf: 0, pointsAllowed: 0, minutes: 0 };
+                pStats[p.id] = { 
+                    pts: 0, reb: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, tov: 0, 
+                    fga: 0, fgm: 0, fta: 0, ftm: 0, pf: 0, pointsAllowed: 0, minutes: 0, 
+                    plusMinus: 0,
+                    // Detailed consequences
+                    ptsFromTov: 0, ptsFromStl: 0, ptsAllowedFromTov: 0
+                };
             });
             const oppStats = { pts: 0, reb: 0, ast: 0, tov: 0, fouls: 0, fga: 0, fgm: 0, fta: 0, ftm: 0 };
             let home = 0, away = 0;
 
             actions.forEach(act => {
-                const { type, playerId, consequence } = act;
+                const { type, playerId, consequence, onCourt } = act;
                 
-                // Logique Adversaire
+                // Points Update Logic
+                let pointsScored = 0;
+                let pointsConceded = 0;
+
+                // --- OPPONENT ACTION ---
                 if (playerId === 'OPP') {
-                    if (type === "FGM1") { oppStats.pts += 1; oppStats.ftm += 1; oppStats.fta += 1; away += 1; }
+                    if (type === "FGM1") { oppStats.pts += 1; oppStats.ftm += 1; oppStats.fta += 1; away += 1; pointsConceded = 1; }
                     if (type === "FGA1") { oppStats.fta += 1; }
-                    if (type === "FGM2") { oppStats.pts += 2; oppStats.fgm += 1; oppStats.fga += 1; away += 2; }
+                    if (type === "FGM2") { oppStats.pts += 2; oppStats.fgm += 1; oppStats.fga += 1; away += 2; pointsConceded = 2; }
                     if (type === "FGA2") { oppStats.fga += 1; }
-                    if (type === "FGM3") { oppStats.pts += 3; oppStats.fgm += 1; oppStats.fga += 1; away += 3; }
+                    if (type === "FGM3") { oppStats.pts += 3; oppStats.fgm += 1; oppStats.fga += 1; away += 3; pointsConceded = 3; }
                     if (type === "FGA3") { oppStats.fga += 1; }
                     if (type === "DREB" || type === "OREB") { oppStats.reb += 1; }
                     if (type === "AST") { oppStats.ast += 1; }
                     if (type === "TOV") { oppStats.tov += 1; }
                     if (type === "PF") { oppStats.fouls += 1; }
                     
-                    // Conséquences adversaires (Points pour NOUS)
-                    if (consequence === "score_2") { home += 2; }
-                    if (consequence === "score_3") { home += 3; }
+                    // Conséquences (Positive for US)
+                    if (consequence === "score_2") { home += 2; pointsScored = 2; }
+                    if (consequence === "score_3") { home += 3; pointsScored = 3; }
                 } 
-                // Logique Joueur
+                // --- PLAYER ACTION ---
                 else if (pStats[playerId]) {
                     const ps = pStats[playerId];
-                    if (type === "FGM1") { ps.pts += 1; ps.ftm += 1; ps.fta += 1; home += 1; }
+                    if (type === "FGM1") { ps.pts += 1; ps.ftm += 1; ps.fta += 1; home += 1; pointsScored = 1; }
                     if (type === "FGA1") { ps.fta += 1; }
-                    if (type === "FGM2") { ps.pts += 2; ps.fgm += 1; ps.fga += 1; home += 2; }
+                    if (type === "FGM2") { ps.pts += 2; ps.fgm += 1; ps.fga += 1; home += 2; pointsScored = 2; }
                     if (type === "FGA2") { ps.fga += 1; }
-                    if (type === "FGM3") { ps.pts += 3; ps.fgm += 1; ps.fga += 1; home += 3; }
+                    if (type === "FGM3") { ps.pts += 3; ps.fgm += 1; ps.fga += 1; home += 3; pointsScored = 3; }
                     if (type === "FGA3") { ps.fga += 1; }
                     if (type === "OREB") { ps.reb += 1; ps.oreb += 1; }
                     if (type === "DREB") { ps.reb += 1; ps.dreb += 1; }
@@ -238,9 +226,33 @@
                     if (type === "TOV") { ps.tov += 1; }
                     if (type === "PF") { ps.pf += 1; }
 
-                    // Conséquences Joueurs (Points pour EUX)
-                    if (consequence === "score_2") { ps.pointsAllowed += 2; away += 2; }
-                    if (consequence === "score_3") { ps.pointsAllowed += 3; away += 3; }
+                    // Conséquences (Negative for US)
+                    if (consequence === "score_2") { 
+                        ps.pointsAllowed += 2; ps.ptsAllowedFromTov += 2; 
+                        away += 2; pointsConceded = 2; 
+                    }
+                    if (consequence === "score_3") { 
+                        ps.pointsAllowed += 3; ps.ptsAllowedFromTov += 3; 
+                        away += 3; pointsConceded = 3; 
+                    }
+                    
+                    // Special Tracking
+                    if(type === "STL" && (consequence === "score_2" || consequence === "score_3")) {
+                        // If player stole and we scored, credit them
+                        const pts = consequence === "score_2" ? 2 : 3;
+                        ps.ptsFromStl += pts;
+                    }
+                }
+
+                // --- PLUS/MINUS CALCULATION ---
+                // If onCourt data exists for this action, update +/-
+                if (onCourt && Array.isArray(onCourt)) {
+                    onCourt.forEach(pid => {
+                        if (pStats[pid]) {
+                            pStats[pid].plusMinus += pointsScored;
+                            pStats[pid].plusMinus -= pointsConceded;
+                        }
+                    });
                 }
             });
 
@@ -252,33 +264,73 @@
                 quarter: 1, opponent: "Adversaire", location: "Domicile",
                 actions: []
             });
-            // Derived stats for UI
+            
+            // TIMER & ON COURT
+            const [gameTime, setGameTime] = useState(0); // in seconds
+            const [isTimerRunning, setIsTimerRunning] = useState(false);
+            const [onCourt, setOnCourt] = useState([]); // Array of IDs
+            const [accumulatedMinutes, setAccumulatedMinutes] = useState({}); // { playerId: seconds }
+
             const [derived, setDerived] = useState(recalculateStats([], players));
             
-            // Modals
             const [modal, setModal] = useState({ type: null, data: null });
             const [showStats, setShowStats] = useState(false);
             const [showLog, setShowLog] = useState(false);
-            const [showMinutes, setShowMinutes] = useState(false);
-            const [minutesInput, setMinutesInput] = useState({});
 
-            // --- LOAD INITIAL GAME (EDIT MODE) ---
+            // --- LOAD INITIAL GAME ---
             useEffect(() => {
                 if (initialGame) {
                     setGameState({
-                        quarter: initialGame.quarter || 1, // Keep quarter if saved, else 1
+                        quarter: initialGame.quarter || 1,
                         opponent: initialGame.opponent,
                         location: initialGame.location,
                         actions: initialGame.actions || []
                     });
-                    // Need to recalculate derived immediately
-                    setDerived(recalculateStats(initialGame.actions || [], players));
+                    // Note: Initial minutes handling is complex without full log replay of time, 
+                    // so we assume editing is mostly for stats correction, not time replay.
                 }
-            }, [initialGame, players]);
+            }, [initialGame]);
 
             useEffect(() => {
                 setDerived(recalculateStats(gameState.actions, players));
             }, [gameState.actions, players]);
+
+            // --- TIMER LOGIC ---
+            useEffect(() => {
+                let interval;
+                if (isTimerRunning) {
+                    interval = setInterval(() => {
+                        setGameTime(prev => prev + 1);
+                        // Add seconds to players on court
+                        setAccumulatedMinutes(prev => {
+                            const next = { ...prev };
+                            onCourt.forEach(id => {
+                                next[id] = (next[id] || 0) + 1;
+                            });
+                            return next;
+                        });
+                    }, 1000);
+                }
+                return () => clearInterval(interval);
+            }, [isTimerRunning, onCourt]);
+
+            const togglePlayerOnCourt = (id) => {
+                if (onCourt.includes(id)) {
+                    setOnCourt(prev => prev.filter(pid => pid !== id));
+                } else {
+                    if (onCourt.length >= 5) {
+                        alert("Déjà 5 joueurs sur le terrain ! Retirez-en un d'abord.");
+                        return;
+                    }
+                    setOnCourt(prev => [...prev, id]);
+                }
+            };
+
+            const formatTime = (s) => {
+                const m = Math.floor(s / 60);
+                const sec = s % 60;
+                return `${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+            };
 
             // Add action
             const registerAction = (actionType, player, extraData = {}) => {
@@ -289,13 +341,13 @@
                     playerName: player === 'opponent' ? 'Adversaire' : player.name,
                     q: gameState.quarter,
                     consequence: extraData.consequence,
-                    timestamp: new Date().toLocaleTimeString()
+                    timestamp: new Date().toLocaleTimeString(),
+                    onCourt: [...onCourt] // Snapshot who is on court
                 };
                 setGameState(prev => ({ ...prev, actions: [...prev.actions, newAction] }));
                 setModal({ type: null, data: null });
             };
 
-            // Remove action (Edit capability)
             const removeAction = (actionId) => {
                 if(confirm("Supprimer cette action ?")) {
                     setGameState(prev => ({ ...prev, actions: prev.actions.filter(a => a.id !== actionId) }));
@@ -303,45 +355,38 @@
             };
 
             const handleFinishGame = () => {
-                // Pre-fill minutes
-                const mins = {};
-                players.forEach(p => {
-                    // Try to get existing minutes if editing
-                    const existing = initialGame?.playerStats?.[p.id]?.minutes || 0;
-                    mins[p.id] = existing;
-                });
-                setMinutesInput(mins);
-                setShowMinutes(true);
+                if (confirm("Terminer le match ?")) {
+                    // Merge accumulated seconds into minutes
+                    const finalStats = { ...derived.playerStats };
+                    Object.keys(accumulatedMinutes).forEach(pid => {
+                        if(finalStats[pid]) {
+                            // If we edited a match with existing minutes, we add to them, otherwise overwrite
+                            const existing = initialGame?.playerStats?.[pid]?.minutes || 0;
+                            finalStats[pid].minutes = existing + Math.round(accumulatedMinutes[pid] / 60);
+                        }
+                    });
+
+                    onSaveGame({
+                        ...gameState,
+                        homeScore: derived.homeScore,
+                        awayScore: derived.awayScore,
+                        playerStats: finalStats,
+                        opponentStats: derived.opponentStats
+                    });
+                }
             };
 
-            const finalizeGame = () => {
-                // Merge minutes into final stats
-                const finalStats = { ...derived.playerStats };
-                Object.keys(minutesInput).forEach(pid => {
-                    if(finalStats[pid]) finalStats[pid].minutes = parseInt(minutesInput[pid]) || 0;
-                });
-
-                onSaveGame({
-                    ...gameState,
-                    homeScore: derived.homeScore,
-                    awayScore: derived.awayScore,
-                    playerStats: finalStats,
-                    opponentStats: derived.opponentStats
-                });
-            };
-
-            // Consequence Buttons Helper
+            // Consequence Helpers
             const ConsequenceButtons = ({ onSelect }) => (
                 <div className="flex flex-col gap-2">
                     <Button onClick={() => onSelect("score_2")} className="bg-red-600/80">Adversaire +2 Pts</Button>
                     <Button onClick={() => onSelect("score_3")} className="bg-red-600">Adversaire +3 Pts</Button>
                     <Button onClick={() => onSelect("foul")} className="bg-yellow-600">Faute Provoquée</Button>
                     <Button onClick={() => onSelect("foul_ft")} className="bg-yellow-700">Faute + Lancers</Button>
-                    <Button onClick={() => onSelect("none")} className="bg-slate-600">Rien (Touche...)</Button>
+                    <Button onClick={() => onSelect("none")} className="bg-slate-600">Rien</Button>
                 </div>
             );
             
-            // Positive Consequences (For Us)
             const PositiveConsequenceButtons = ({ onSelect }) => (
                 <div className="flex flex-col gap-2">
                     <Button onClick={() => onSelect("score_2")} className="bg-green-600/80">Nous Marquons +2</Button>
@@ -351,27 +396,37 @@
                 </div>
             );
 
-            // --- STATS TOTALS CALCULATION ---
             const teamTotals = useMemo(() => {
                 const totals = { pts: 0, reb: 0, ast: 0, pf: 0, stl: 0, tov: 0 };
                 Object.values(derived.playerStats).forEach(s => {
-                    totals.pts += s.pts;
-                    totals.reb += s.reb;
-                    totals.ast += s.ast;
-                    totals.pf += s.pf;
-                    totals.stl += s.stl;
-                    totals.tov += s.tov;
+                    totals.pts += s.pts; totals.reb += s.reb; totals.ast += s.ast;
+                    totals.pf += s.pf; totals.stl += s.stl; totals.tov += s.tov;
                 });
                 return totals;
             }, [derived.playerStats]);
 
             return (
                 <div className="flex flex-col h-full gap-4 relative">
-                    {/* Header Scoreboard */}
-                    <Card className="bg-slate-900 p-4 flex justify-between items-center sticky top-0 z-10 border-b-4 border-coach-accent">
-                        <div className="text-center">
-                             <div className="text-4xl font-bold text-white">{derived.homeScore}</div>
+                    {/* TIMER BAR */}
+                    <div className="bg-slate-800 p-2 flex justify-between items-center rounded-lg border border-slate-700">
+                        <div className="flex items-center gap-4">
+                            <Button 
+                                size="sm" 
+                                className={isTimerRunning ? "bg-red-500 hover:bg-red-600" : "bg-green-500 hover:bg-green-600"}
+                                onClick={() => setIsTimerRunning(!isTimerRunning)}
+                            >
+                                <Icon path={isTimerRunning ? Icons.Pause : Icons.Play} /> {isTimerRunning ? "Stop" : "Start"}
+                            </Button>
+                            <div className="font-mono text-xl text-white font-bold">{formatTime(gameTime)}</div>
                         </div>
+                        <div className="text-xs text-slate-400">
+                            Joueurs sur terrain: <span className={onCourt.length === 5 ? "text-green-400 font-bold" : "text-orange-400"}>{onCourt.length}/5</span>
+                        </div>
+                    </div>
+
+                    {/* SCOREBOARD */}
+                    <Card className="bg-slate-900 p-4 flex justify-between items-center sticky top-0 z-10 border-b-4 border-coach-accent">
+                        <div className="text-4xl font-bold text-white">{derived.homeScore}</div>
                         <div className="flex flex-col items-center">
                             <div className="text-xl font-bold text-orange-500">Q{gameState.quarter}</div>
                             <div className="flex gap-2 mt-1">
@@ -380,158 +435,143 @@
                             </div>
                         </div>
                         <div className="text-center flex flex-col items-end">
-                            <input 
-                                className="text-4xl font-bold text-red-500 bg-transparent text-right w-24 focus:outline-none focus:border-b border-slate-700"
-                                value={derived.awayScore}
-                                readOnly // Score is computed, not edited directly here
-                            />
-                            <input 
-                                type="text" 
-                                className="text-xs text-slate-500 bg-transparent text-right focus:text-white focus:outline-none border-b border-transparent focus:border-slate-500 w-32"
-                                value={gameState.opponent}
-                                onChange={(e) => setGameState(prev => ({...prev, opponent: e.target.value}))}
-                            />
+                            <div className="text-4xl font-bold text-red-500">{derived.awayScore}</div>
+                            <input className="text-xs text-slate-500 bg-transparent text-right focus:text-white w-32 outline-none" value={gameState.opponent} onChange={(e) => setGameState(prev => ({...prev, opponent: e.target.value}))} />
                         </div>
                     </Card>
 
-                    {/* Controls Bar */}
+                    {/* CONTROLS */}
                     <div className="flex gap-2 justify-center">
                         <Button size="sm" variant="secondary" onClick={() => setShowStats(true)}><Icon path={Icons.Eye} /> Stats</Button>
                         <Button size="sm" variant="secondary" onClick={() => setShowLog(true)}><Icon path={Icons.List} /> Journal ({gameState.actions.length})</Button>
                     </div>
 
-                    {/* Players Grid */}
+                    {/* PLAYERS GRID */}
                     <div className="flex-1 overflow-y-auto grid grid-cols-2 md:grid-cols-4 gap-3 pb-20">
                         {players.map(player => {
-                            // SAFEGUARD: Ensure stats exist for player
-                            const pStats = derived.playerStats[player.id] || { pts: 0, pf: 0 };
+                            const pStats = derived.playerStats[player.id] || { pts: 0, pf: 0, plusMinus: 0 };
+                            const isOnCourt = onCourt.includes(player.id);
+                            const currentSeconds = accumulatedMinutes[player.id] || 0;
+                            
                             return (
-                                <div key={player.id} onClick={() => setModal({ type: "ACTION_MENU", data: player })} className="bg-slate-800 p-3 rounded-xl border border-slate-700 shadow-md hover:border-coach-accent cursor-pointer">
-                                    <div className="flex justify-between">
-                                        <span className="font-bold text-white truncate">{player.name}</span>
-                                        <span className="text-xs text-slate-400">#{player.number}</span>
+                                <div key={player.id} className={`relative p-3 rounded-xl border shadow-md transition-all ${isOnCourt ? 'bg-slate-800 border-orange-500 ring-1 ring-orange-500/50' : 'bg-slate-800/60 border-slate-700 opacity-80'}`}>
+                                    {/* Selection Overlay for Subs */}
+                                    <div className="absolute top-2 right-2 z-20">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={isOnCourt} 
+                                            onChange={() => togglePlayerOnCourt(player.id)}
+                                            className="w-5 h-5 accent-orange-500 cursor-pointer"
+                                        />
                                     </div>
-                                    <div className="text-xs mt-1 text-slate-400 flex gap-2">
-                                        <span>P: <b className="text-white">{pStats.pts}</b></span>
-                                        <span>F: <b className="text-red-300">{pStats.pf}</b></span>
+
+                                    {/* Click Area for Actions */}
+                                    <div onClick={() => setModal({ type: "ACTION_MENU", data: player })} className="cursor-pointer">
+                                        <div className="flex justify-between pr-6">
+                                            <span className={`font-bold truncate ${isOnCourt ? 'text-white' : 'text-slate-400'}`}>{player.name}</span>
+                                            <span className="text-xs text-slate-500">#{player.number}</span>
+                                        </div>
+                                        <div className="text-xs mt-2 flex justify-between items-end">
+                                            <div className="space-x-2 text-slate-300">
+                                                <span>Pts: <b className="text-white">{pStats.pts}</b></span>
+                                                <span>+/-: <b className={pStats.plusMinus >= 0 ? "text-green-400" : "text-red-400"}>{pStats.plusMinus > 0 ? '+' : ''}{pStats.plusMinus}</b></span>
+                                            </div>
+                                            <div className="font-mono text-[10px] text-slate-500">
+                                                {Math.floor(currentSeconds / 60)}'
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             );
                         })}
-                        {/* Opponent Card */}
                         <div onClick={() => setModal({ type: "ACTION_MENU", data: "opponent" })} className="bg-red-900/40 p-3 rounded-xl border border-red-700 shadow-md hover:border-red-500 cursor-pointer flex flex-col items-center justify-center text-center">
                             <span className="font-bold text-red-200">{gameState.opponent.toUpperCase()}</span>
                             <div className="text-xs mt-1 text-red-300">Fautes: {derived.opponentStats.fouls}</div>
                         </div>
                     </div>
 
-                    {/* Footer */}
                     <div className="fixed bottom-0 left-0 right-0 bg-slate-900 p-4 border-t border-slate-800 flex justify-end z-20">
-                        <Button variant="success" onClick={handleFinishGame}><Icon path={Icons.Check} /> Finir / Sauvegarder</Button>
+                        <Button variant="success" onClick={handleFinishGame}><Icon path={Icons.Check} /> Finir</Button>
                     </div>
 
                     {/* --- MODALS --- */}
-
-                    {/* 1. Main Action Menu (Player & Opponent) */}
                     <Modal isOpen={modal.type === "ACTION_MENU"} onClose={() => setModal({type:null})} title={modal.data === 'opponent' ? "Actions Adversaire" : modal.data?.name}>
                         <div className="grid grid-cols-3 gap-3">
                             <Button className="bg-green-600 h-12" onClick={() => registerAction("FGM2", modal.data)}>+2 Pts</Button>
                             <Button className="bg-green-600 h-12" onClick={() => registerAction("FGM3", modal.data)}>+3 Pts</Button>
                             <Button className="bg-green-600 h-12" onClick={() => registerAction("FGM1", modal.data)}>+1 LF</Button>
-                            
                             <Button className="bg-red-500 h-10" onClick={() => registerAction("FGA2", modal.data)}>Miss 2</Button>
                             <Button className="bg-red-500 h-10" onClick={() => registerAction("FGA3", modal.data)}>Miss 3</Button>
                             <Button className="bg-red-500 h-10" onClick={() => registerAction("FGA1", modal.data)}>Miss LF</Button>
-                            
                             <div className="col-span-3 h-px bg-slate-600 my-1"></div>
-                            
                             <Button className="bg-blue-600" onClick={() => registerAction("DREB", modal.data)}>Reb D</Button>
                             <Button className="bg-blue-500" onClick={() => registerAction("OREB", modal.data)}>Reb O</Button>
                             <Button className="bg-purple-600" onClick={() => registerAction("AST", modal.data)}>Passe</Button>
-                            
-                            {/* Interception avec conséquence */}
                             <Button className="bg-yellow-600" onClick={() => modal.data !== 'opponent' ? setModal({type: "CONSEQ_STL", data: modal.data}) : setModal({type: "CONSEQ_OPP_STL", data: modal.data})}>Int</Button>
-                            
-                            {/* Balle Perdue avec conséquence */}
                             <Button className="bg-orange-600" onClick={() => modal.data !== 'opponent' ? setModal({type: "CONSEQ_TOV", data: modal.data}) : setModal({type: "CONSEQ_OPP_TOV", data: modal.data})}>Balle P.</Button>
-                            
                             <Button className="bg-slate-600" onClick={() => registerAction("BLK", modal.data)}>Contre</Button>
                             <Button variant="danger" className="col-span-3 mt-2" onClick={() => registerAction("PF", modal.data)}>Faute Perso</Button>
                         </div>
                     </Modal>
 
-                    {/* 2. Consequences Modals */}
-                    
-                    {/* TOV JOUEUR (Négatif pour nous) */}
                     <Modal isOpen={modal.type === "CONSEQ_TOV"} onClose={() => setModal({type:null})} title="Conséquence Balle Perdue ?">
                         <ConsequenceButtons onSelect={(c) => registerAction("TOV", modal.data, { consequence: c })} />
                     </Modal>
-                    
-                    {/* STL JOUEUR (Positif pour nous) */}
                     <Modal isOpen={modal.type === "CONSEQ_STL"} onClose={() => setModal({type:null})} title="Suite à l'Interception ?">
                          <PositiveConsequenceButtons onSelect={(c) => registerAction("STL", modal.data, { consequence: c })} />
                     </Modal>
-
-                    {/* TOV ADVERSAIRE (Positif pour nous) */}
                     <Modal isOpen={modal.type === "CONSEQ_OPP_TOV"} onClose={() => setModal({type:null})} title="Conséquence Perte Adv. ?">
                         <PositiveConsequenceButtons onSelect={(c) => registerAction("TOV", "opponent", { consequence: c })} />
                     </Modal>
-
-                    {/* STL ADVERSAIRE (Négatif pour nous) */}
                     <Modal isOpen={modal.type === "CONSEQ_OPP_STL"} onClose={() => setModal({type:null})} title="Suite Interception Adv. ?">
                          <ConsequenceButtons onSelect={(c) => registerAction("STL", "opponent", { consequence: c })} />
                     </Modal>
 
-
-                    {/* 3. Live Stats Modal */}
-                    <Modal isOpen={showStats} onClose={() => setShowStats(false)} title="Statistiques en Direct">
+                    <Modal isOpen={showStats} onClose={() => setShowStats(false)} title="Statistiques Détaillées">
                         <div className="overflow-x-auto">
                             <table className="w-full text-left text-xs text-slate-300">
                                 <thead className="bg-slate-700 text-white uppercase">
                                     <tr>
                                         <th className="p-2">J</th>
                                         <th className="p-2">Pts</th>
+                                        <th className="p-2">+/-</th>
+                                        <th className="p-2 text-orange-400" title="Points générés suite interception">Pts/Int</th>
+                                        <th className="p-2 text-red-400" title="Points encaissés suite perte de balle">Enc/TOV</th>
                                         <th className="p-2">Reb</th>
                                         <th className="p-2">Ast</th>
-                                        <th className="p-2">Int</th>
-                                        <th className="p-2">BP</th>
-                                        <th className="p-2">Fte</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-700">
                                     {players.map(p => {
-                                        const s = derived.playerStats[p.id] || { pts: 0, reb: 0, ast: 0, pf: 0, stl: 0, tov: 0 };
+                                        const s = derived.playerStats[p.id] || { pts: 0, plusMinus: 0, ptsFromStl: 0, ptsAllowedFromTov: 0, reb: 0, ast: 0 };
                                         return (
                                             <tr key={p.id}>
                                                 <td className="p-2 font-bold">{p.name}</td>
                                                 <td className="p-2">{s.pts}</td>
+                                                <td className={`p-2 font-bold ${s.plusMinus >= 0 ? 'text-green-400' : 'text-red-400'}`}>{s.plusMinus > 0 ? '+' : ''}{s.plusMinus}</td>
+                                                <td className="p-2 text-orange-300">{s.ptsFromStl}</td>
+                                                <td className="p-2 text-red-300">{s.ptsAllowedFromTov}</td>
                                                 <td className="p-2">{s.reb}</td>
                                                 <td className="p-2">{s.ast}</td>
-                                                <td className="p-2">{s.stl}</td>
-                                                <td className="p-2">{s.tov}</td>
-                                                <td className="p-2 text-red-400">{s.pf}</td>
                                             </tr>
                                         );
                                     })}
-                                    {/* TOTAL ROW */}
                                     <tr className="bg-slate-800 border-t-2 border-slate-600 font-bold text-white">
                                         <td className="p-2">TOTAL</td>
                                         <td className="p-2">{teamTotals.pts}</td>
+                                        <td className="p-2">-</td>
+                                        <td className="p-2">-</td>
+                                        <td className="p-2">-</td>
                                         <td className="p-2">{teamTotals.reb}</td>
                                         <td className="p-2">{teamTotals.ast}</td>
-                                        <td className="p-2">{teamTotals.stl}</td>
-                                        <td className="p-2">{teamTotals.tov}</td>
-                                        <td className="p-2">{teamTotals.pf}</td>
                                     </tr>
                                 </tbody>
                             </table>
                         </div>
                     </Modal>
 
-                    {/* 4. Log / History Modal */}
-                    <Modal isOpen={showLog} onClose={() => setShowLog(false)} title="Journal du Match">
+                    <Modal isOpen={showLog} onClose={() => setShowLog(false)} title="Journal">
                         <div className="space-y-2">
-                            {gameState.actions.length === 0 && <div className="text-slate-500 text-center">Aucune action.</div>}
                             {gameState.actions.slice().reverse().map(act => (
                                 <div key={act.id} className="bg-slate-800 p-2 rounded flex justify-between items-center text-sm border border-slate-700">
                                     <div>
@@ -539,33 +579,11 @@
                                         <span className="text-white font-bold">{act.playerName}</span>
                                         <span className="text-slate-400 mx-1">-</span>
                                         <span className="text-slate-300">{act.type}</span>
-                                        {act.consequence && act.consequence !== 'none' && <span className="text-xs text-red-400 ml-2">({act.consequence})</span>}
+                                        {act.consequence && <span className="text-xs text-red-400 ml-2">({act.consequence})</span>}
                                     </div>
-                                    <button onClick={() => removeAction(act.id)} className="text-red-500 hover:text-red-300 px-2 py-1 bg-red-900/30 rounded">X</button>
+                                    <button onClick={() => removeAction(act.id)} className="text-red-500 px-2">X</button>
                                 </div>
                             ))}
-                        </div>
-                    </Modal>
-
-                    {/* 5. Minutes / End Game Modal */}
-                    <Modal isOpen={showMinutes} onClose={() => setShowMinutes(false)} title="Temps de Jeu">
-                        <div className="space-y-4">
-                            <p className="text-sm text-slate-400">Veuillez estimer les minutes jouées pour finaliser les stats.</p>
-                            <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto">
-                                {players.map(p => (
-                                    <div key={p.id} className="flex justify-between items-center bg-slate-900 p-2 rounded border border-slate-700">
-                                        <span className="text-xs text-white">{p.name}</span>
-                                        <input 
-                                            type="number" 
-                                            className="w-16 bg-slate-800 border border-slate-600 rounded px-1 text-white text-right"
-                                            value={minutesInput[p.id]}
-                                            onChange={(e) => setMinutesInput({...minutesInput, [p.id]: e.target.value})}
-                                            placeholder="Min"
-                                        />
-                                    </div>
-                                ))}
-                            </div>
-                            <Button variant="success" className="w-full mt-4" onClick={finalizeGame}>Confirmer et Sauvegarder</Button>
                         </div>
                     </Modal>
                 </div>
@@ -573,214 +591,156 @@
         };
 
         const CoachAssistant = ({ aggregatedStats, apiKey }) => {
-            const [messages, setMessages] = useState([
-                { role: 'system', content: "Bonjour Coach ! Je suis votre assistant IA. J'ai analysé les statistiques de l'équipe." }
-            ]);
+            const [messages, setMessages] = useState([{ role: 'system', content: "Je suis ton Assistant Coach IA." }]);
             const [input, setInput] = useState("");
             const [loading, setLoading] = useState(false);
             const scrollRef = useRef(null);
 
-            useEffect(() => {
-                if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-            }, [messages]);
+            useEffect(() => { if(scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [messages]);
 
             const handleSend = async () => {
-                if (!input.trim()) return;
-                if (!apiKey) {
-                    setMessages(prev => [...prev, { role: 'system', content: "⚠️ Configurez votre clé API Gemini." }]);
-                    return;
-                }
-                const userMsg = input;
-                setMessages(prev => [...prev, { role: 'user', content: userMsg }]);
-                setInput("");
+                if (!apiKey) { alert("Clé API manquante !"); return; }
+                setMessages(prev => [...prev, { role: 'user', content: input }]);
                 setLoading(true);
                 try {
-                    const context = `Tu es un assistant expert basket. Stats équipe: ${JSON.stringify(aggregatedStats)}. Question: ${userMsg}`;
+                    const context = `Stats: ${JSON.stringify(aggregatedStats)}. Question: ${input}`;
                     const reply = await callGemini(context, apiKey);
                     setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
-                } catch (err) {
-                    setMessages(prev => [...prev, { role: 'system', content: "❌ Erreur API." }]);
-                } finally {
-                    setLoading(false);
-                }
+                } catch (e) { setMessages(prev => [...prev, { role: 'system', content: "Erreur API." }]); }
+                setLoading(false); setInput("");
             };
 
             return (
-                <div className="flex flex-col h-[600px] bg-slate-900 rounded-xl border border-slate-700 overflow-hidden">
-                    <div className="p-4 bg-slate-800 border-b border-slate-700 flex items-center gap-2">
-                        <Icon path={Icons.Sparkles} className="text-purple-400" />
-                        <h3 className="font-bold text-white">Assistant Coach Virtuel</h3>
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-4 space-y-4" ref={scrollRef}>
+                <div className="flex flex-col h-[500px] bg-slate-900 rounded-xl border border-slate-700">
+                    <div className="p-3 bg-slate-800 font-bold text-white border-b border-slate-700">Chat IA</div>
+                    <div className="flex-1 overflow-y-auto p-3 space-y-2" ref={scrollRef}>
                         {messages.map((m, i) => (
-                            <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                <div className={`max-w-[80%] rounded-lg p-3 text-sm ${m.role === 'user' ? 'bg-coach-accent text-white' : 'bg-slate-800 text-slate-200 border border-slate-700'}`}>
-                                    {m.role === 'assistant' ? <div className="markdown-body" dangerouslySetInnerHTML={{ __html: marked.parse(m.content) }} /> : m.content}
-                                </div>
-                            </div>
+                            <div key={i} className={`p-2 rounded ${m.role === 'user' ? 'bg-orange-600 ml-auto text-white' : 'bg-slate-800 text-slate-200'}`}>{m.content}</div>
                         ))}
-                        {loading && <div className="text-slate-500 p-2 text-sm">IA réfléchit...</div>}
+                        {loading && <div className="text-slate-500">...</div>}
                     </div>
-                    <div className="p-4 bg-slate-800 border-t border-slate-700 flex gap-2">
-                        <input className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white outline-none" placeholder="Question..." value={input} onChange={(e) => setInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleSend()} />
-                        <button onClick={handleSend} disabled={loading} className="bg-purple-600 text-white p-2 rounded-lg"><Icon path={Icons.MessageSquare} /></button>
+                    <div className="p-3 border-t border-slate-700 flex gap-2">
+                        <input className="flex-1 bg-slate-800 rounded px-2 text-white" value={input} onChange={e => setInput(e.target.value)} />
+                        <Button onClick={handleSend}>Envoyer</Button>
                     </div>
                 </div>
             );
         };
 
+        // --- COACH OS & SMART RATING ---
         const CoachOS = ({ players, games, apiKey }) => {
-            const [activeTab, setActiveTab] = useState("dashboard");
+            const [activeTab, setActiveTab] = useState("reco");
             const [simLineup, setSimLineup] = useState([null,null,null,null,null]);
 
             const aggregatedStats = useMemo(() => {
                 const stats = {};
-                players.forEach(p => stats[p.id] = { ...p, gp: 0, min: 0, pts: 0, reb: 0, ast: 0, tov: 0, fga: 0, fgm: 0, fta: 0, ftm: 0, pointsAllowed: 0, stl: 0, blk: 0, oreb: 0, dreb: 0, pf: 0 });
+                players.forEach(p => stats[p.id] = { ...p, gp: 0, min: 0, pts: 0, reb: 0, ast: 0, tov: 0, fga: 0, fgm: 0, fta: 0, ftm: 0, pf: 0, plusMinus: 0 });
                 games.forEach(g => {
                     Object.entries(g.playerStats).forEach(([pid, ps]) => {
                         if (stats[pid]) {
-                            stats[pid].gp++; stats[pid].min += (ps.minutes||0); stats[pid].pts += ps.pts;
-                            stats[pid].reb += ps.reb; stats[pid].ast += ps.ast; stats[pid].tov += ps.tov;
-                            stats[pid].fga += ps.fga; stats[pid].fgm += ps.fgm; stats[pid].fta += ps.fta; stats[pid].ftm += ps.ftm;
-                            stats[pid].pointsAllowed += (ps.pointsAllowed||0); stats[pid].stl += ps.stl; stats[pid].blk += ps.blk; stats[pid].oreb += ps.oreb; stats[pid].dreb += ps.dreb; stats[pid].pf += ps.pf;
+                            stats[pid].gp++; 
+                            stats[pid].min += (ps.minutes||0); 
+                            stats[pid].pts += ps.pts; stats[pid].reb += ps.reb; stats[pid].ast += ps.ast; 
+                            stats[pid].tov += ps.tov; stats[pid].fga += ps.fga; stats[pid].fgm += ps.fgm;
+                            stats[pid].plusMinus += (ps.plusMinus || 0);
                         }
                     });
                 });
                 return Object.values(stats).map(s => ({ ...s, ...calculateAdvancedStats(s, s.min) }));
             }, [games, players]);
 
-            const renderAIRecommendation = () => {
-                const weightedPlayers = aggregatedStats.map(p => {
-                    const positives = p.pts + p.reb + p.ast + p.stl + p.blk;
-                    const negatives = p.tov + p.pf + (p.fga - p.fgm) + (p.fta - p.ftm);
-                    const totalTime = p.min;
+            const renderSmartRating = () => {
+                // --- ALGORITHME DE PONDÉRATION AVANCÉE (Bayesien) ---
+                const avgEfficiency = aggregatedStats.reduce((acc, p) => acc + p.effPerMin, 0) / (aggregatedStats.length || 1);
+                
+                const ratedPlayers = aggregatedStats.map(p => {
+                    const min = p.min;
+                    // Facteur de confiance (Sigmoid): Atteint ~90% de confiance à 20 mins de jeu total
+                    const confidence = 1 / (1 + Math.exp(-0.2 * (min - 10))); 
                     
-                    let score = 0;
-                    let logic = "";
+                    // Lissage Bayesien : On mixe la performance réelle avec la moyenne de l'équipe
+                    // Si peu de minutes, on tire le joueur vers la moyenne pour éviter les extrêmes
+                    const adjustedEff = (p.effPerMin * confidence) + (avgEfficiency * (1 - confidence));
                     
-                    if (totalTime < 15) {
-                        score = (positives * 0.5) - (negatives * 3.0);
-                        logic = "Faible échantillon (Sévère)";
-                    } else {
-                        score = (positives * 1.2) - (negatives * 0.8);
-                        logic = "Haut temps de jeu (Confiant)";
-                    }
-                    score += (p.netRtg * 0.5);
+                    // Score final sur 100 (arbitraire pour classement)
+                    // Bonus pour le Plus/Minus
+                    const rating = (adjustedEff * 40) + (p.plusMinus * 0.2); 
 
-                    return { ...p, weightedScore: score, logic };
-                }).sort((a, b) => b.weightedScore - a.weightedScore);
+                    return { ...p, confidence, rating, adjustedEff };
+                }).sort((a, b) => b.rating - a.rating);
 
-                const top5 = weightedPlayers.slice(0, 5);
+                const top5 = ratedPlayers.slice(0, 5);
 
                 return (
-                    <div className="space-y-6 animate-fade-in">
-                        <Card className="p-6 border-l-4 border-indigo-500 bg-slate-900">
-                            <h3 className="text-xl font-bold text-white flex items-center gap-2 mb-4">
-                                <Icon path={Icons.Robot} /> 5 Majeur IA (Algorithme Pondéré)
-                            </h3>
-                            <div className="grid gap-3">
-                                {top5.map((p, idx) => (
-                                    <div key={p.id} className="flex items-center justify-between bg-slate-800 p-3 rounded-lg border border-slate-700">
+                    <div className="space-y-4 animate-fade-in">
+                        <Card className="p-6 bg-gradient-to-br from-slate-900 to-slate-800 border-l-4 border-indigo-500">
+                            <h3 className="text-xl font-bold text-white mb-2"><Icon path={Icons.Robot} /> Smart Rating (Pondéré)</h3>
+                            <p className="text-sm text-slate-400 mb-4">
+                                Ce classement utilise un <strong>lissage statistique</strong>. Pour les joueurs à faible temps de jeu, 
+                                leur performance est pondérée par la moyenne de l'équipe (Confiance faible) pour éviter les 
+                                "flukes" (statistiques aberrantes sur 2 minutes). Le rating inclut aussi le Plus/Minus.
+                            </p>
+                            <div className="space-y-2">
+                                {top5.map((p, i) => (
+                                    <div key={p.id} className="flex justify-between items-center bg-slate-800/50 p-2 rounded border border-slate-700">
                                         <div className="flex items-center gap-3">
-                                            <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center font-bold">{idx + 1}</div>
+                                            <div className="w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center text-xs font-bold">{i+1}</div>
                                             <div>
                                                 <div className="font-bold text-white">{p.name}</div>
-                                                <div className="text-xs text-indigo-300">{p.logic}</div>
+                                                <div className="text-[10px] text-slate-400">Confiance: {Math.round(p.confidence * 100)}%</div>
                                             </div>
                                         </div>
                                         <div className="text-right">
-                                            <div className="text-lg font-bold text-white">{p.weightedScore.toFixed(1)}</div>
-                                            <div className="text-[10px] uppercase text-slate-500">Score IA</div>
+                                            <div className="text-lg font-bold text-indigo-400">{p.rating.toFixed(1)}</div>
+                                            <div className="text-[10px] text-slate-500">Rating</div>
                                         </div>
                                     </div>
                                 ))}
                             </div>
                         </Card>
-                    </div>
-                );
-            };
-
-            const renderDashboard = () => (
-                <div className="space-y-6 animate-fade-in">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <Card className="p-4 border-l-4 border-orange-500">
-                            <h4 className="text-xs uppercase text-slate-400">Top Scorer</h4>
-                            <div className="text-2xl font-bold text-white">{[...aggregatedStats].sort((a,b)=>b.pts-a.pts)[0]?.name || "-"}</div>
-                        </Card>
-                        <Card className="p-4 border-l-4 border-blue-500">
-                            <h4 className="text-xs uppercase text-slate-400">MVP (EFF)</h4>
-                            <div className="text-2xl font-bold text-white">{[...aggregatedStats].sort((a,b)=>b.eff-a.eff)[0]?.name || "-"}</div>
-                        </Card>
-                        <Card className="p-4 border-l-4 border-green-500">
-                            <h4 className="text-xs uppercase text-slate-400">Net Rtg King</h4>
-                            <div className="text-2xl font-bold text-white">{[...aggregatedStats].sort((a,b)=>b.netRtg-a.netRtg)[0]?.name || "-"}</div>
-                        </Card>
-                    </div>
-                    <Card className="p-4 h-80">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={aggregatedStats}>
-                                <XAxis dataKey="name" stroke="#94a3b8" />
-                                <Tooltip 
-                                    cursor={{ fill: 'transparent' }} 
-                                    contentStyle={{ backgroundColor: '#1e293b', border: 'none' }}
-                                    itemStyle={{ color: '#fff' }}
-                                />
-                                <Bar dataKey="eff" fill="#f97316" radius={[4,4,0,0]} />
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </Card>
-                </div>
-            );
-
-            const renderSim = () => {
-                const active = simLineup.map(id => aggregatedStats.find(p => p.id == id)).filter(Boolean);
-                const stats = active.length ? {
-                    ortg: (active.reduce((s, p) => s + p.ortg, 0) / active.length).toFixed(1),
-                    drtg: (active.reduce((s, p) => s + p.drtg, 0) / active.length).toFixed(1),
-                    net: ((active.reduce((s, p) => s + p.ortg, 0) / active.length) - (active.reduce((s, p) => s + p.drtg, 0) / active.length)).toFixed(1)
-                } : null;
-                return (
-                    <div className="space-y-6">
-                        <div className="grid grid-cols-5 gap-2">
-                            {[0,1,2,3,4].map(i => (
-                                <select key={i} className="bg-slate-800 border border-slate-700 text-white text-sm rounded p-2 w-full" onChange={(e) => {const n=[...simLineup]; n[i]=e.target.value; setSimLineup(n)}}>
-                                    <option value="">Poste {i+1}...</option>
-                                    {aggregatedStats.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                                </select>
-                            ))}
+                        
+                        <div className="overflow-x-auto bg-slate-900 rounded-lg p-2">
+                            <table className="w-full text-left text-xs text-slate-300">
+                                <thead className="text-slate-500 uppercase">
+                                    <tr>
+                                        <th className="p-2">Joueur</th>
+                                        <th className="p-2">Min</th>
+                                        <th className="p-2">EFF/min</th>
+                                        <th className="p-2">Confiance</th>
+                                        <th className="p-2 text-indigo-400">Rating</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {ratedPlayers.map(p => (
+                                        <tr key={p.id} className="border-b border-slate-800">
+                                            <td className="p-2 font-bold">{p.name}</td>
+                                            <td className="p-2">{p.min}</td>
+                                            <td className="p-2">{p.effPerMin.toFixed(2)}</td>
+                                            <td className="p-2">
+                                                <div className="w-12 h-1 bg-slate-700 rounded">
+                                                    <div className="h-full bg-indigo-500 rounded" style={{width: `${p.confidence*100}%`}}></div>
+                                                </div>
+                                            </td>
+                                            <td className="p-2 font-bold text-indigo-400">{p.rating.toFixed(1)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
                         </div>
-                        {stats && (
-                            <div className="grid grid-cols-2 gap-4">
-                                <Card className="p-4 text-center border-t-4 border-purple-500">
-                                    <div className="text-4xl font-black text-white">{stats.net > 0 ? `+${stats.net}` : stats.net}</div>
-                                    <div className="text-xs text-slate-400">Net Rating Est.</div>
-                                </Card>
-                                <Card className="p-4 flex flex-col justify-center gap-2">
-                                    <div className="flex justify-between text-sm"><span className="text-green-400">ORtg: {stats.ortg}</span> <span className="text-red-400">DRtg: {stats.drtg}</span></div>
-                                </Card>
-                            </div>
-                        )}
                     </div>
                 );
             };
-
-            const tabs = [
-                { id: "dashboard", label: "Dashboard", icon: Icons.Chart, comp: renderDashboard },
-                { id: "reco", label: "🤖 Coach IA", icon: Icons.Robot, comp: renderAIRecommendation },
-                { id: "assistant", label: "Chat IA", icon: Icons.Sparkles, comp: () => <CoachAssistant aggregatedStats={aggregatedStats} apiKey={apiKey} /> },
-                { id: "sim", label: "Simulateur", icon: Icons.Zap, comp: renderSim },
-            ];
 
             return (
                 <div className="flex flex-col h-full">
                     <div className="flex gap-1 border-b border-slate-700 mb-4 overflow-x-auto no-scrollbar">
-                        {tabs.map(t => (
-                            <button key={t.id} onClick={() => setActiveTab(t.id)} className={`flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors ${activeTab === t.id ? 'text-coach-accent border-b-2 border-coach-accent bg-slate-800/50' : 'text-slate-400'}`}>
-                                <Icon path={t.icon} /> {t.label}
-                            </button>
-                        ))}
+                        <button onClick={() => setActiveTab("reco")} className={`px-4 py-2 ${activeTab==='reco'?'text-orange-500 border-b-2 border-orange-500':''}`}>Smart Rating</button>
+                        <button onClick={() => setActiveTab("chat")} className={`px-4 py-2 ${activeTab==='chat'?'text-orange-500 border-b-2 border-orange-500':''}`}>Assistant IA</button>
                     </div>
-                    <div className="flex-1 overflow-y-auto pb-20">{tabs.find(t => t.id === activeTab)?.comp()}</div>
+                    <div className="flex-1 overflow-y-auto pb-20">
+                        {activeTab === 'reco' && renderSmartRating()}
+                        {activeTab === 'chat' && <CoachAssistant aggregatedStats={aggregatedStats} apiKey={apiKey} />}
+                    </div>
                 </div>
             );
         };
@@ -788,43 +748,25 @@
         const Settings = ({ players, onUpdatePlayers, apiKey, setApiKey }) => {
             const addPlayer = () => {
                 const newId = players.length > 0 ? Math.max(...players.map(p => p.id)) + 1 : 1;
-                onUpdatePlayers([...players, { id: newId, name: "Nouveau Joueur", number: 0, pos: "G", style: "Rookie", height: 190 }]);
+                onUpdatePlayers([...players, { id: newId, name: "Nouveau", number: 0, pos: "G" }]);
             };
-
-            const removePlayer = (id) => {
-                if (confirm("Supprimer ce joueur définitivement ?")) {
-                    onUpdatePlayers(players.filter(p => p.id !== id));
-                }
-            };
-
             return (
-                <div className="space-y-6">
-                    <Card className="p-6 border-l-4 border-purple-500 bg-gradient-to-br from-slate-800 to-slate-900">
-                        <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-2"><Icon path={Icons.Key} /> Configuration IA</h3>
-                        <p className="text-xs text-slate-400 mb-4">Entrez votre clé API Gemini pour activer l'assistant coach et les analyses de match.</p>
-                        <input 
-                            type="password" 
-                            className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white focus:border-purple-500 outline-none font-mono text-sm"
-                            placeholder="sk-..."
-                            value={apiKey}
-                            onChange={(e) => setApiKey(e.target.value)}
-                        />
+                <div className="space-y-4">
+                    <Card className="p-4 border-l-4 border-purple-500">
+                        <div className="font-bold text-white mb-2">API Gemini</div>
+                        <input type="password" className="w-full bg-slate-900 rounded p-2 text-white" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Clé API..." />
                     </Card>
-                    <div className="flex justify-between items-center">
-                        <h2 className="text-2xl font-bold text-white">Effectif ({players.length})</h2>
-                        <Button onClick={addPlayer} variant="success"><Icon path={Icons.Plus} /> Ajouter Joueur</Button>
+                    <div className="flex justify-between">
+                        <h2 className="text-white text-xl">Effectif</h2>
+                        <Button onClick={addPlayer} size="sm">Ajouter</Button>
                     </div>
-                    <div className="grid gap-3">
+                    <div className="grid gap-2">
                         {players.map((p, i) => (
-                            <Card key={p.id} className="p-3 flex gap-3 items-center">
-                                <div className="w-10 h-10 bg-slate-700 rounded-full flex items-center justify-center font-bold">{p.number}</div>
-                                <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-2">
-                                    <input className="bg-transparent text-white font-bold w-full outline-none border-b border-slate-700 focus:border-orange-500" value={p.name} onChange={(e) => {const n=[...players]; n[i].name=e.target.value; onUpdatePlayers(n)}} placeholder="Nom" />
-                                    <input className="bg-transparent text-slate-400 text-sm w-full outline-none border-b border-slate-700 focus:border-orange-500" value={p.pos} onChange={(e) => {const n=[...players]; n[i].pos=e.target.value; onUpdatePlayers(n)}} placeholder="Poste" />
-                                    <input className="bg-transparent text-slate-400 text-sm w-full outline-none border-b border-slate-700 focus:border-orange-500" type="number" value={p.number} onChange={(e) => {const n=[...players]; n[i].number=parseInt(e.target.value); onUpdatePlayers(n)}} placeholder="Num" />
-                                </div>
-                                <button onClick={() => removePlayer(p.id)} className="text-red-500 hover:text-red-300 p-2"><Icon path={Icons.Trash} /></button>
-                            </Card>
+                            <div key={p.id} className="bg-slate-800 p-2 rounded flex gap-2">
+                                <input className="bg-transparent text-white w-8" value={p.number} onChange={e => {const n=[...players]; n[i].number=parseInt(e.target.value); onUpdatePlayers(n)}} />
+                                <input className="bg-transparent text-white flex-1" value={p.name} onChange={e => {const n=[...players]; n[i].name=e.target.value; onUpdatePlayers(n)}} />
+                                <button onClick={() => onUpdatePlayers(players.filter(x => x.id !== p.id))} className="text-red-500">X</button>
+                            </div>
                         ))}
                     </div>
                 </div>
@@ -832,105 +774,38 @@
         };
 
         const History = ({ games, setGames, apiKey, onEditGame }) => {
-            const [analyzing, setAnalyzing] = useState(null);
-            const [modalContent, setModalContent] = useState(null);
-            const [viewDetail, setViewDetail] = useState(null); // State for viewing detailed stats
-
-            const analyzeMatch = async (game) => {
-                if (!apiKey) { alert("Configurez votre clé API dans les paramètres !"); return; }
-                setAnalyzing(game.id);
-                try {
-                    const prompt = `
-                        Agis comme un journaliste sportif spécialisé basket.
-                        Écris un résumé de match court, percutant et analytique (max 150 mots) basé sur ces données :
-                        Match : ${game.location} contre ${game.opponent}.
-                        Score : Nous ${game.homeScore} - ${game.awayScore} Eux.
-                        Stats Joueurs : ${JSON.stringify(game.playerStats)}.
-                        Stats Adversaire (si dispo) : ${JSON.stringify(game.opponentStats || {})}.
-                        Mets en avant le MVP du match et les clés de la victoire ou défaite.
-                    `;
-                    const text = await callGemini(prompt, apiKey);
-                    setModalContent({ title: `Analyse vs ${game.opponent}`, body: text });
-                } catch (e) { alert("Erreur analyse"); }
-                setAnalyzing(null);
-            };
-
+            const [viewDetail, setViewDetail] = useState(null);
             return (
                 <div className="space-y-4">
                     {games.map(g => (
-                        <Card key={g.id} className="p-4 flex flex-col gap-4">
-                            <div className="flex justify-between items-center">
-                                <div>
-                                    <div className="text-sm text-slate-400">{g.date} - {g.location}</div>
-                                    <div className="text-xl font-bold text-white"><span className="text-green-400">{g.homeScore}</span> - <span className="text-red-400">{g.awayScore}</span> vs {g.opponent}</div>
-                                </div>
-                                <div className="flex flex-col md:flex-row gap-2">
-                                    <Button variant="secondary" size="sm" onClick={() => setViewDetail(g)}><Icon path={Icons.Chart} /> Détails</Button>
-                                    <Button variant="secondary" size="sm" onClick={() => onEditGame(g)}><Icon path={Icons.Edit} /> Modifier</Button>
-                                    <Button variant="magic" size="sm" onClick={() => analyzeMatch(g)} disabled={analyzing === g.id}>
-                                        {analyzing === g.id ? "..." : <><Icon path={Icons.Sparkles} /> IA</>}
-                                    </Button>
-                                    <Button variant="danger" size="sm" onClick={() => confirm("Supprimer ?") && setGames(games.filter(x => x.id !== g.id))}><Icon path={Icons.Trash} /></Button>
-                                </div>
+                        <Card key={g.id} className="p-4">
+                            <div className="flex justify-between items-center mb-2">
+                                <div className="text-white font-bold">{g.date} vs {g.opponent}</div>
+                                <div className="text-xl"><span className="text-green-400">{g.homeScore}</span> - <span className="text-red-400">{g.awayScore}</span></div>
+                            </div>
+                            <div className="flex gap-2">
+                                <Button size="sm" variant="secondary" onClick={() => setViewDetail(g)}>Détails</Button>
+                                <Button size="sm" variant="secondary" onClick={() => onEditGame(g)}>Modifier</Button>
+                                <Button size="sm" variant="danger" onClick={() => confirm("Supp?") && setGames(games.filter(x => x.id !== g.id))}>Supp</Button>
                             </div>
                         </Card>
                     ))}
-                    
-                    {/* AI ANALYSIS MODAL */}
-                    <Modal isOpen={!!modalContent} onClose={() => setModalContent(null)} title={modalContent?.title}>
-                        <div className="markdown-body text-slate-300 leading-relaxed" dangerouslySetInnerHTML={{ __html: marked.parse(modalContent?.body || "") }} />
-                    </Modal>
-
-                    {/* DETAIL VIEW MODAL */}
-                    <Modal isOpen={!!viewDetail} onClose={() => setViewDetail(null)} title={`Détails vs ${viewDetail?.opponent}`}>
+                    <Modal isOpen={!!viewDetail} onClose={() => setViewDetail(null)} title="Détails Match">
                         {viewDetail && (
-                            <div className="space-y-4">
-                                <div className="bg-slate-900 p-4 rounded-lg text-center border border-slate-700">
-                                    <h4 className="text-slate-400 uppercase text-xs">Score Final</h4>
-                                    <div className="text-3xl font-bold text-white">
-                                        <span className="text-green-400">{viewDetail.homeScore}</span> - <span className="text-red-400">{viewDetail.awayScore}</span>
-                                    </div>
-                                </div>
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-left text-xs text-slate-300">
-                                        <thead className="bg-slate-700 text-white uppercase">
-                                            <tr>
-                                                <th className="p-2">Joueur</th>
-                                                <th className="p-2">MIN</th>
-                                                <th className="p-2">PTS</th>
-                                                <th className="p-2">REB</th>
-                                                <th className="p-2">AST</th>
-                                                <th className="p-2">STL</th>
-                                                <th className="p-2">BLK</th>
-                                                <th className="p-2">TOV</th>
-                                                <th className="p-2 text-green-400">EFF</th>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-xs text-slate-300 text-left">
+                                    <thead className="bg-slate-700 text-white"><tr><th className="p-2">J</th><th className="p-2">Min</th><th className="p-2">Pts</th><th className="p-2">+/-</th></tr></thead>
+                                    <tbody>
+                                        {Object.entries(viewDetail.playerStats).map(([pid, s]) => (
+                                            <tr key={pid}>
+                                                <td className="p-2">ID {pid}</td>
+                                                <td className="p-2">{s.minutes}</td>
+                                                <td className="p-2">{s.pts}</td>
+                                                <td className="p-2">{s.plusMinus}</td>
                                             </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-700">
-                                            {Object.entries(viewDetail.playerStats).map(([pid, s]) => {
-                                                // Calculate basic eff for display
-                                                const eff = (s.pts + s.reb + s.ast + s.stl + s.blk) - ((s.fga - s.fgm) + (s.fta - s.ftm) + s.tov);
-                                                // Find player name if possible, else use ID
-                                                // We don't have players list prop here easily, so relies on saved stat object if it had name, or just assume standard structure
-                                                // In live tracker we didn't save names in playerStats object, only keys.
-                                                // So we might just show ID or basic stats. Ideally we pass players to History too.
-                                                return (
-                                                    <tr key={pid}>
-                                                        <td className="p-2 font-bold">#{pid}</td> {/* Simplified for now */}
-                                                        <td className="p-2">{s.minutes}</td>
-                                                        <td className="p-2">{s.pts}</td>
-                                                        <td className="p-2">{s.reb}</td>
-                                                        <td className="p-2">{s.ast}</td>
-                                                        <td className="p-2">{s.stl}</td>
-                                                        <td className="p-2">{s.blk}</td>
-                                                        <td className="p-2">{s.tov}</td>
-                                                        <td className="p-2 font-bold text-green-400">{eff}</td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                        ))}
+                                    </tbody>
+                                </table>
                             </div>
                         )}
                     </Modal>
@@ -943,8 +818,6 @@
             const [players, setPlayers] = useState([]);
             const [games, setGames] = useState([]);
             const [apiKey, setApiKey] = useState("");
-            
-            // State for editing a game
             const [activeGame, setActiveGame] = useState(null);
 
             useEffect(() => {
@@ -958,32 +831,14 @@
             useEffect(() => { localStorage.setItem('gemini_api_key', apiKey); }, [apiKey]);
 
             const handleSaveGame = (gameState) => {
-                // Check if we are updating an existing game (Edit Mode)
                 const gameId = activeGame?.id || generateId();
-                const date = activeGame?.date || new Date().toLocaleDateString();
-
-                const newGameData = {
-                    ...gameState,
-                    id: gameId,
-                    date: date
-                };
-
+                const newGame = { ...gameState, id: gameId, date: activeGame?.date || new Date().toLocaleDateString() };
                 setGames(prev => {
                     const exists = prev.find(g => g.id === gameId);
-                    if (exists) {
-                        return prev.map(g => g.id === gameId ? newGameData : g);
-                    }
-                    return [newGameData, ...prev];
+                    return exists ? prev.map(g => g.id === gameId ? newGame : g) : [newGame, ...prev];
                 });
-
-                // Reset active game and go to history to confirm save
                 setActiveGame(null);
                 setView('history');
-            };
-
-            const handleEditGame = (game) => {
-                setActiveGame(game);
-                setView('live');
             };
 
             return (
@@ -1004,22 +859,16 @@
                     <main className="flex-1 flex flex-col h-full overflow-hidden relative">
                         <header className="h-16 bg-slate-900/80 backdrop-blur border-b border-slate-800 flex items-center px-6 shrink-0">
                             <h1 className="font-bold text-lg text-white flex items-center gap-2">
-                                {view === 'live' && (activeGame ? "✏️ Modification de Match" : "🔴 Match en Direct")}
-                                {view === 'intelligent' && "🧠 Coach OS + IA"}
+                                {view === 'live' && (activeGame ? "✏️ Modifier Match" : "🔴 Match en Direct")}
+                                {view === 'intelligent' && "🧠 Coach OS"}
                                 {view === 'history' && "📜 Historique"}
                                 {view === 'settings' && "⚙️ Paramètres"}
                             </h1>
                         </header>
                         <div className="flex-1 p-4 overflow-y-auto bg-slate-950 no-scrollbar">
-                            {view === 'live' && (
-                                <LiveTracker 
-                                    players={players} 
-                                    onSaveGame={handleSaveGame} 
-                                    initialGame={activeGame} 
-                                />
-                            )}
+                            {view === 'live' && <LiveTracker players={players} onSaveGame={handleSaveGame} initialGame={activeGame} />}
                             {view === 'intelligent' && <CoachOS players={players} games={games} apiKey={apiKey} />}
-                            {view === 'history' && <History games={games} setGames={setGames} apiKey={apiKey} onEditGame={handleEditGame} />}
+                            {view === 'history' && <History games={games} setGames={setGames} apiKey={apiKey} onEditGame={(g) => { setActiveGame(g); setView('live'); }} />}
                             {view === 'settings' && <Settings players={players} onUpdatePlayers={setPlayers} apiKey={apiKey} setApiKey={setApiKey} />}
                         </div>
                     </main>
