@@ -146,7 +146,8 @@
             </div>
         );
 
-        const Button = ({ onClick, children, variant = "primary", className = "", size = "md", disabled=false, as="button" }) => {
+        // --- FIXED BUTTON COMPONENT ---
+        const Button = ({ onClick, children, variant = "primary", className = "", size = "md", disabled=false, as="button", ...props }) => {
             const base = "font-semibold rounded transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer";
             const variants = {
                 primary: "bg-coach-accent hover:bg-orange-600 text-white shadow-md",
@@ -158,11 +159,12 @@
             };
             const sizes = { sm: "px-2 py-1 text-xs", md: "px-4 py-2 text-sm", lg: "px-6 py-3 text-lg" };
             
+            // FIX: Pass onClick to label as well
             if (as === "label") {
-                return <label className={`${base} ${variants[variant]} ${sizes[size]} ${className}`}>{children}</label>;
+                return <label onClick={onClick} className={`${base} ${variants[variant]} ${sizes[size]} ${className}`} {...props}>{children}</label>;
             }
             return (
-                <button onClick={onClick} disabled={disabled} className={`${base} ${variants[variant]} ${sizes[size]} ${className} ${disabled ? 'opacity-50 cursor-not-allowed':''}`}>
+                <button onClick={onClick} disabled={disabled} className={`${base} ${variants[variant]} ${sizes[size]} ${className} ${disabled ? 'opacity-50 cursor-not-allowed':''}`} {...props}>
                     {children}
                 </button>
             );
@@ -396,7 +398,7 @@
             return (
                 <div className="space-y-4">
                     <div className="flex justify-end">
-                        <Button variant="primary" as="label" className="cursor-pointer" onClick={onImportClick}>
+                        <Button variant="primary" className="cursor-pointer" onClick={onImportClick}>
                             <Icon path={Icons.Upload} /> Importer HTML
                         </Button>
                     </div>
