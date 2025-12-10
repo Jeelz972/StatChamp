@@ -934,11 +934,19 @@
             
             const handleSaveConfig = () => {
                 try {
-                    const parsed = JSON.parse(localConfig);
+                    // Fix: Try strict parse first, fall back to "fixed" quotes
+                    let parsed;
+                    try {
+                        parsed = JSON.parse(localConfig);
+                    } catch (e) {
+                        // Regex to add quotes to unquoted keys
+                        const fixed = localConfig.replace(/(['"])?([a-zA-Z0-9_]+)(['"])?:/g, '"$2":').replace(/'/g, '"');
+                        parsed = JSON.parse(fixed);
+                    }
                     setFirebaseConfig(parsed);
                     alert("Configuration Firebase sauvegardée ! Rechargez la page.");
                 } catch (e) {
-                    alert("Erreur de format JSON. Vérifiez votre configuration.");
+                    alert("Erreur de format JSON. Vérifiez la syntaxe.");
                 }
             };
 
