@@ -63,7 +63,7 @@
         // 🛠️ ZONE DE CONFIGURATION AUTOMATIQUE 🛠️
         // ==========================================
         
-        const PRECONFIGURED_FIREBASE = {
+       const PRECONFIGURED_FIREBASE = {
     apiKey: "AIzaSyBh3NTNNGlcpP65QF_2RP09cMm-Dj2QQyw",
     authDomain: "sinon-6b939.firebaseapp.com",
     projectId: "sinon-6b939",
@@ -80,7 +80,6 @@
         // FIN DE LA ZONE DE CONFIGURATION
         // ==========================================
 
-
         const { useState, useEffect, useMemo, useRef } = React;
         const { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid } = window.Recharts || {};
 
@@ -95,9 +94,9 @@
             { id: 5, name: "Pivot E", number: 15, pos: "C" },
         ];
 
-        const MY_TEAM_NAME = "Champagne basket U18"; // Nom à exclure des adversaires
+        const MY_TEAM_KEYWORDS = ["Champagne", "Basket", "U18"];
 
-        // Logic to calculate stats from a list of actions
+        // Logic to calculate stats from a list of actions (Live Mode)
         const recalculateGameStats = (actions, players) => {
             const pStats = {};
             players.forEach(p => pStats[p.id] = { pts: 0, reb: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, tov: 0, fga: 0, fgm: 0, fta: 0, ftm: 0, pf: 0, pointsAllowed: 0, minutes: 0, plusMinus: 0 });
@@ -442,7 +441,7 @@
                 games.forEach(g => {
                     Object.entries(g.playerStats).forEach(([pid, ps]) => {
                         if (stats[pid]) {
-                            // Filter logic for DNP: if minutes is 0, don't count the game
+                            // Filter Logic for DNP in Smart Rating as well
                             if ((ps.minutes || 0) > 0) {
                                 stats[pid].gp++; 
                                 stats[pid].min += (ps.minutes||0); 
@@ -700,6 +699,325 @@
                                             </tbody>
                                         </table>
                                     </div>
+                                </div>
+                            </div>
+                        )}
+                    </Modal>
+                </div>
+            );
+        };
+
+        const ImportReviewModal = ({ importData, currentPlayers, onConfirm, onCancel }) => {
+            const [mapping, setMapping] = useState({});
+
+            useEffect(() => {
+                const initialMap = {};
+                importData.rawPlayers.forEach((imp, idx) => {
+                    const match = currentPlayers.find(p => p.number === imp.number);
+                    if (match) {
+                        initialMap[idx] = match.id;
+                    } else {
+                        initialMap[idx] = "NEW";
+                    }
+                });
+                setMapping(initialMap);
+            }, [importData, currentPlayers]);
+
+            const handleFinalize = () => {
+                const finalGameStats = {};
+                const newPlayersList = [...currentPlayers];
+                let maxId = currentPlayers.length > 0 ? Math.max(...currentPlayers.map(p => p.id)) : 0;
+
+                importData.rawPlayers.forEach((imp, idx) => {
+                    const choice = mapping[idx];
+                    let pid;
+                    if (choice === "NEW") {
+                        maxId++;
+                        pid = maxId;
+                        newPlayersList.push({ id: pid, name: imp.name, number: imp.number, pos: "G" });
+                    } else if (choice === "SKIP") {
+                        return;
+                    } else {
+                        pid = parseInt(choice);
+                    }
+                    finalGameStats[pid] = imp.stats;
+                });
+
+                const newGame = {
+                    id: generateId(),
+                    ...importData.meta,
+                    playerStats: finalGameStats,
+                    opponentStats: importData.opponentStats,
+                    actions: []
+                };
+                onConfirm(newGame, newPlayersList);
+            };
+
+            return (
+                <div className="space-y-4">
+                    <div className="bg-slate-900 p-4 rounded border border-slate-700">
+                        <h4 className="text-orange-500 font-bold mb-2">Match: {importData.meta.opponent}</h4>
+                        <div className="text-white text-sm">Score: {importData.meta.homeScore} - {importData.meta.awayScore}</div>
+                    </div>
+                    <div className="overflow-y-auto max-h-[50vh] space-y-2">
+                        {importData.rawPlayers.map((imp, idx) => (
+                            <div key={idx} className="flex items-center gap-2 bg-slate-800 p-2 rounded border border-slate-700">
+                                <div className="w-1/3">
+                                    <div className="text-white font-bold text-sm">#{imp.number} {imp.name}</div>
+                                    <div className="text-xs text-slate-400">{imp.stats.pts} pts, {imp.stats.min} min</div>
+                                </div>
+                                <div className="text-slate-500"><Icon path={Icons.Link} /></div>
+                                <div className="flex-1">
+                                    <select 
+                                        className="w-full bg-slate-900 text-white text-sm p-2 rounded border border-slate-600"
+                                        value={mapping[idx] || "NEW"}
+                                        onChange={(e) => setMapping({...mapping, [idx]: e.target.value})}
+                                    >
+                                        <option value="NEW" className="text-green-400 font-bold">+ Créer Nouveau</option>
+                                        <option value="SKIP" className="text-red-400">Ne pas importer</option>
+                                        <optgroup label="Effectif Actuel">
+                                            {currentPlayers.map(p => (
+                                                <option key={p.id} value={p.id}>#{p.number} - {p.name}</option>
+                                            ))}
+                                        </optgroup>
+                                    </select>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="flex justify-end gap-2 pt-4 border-t border-slate-700">
+                        <Button variant="ghost" onClick={onCancel}>Annuler</Button>
+                        <Button variant="success" onClick={handleFinalize}>Confirmer l'Import</Button>
+                    </div>
+                </div>
+            );
+        };
+
+        const parseHTMLStats = (html) => {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            
+            const date = doc.querySelector('#game-date span.detail')?.textContent || new Date().toLocaleDateString();
+            
+            // Intelligent Opponent Detection
+            let homeName = doc.querySelector('#team-names-container .left span.detail')?.textContent || "Nous";
+            let awayName = doc.querySelector('#team-names-container .right span.detail')?.textContent || "Adversaire";
+            
+            // Score detection is trickier because we need to know who is who. 
+            // Default hypothesis: Left is Home, Right is Away.
+            let homeScoreVal = parseInt(doc.querySelector('#team-score-left .title')?.textContent || "0");
+            let awayScoreVal = parseInt(doc.querySelector('#team-score-right .title')?.textContent || "0");
+
+            let opponentName = awayName;
+            let myScore = homeScoreVal;
+            let oppScore = awayScoreVal;
+
+            // Logic to find "My Team" vs "Opponent"
+            const isMyTeam = (name) => {
+                return MY_TEAM_KEYWORDS.some(k => name.toLowerCase().includes(k.toLowerCase()));
+            };
+
+            if (isMyTeam(awayName) && !isMyTeam(homeName)) {
+                // Swap. The opponent is actually the Home team in the file.
+                opponentName = homeName;
+                myScore = awayScoreVal;
+                oppScore = homeScoreVal;
+            } else if (!isMyTeam(awayName) && isMyTeam(homeName)) {
+                // Correct. Opponent is Away.
+                opponentName = awayName;
+                myScore = homeScoreVal;
+                oppScore = awayScoreVal;
+            } else {
+                 // Fallback: If both or neither match, assume standard Away is opponent, but user might rename later.
+            }
+
+            const rawPlayers = [];
+            const table = doc.querySelector('table#stats');
+            let opponentStats = { pts: 0, reb: 0, ast: 0, tov: 0, fouls: 0 };
+
+            if (table) {
+                const rows = table.querySelectorAll('tr');
+                rows.forEach((row, i) => {
+                    if (i === 0) return;
+                    const cells = row.querySelectorAll('td');
+                    if (cells.length < 17) return;
+
+                    const nameCell = cells[0].textContent.trim();
+
+                    // Detect opponent row based on the determined opponent Name
+                    if (nameCell.includes(opponentName)) {
+                         opponentStats = {
+                            pts: parseInt(cells[16].textContent) || 0,
+                            reb: (parseInt(cells[7].textContent)||0) + (parseInt(cells[8].textContent)||0),
+                            ast: parseInt(cells[13].textContent) || 0,
+                            tov: parseInt(cells[11].textContent) || 0,
+                            fouls: parseInt(cells[9].textContent) || 0
+                        };
+                        return;
+                    }
+
+                    if (!nameCell.startsWith('#')) return; 
+
+                    const parts = nameCell.split(' ');
+                    const numberStr = parts[0].replace('#', '');
+                    const number = parseInt(numberStr);
+                    const name = parts.slice(1).join(' ');
+
+                    const parseSplit = (txt) => { 
+                        if (!txt || txt === '-') return { made: 0, att: 0 };
+                        const [m, a] = txt.split('-'); 
+                        return { made: parseInt(m)||0, att: parseInt(a)||0 }; 
+                    };
+                    
+                    const fg = parseSplit(cells[1].textContent); 
+                    const tp = parseSplit(cells[3].textContent); 
+                    const ft = parseSplit(cells[5].textContent); 
+
+                    const twoPM = fg.made - tp.made;
+                    const twoPA = fg.att - tp.att;
+                    
+                    const stats = {
+                        fgm: twoPM, fga: twoPA, 
+                        ftm: ft.made, fta: ft.att,
+                        pts: parseInt(cells[16].textContent) || 0,
+                        reb: (parseInt(cells[7].textContent)||0) + (parseInt(cells[8].textContent)||0),
+                        oreb: parseInt(cells[7].textContent) || 0,
+                        dreb: parseInt(cells[8].textContent) || 0,
+                        ast: parseInt(cells[13].textContent) || 0,
+                        stl: parseInt(cells[10].textContent) || 0,
+                        blk: parseInt(cells[12].textContent) || 0,
+                        tov: parseInt(cells[11].textContent) || 0,
+                        pf: parseInt(cells[9].textContent) || 0,
+                        minutes: parseInt(cells[15].textContent) || 0,
+                        plusMinus: parseInt(cells[14].textContent) || 0,
+                        threePM: tp.made, threePA: tp.att
+                    };
+                    
+                    rawPlayers.push({ name, number, stats });
+                });
+            }
+
+            return {
+                meta: { date, opponent: opponentName, homeScore: myScore, awayScore: oppScore, location: "Importé" },
+                rawPlayers,
+                opponentStats
+            };
+        };
+
+        const History = ({ games, players, setGames, apiKey, onEditGame, onImportClick }) => {
+            const [analyzing, setAnalyzing] = useState(null);
+            const [modalContent, setModalContent] = useState(null);
+            const [viewDetail, setViewDetail] = useState(null);
+
+            const analyzeMatch = async (game) => {
+                if (!apiKey) { alert("Configurez votre clé API dans les paramètres !"); return; }
+                setAnalyzing(game.id);
+                try {
+                    const prompt = `Agis comme un journaliste sportif. Résumé match basket: Nous ${game.homeScore}-${game.awayScore} ${game.opponent}. Stats: ${JSON.stringify(game.playerStats)}. MVP? Clés du match?`;
+                    const text = await callGemini(prompt, apiKey);
+                    setModalContent({ title: `Analyse vs ${game.opponent}`, body: text });
+                } catch (e) { alert("Erreur analyse"); }
+                setAnalyzing(null);
+            };
+
+            return (
+                <div className="space-y-4">
+                    <div className="flex justify-end">
+                        <Button variant="primary" className="cursor-pointer" onClick={onImportClick}>
+                            <Icon path={Icons.Upload} /> Importer HTML
+                        </Button>
+                    </div>
+
+                    {games.map(g => (
+                        <div key={g.id} onClick={() => setViewDetail(g)} className="cursor-pointer">
+                            <Card className="p-4 flex flex-col gap-4 hover:border-orange-500 transition-colors">
+                                <div className="flex justify-between items-center">
+                                    <div>
+                                        <div className="text-sm text-slate-400">{g.date} - {g.location}</div>
+                                        <div className="text-xl font-bold text-white"><span className="text-green-400">{g.homeScore}</span> - <span className="text-red-400">{g.awayScore}</span> vs {g.opponent}</div>
+                                    </div>
+                                    <div className="flex flex-col md:flex-row gap-2" onClick={(e) => e.stopPropagation()}>
+                                        <Button variant="secondary" size="sm" onClick={() => onEditGame(g)}><Icon path={Icons.Edit} /> Modifier</Button>
+                                        <Button variant="magic" size="sm" onClick={() => analyzeMatch(g)} disabled={analyzing === g.id}>
+                                            {analyzing === g.id ? "..." : <><Icon path={Icons.Sparkles} /> IA</>}
+                                        </Button>
+                                        <Button variant="danger" size="sm" onClick={() => confirm("Supprimer ?") && setGames(games.filter(x => x.id !== g.id))}><Icon path={Icons.Trash} /></Button>
+                                    </div>
+                                </div>
+                            </Card>
+                        </div>
+                    ))}
+                    
+                    <Modal isOpen={!!modalContent} onClose={() => setModalContent(null)} title={modalContent?.title}>
+                        <div className="markdown-body text-slate-300 leading-relaxed" dangerouslySetInnerHTML={{ __html: marked.parse(modalContent?.body || "") }} />
+                    </Modal>
+
+                    <Modal isOpen={!!viewDetail} onClose={() => setViewDetail(null)} title={`Détails vs ${viewDetail?.opponent}`}>
+                        {viewDetail && (
+                            <div className="space-y-4">
+                                <div className="bg-slate-900 p-4 rounded-lg text-center border border-slate-700">
+                                    <h4 className="text-slate-400 uppercase text-xs">Score Final</h4>
+                                    <div className="text-3xl font-bold text-white">
+                                        <span className="text-green-400">{viewDetail.homeScore}</span> - <span className="text-red-400">{viewDetail.awayScore}</span>
+                                    </div>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-xs text-slate-300">
+                                        <thead className="bg-slate-700 text-white uppercase">
+                                            <tr>
+                                                <th className="p-2">Joueur</th>
+                                                <th className="p-2">Min</th>
+                                                <th className="p-2 text-orange-400">Pts</th>
+                                                <th className="p-2">Tir</th>
+                                                <th className="p-2">3Pts</th>
+                                                <th className="p-2">LF</th>
+                                                <th className="p-2">Reb</th>
+                                                <th className="p-2">Pd</th>
+                                                <th className="p-2">Int</th>
+                                                <th className="p-2">Ctr</th>
+                                                <th className="p-2">Bp</th>
+                                                <th className="p-2">Fte</th>
+                                                <th className="p-2">+/-</th>
+                                                <th className="p-2 text-green-400">Éval</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-700">
+                                            {Object.entries(viewDetail.playerStats).map(([pid, s]) => {
+                                                const tpMade = s.threePM !== undefined ? s.threePM : 0; 
+                                                const tpAtt = s.threePA !== undefined ? s.threePA : 0;
+                                                
+                                                const missedFG = (s.fga || 0) - (s.fgm || 0); 
+                                                const missed3PT = (tpAtt - tpMade);
+                                                const missedFT = (s.fta || 0) - (s.ftm || 0);
+                                                
+                                                const totalPts = s.pts;
+                                                const totalReb = s.reb;
+                                                const evalStat = (totalPts + totalReb + s.ast + s.stl + s.blk) - (missedFG + missed3PT + missedFT + s.tov);
+
+                                                const player = players.find(p => p.id === parseInt(pid));
+                                                const pName = player ? player.name : `Inconnu #${pid}`;
+                                                
+                                                return (
+                                                    <tr key={pid}>
+                                                        <td className="p-2 font-bold">{pName}</td>
+                                                        <td className="p-2">{s.minutes}</td>
+                                                        <td className="p-2 font-bold text-orange-400">{s.pts}</td>
+                                                        <td className="p-2">{s.fgm}-{s.fga}</td>
+                                                        <td className="p-2">{tpMade}-{tpAtt}</td>
+                                                        <td className="p-2">{s.ftm}-{s.fta}</td>
+                                                        <td className="p-2">{s.oreb}/{s.dreb}</td>
+                                                        <td className="p-2">{s.ast}</td>
+                                                        <td className="p-2">{s.stl}</td>
+                                                        <td className="p-2">{s.blk}</td>
+                                                        <td className="p-2">{s.tov}</td>
+                                                        <td className="p-2">{s.pf}</td>
+                                                        <td className="p-2">{s.plusMinus}</td>
+                                                        <td className="p-2 font-bold text-green-400">{evalStat}</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
                                 </div>
                             </div>
                         )}
