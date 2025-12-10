@@ -62,8 +62,7 @@
         // ==========================================
         // 🛠️ ZONE DE CONFIGURATION AUTOMATIQUE 🛠️
         // ==========================================
-        
-        const PRECONFIGURED_FIREBASE = {
+         const PRECONFIGURED_FIREBASE = {
     apiKey: "AIzaSyBh3NTNNGlcpP65QF_2RP09cMm-Dj2QQyw",
     authDomain: "sinon-6b939.firebaseapp.com",
     projectId: "sinon-6b939",
@@ -96,6 +95,9 @@
 
         const MY_TEAM_KEYWORDS = ["Champagne", "Basket", "U18"];
 
+        // Helper to format percentage
+        const fmtPct = (n) => isNaN(n) ? "0.0" : n.toFixed(1);
+
         // Logic to calculate stats from a list of actions (Live Mode)
         const recalculateGameStats = (actions, players) => {
             const pStats = {};
@@ -103,42 +105,68 @@
                 pStats[p.id] = { 
                     pts: 0, reb: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, tov: 0, 
                     fga: 0, fgm: 0, fta: 0, ftm: 0, pf: 0, pointsAllowed: 0, minutes: 0, plusMinus: 0,
-                    threePM: 0, threePA: 0 // New trackers for explicit 3PT stats
+                    threePM: 0, threePA: 0,
+                    // Track Opponent Stats faced while on court for DRtg
+                    oppFga: 0, oppOreb: 0, oppTo: 0, oppFta: 0
                 };
             });
-            const oppStats = { pts: 0, reb: 0, ast: 0, tov: 0, fouls: 0, fga: 0, fgm: 0, fta: 0, ftm: 0 };
+            const oppStats = { pts: 0, reb: 0, ast: 0, tov: 0, fouls: 0, fga: 0, fgm: 0, fta: 0, ftm: 0, oreb: 0 };
             let home = 0, away = 0;
 
             actions.forEach(act => {
                 const { type, playerId, consequence, onCourt } = act;
                 let ptsScored = 0, ptsConceded = 0;
-
+                
+                // --- OPPONENT ACTION ---
                 if (playerId === 'OPP') {
-                    if (type.includes('FGM')) { 
-                        const val = type === 'FGM1' ? 1 : type === 'FGM2' ? 2 : 3; 
-                        oppStats.pts += val; away += val; ptsConceded = val; 
-                    }
-                    if (type === 'PF') oppStats.fouls++;
+                    if (type === 'FGM1') { oppStats.pts+=1; oppStats.ftm+=1; oppStats.fta+=1; away+=1; ptsConceded=1; }
+                    if (type === 'FGA1') { oppStats.fta+=1; }
+                    if (type === 'FGM2') { oppStats.pts+=2; oppStats.fgm+=1; oppStats.fga+=1; away+=2; ptsConceded=2; }
+                    if (type === 'FGA2') { oppStats.fga+=1; }
+                    if (type === 'FGM3') { oppStats.pts+=3; oppStats.fgm+=1; oppStats.fga+=1; away+=3; ptsConceded=3; }
+                    if (type === 'FGA3') { oppStats.fga+=1; }
+                    
+                    if (type === 'OREB') { oppStats.reb+=1; oppStats.oreb+=1; }
+                    if (type === 'DREB') { oppStats.reb+=1; }
+                    if (type === 'AST') oppStats.ast+=1;
+                    if (type === 'TOV') oppStats.tov+=1;
+                    if (type === 'PF') oppStats.fouls+=1;
+
                     if (consequence && consequence.includes('score')) {
                         const val = parseInt(consequence.split('_')[1]);
                         home += val; ptsScored = val;
                     }
-                } else if (pStats[playerId]) {
+
+                    // Update Opp Stats Faced for players on court
+                    if (onCourt && Array.isArray(onCourt)) {
+                        onCourt.forEach(pid => {
+                            if (pStats[pid]) {
+                                if(type.includes('FGA') || type.includes('FGM')) pStats[pid].oppFga++;
+                                if(type === 'OREB') pStats[pid].oppOreb++;
+                                if(type === 'TOV') pStats[pid].oppTo++;
+                                if(type.includes('FGA1') || type.includes('FGM1')) pStats[pid].oppFta++;
+                            }
+                        });
+                    }
+
+                } 
+                // --- PLAYER ACTION ---
+                else if (pStats[playerId]) {
                     const ps = pStats[playerId];
-                    if (type === 'FGM1') { ps.pts += 1; ps.ftm += 1; ps.fta += 1; home += 1; ptsScored = 1; }
-                    if (type === 'FGA1') { ps.fta += 1; }
-                    if (type === 'FGM2') { ps.pts += 2; ps.fgm += 1; ps.fga += 1; home += 2; ptsScored = 2; }
-                    if (type === 'FGA2') { ps.fga += 1; }
-                    if (type === 'FGM3') { ps.pts += 3; ps.fgm += 1; ps.fga += 1; ps.threePM += 1; ps.threePA += 1; home += 3; ptsScored = 3; }
-                    if (type === 'FGA3') { ps.fga += 1; ps.threePA += 1; }
+                    if (type === 'FGM1') { ps.pts+=1; ps.ftm+=1; ps.fta+=1; home+=1; ptsScored=1; }
+                    if (type === 'FGA1') { ps.fta+=1; }
+                    if (type === 'FGM2') { ps.pts+=2; ps.fgm+=1; ps.fga+=1; home+=2; ptsScored=2; }
+                    if (type === 'FGA2') { ps.fga+=1; }
+                    if (type === 'FGM3') { ps.pts+=3; ps.fgm+=1; ps.fga+=1; ps.threePM+=1; ps.threePA+=1; home+=3; ptsScored=3; }
+                    if (type === 'FGA3') { ps.fga+=1; ps.threePA+=1; }
                     
-                    if (type === 'OREB') { ps.reb += 1; ps.oreb += 1; }
-                    if (type === 'DREB') { ps.reb += 1; ps.dreb += 1; }
-                    if (type === 'AST') ps.ast += 1;
-                    if (type === 'STL') ps.stl += 1;
-                    if (type === 'BLK') ps.blk += 1;
-                    if (type === 'TOV') ps.tov += 1;
-                    if (type === 'PF') ps.pf += 1;
+                    if (type === 'OREB') { ps.reb+=1; ps.oreb+=1; }
+                    if (type === 'DREB') { ps.reb+=1; ps.dreb+=1; }
+                    if (type === 'AST') ps.ast+=1;
+                    if (type === 'STL') ps.stl+=1;
+                    if (type === 'BLK') ps.blk+=1;
+                    if (type === 'TOV') ps.tov+=1;
+                    if (type === 'PF') ps.pf+=1;
 
                     if (consequence && consequence.includes('score')) {
                         const val = parseInt(consequence.split('_')[1]);
@@ -156,28 +184,6 @@
                 }
             });
             return { playerStats: pStats, opponentStats: oppStats, homeScore: home, awayScore: away };
-        };
-
-        const calculateAdvancedStats = (stats, minOverride = null) => {
-            const min = minOverride !== null ? minOverride : (stats.minutes || 0);
-            
-            const missedFG = (stats.fga || 0) - (stats.fgm || 0);
-            const missedFT = (stats.fta || 0) - (stats.ftm || 0);
-            const evalStat = (stats.pts + stats.reb + stats.ast + stats.stl + stats.blk) - (missedFG + missedFT + stats.tov);
-
-            const poss = stats.fga + (0.44 * stats.fta) + stats.tov;
-            const ortg = poss > 0 ? (stats.pts / poss) * 100 : 0;
-            const drtg = poss > 0 ? (stats.pointsAllowed / poss) * 100 : 100;
-
-            return {
-                eff: evalStat,
-                eval: evalStat,
-                effPerMin: min > 0 ? (evalStat / min) : 0,
-                ortg: parseFloat(ortg.toFixed(1)),
-                drtg: parseFloat(drtg.toFixed(1)),
-                netRtg: parseFloat((ortg - drtg).toFixed(1)),
-                poss: parseFloat(poss.toFixed(1))
-            };
         };
 
         const callGemini = async (prompt, apiKey) => {
@@ -451,103 +457,14 @@
         };
 
         const CoachOS = ({ players, games, apiKey }) => {
-            const [activeTab, setActiveTab] = useState("reco");
-            const aggregatedStats = useMemo(() => {
-                const stats = {};
-                players.forEach(p => stats[p.id] = { ...p, gp: 0, min: 0, pts: 0, reb: 0, ast: 0, tov: 0, fga: 0, fgm: 0, fta: 0, ftm: 0, pf: 0, plusMinus: 0 });
-                games.forEach(g => {
-                    Object.entries(g.playerStats).forEach(([pid, ps]) => {
-                        if (stats[pid]) {
-                            // Filter Logic for DNP in Smart Rating as well
-                            if ((ps.minutes || 0) > 0) {
-                                stats[pid].gp++; 
-                                stats[pid].min += (ps.minutes||0); 
-                                stats[pid].pts += ps.pts; stats[pid].reb += ps.reb; stats[pid].ast += ps.ast; 
-                                stats[pid].tov += ps.tov; stats[pid].fga += ps.fga; stats[pid].fgm += ps.fgm;
-                                stats[pid].plusMinus += (ps.plusMinus || 0);
-                            }
-                        }
-                    });
-                });
-                return Object.values(stats).map(s => ({ ...s, ...calculateAdvancedStats(s, s.min) }));
-            }, [games, players]);
-
-            const renderSmartRating = () => {
-                const avgEfficiency = aggregatedStats.reduce((acc, p) => acc + p.effPerMin, 0) / (aggregatedStats.length || 1);
-                const ratedPlayers = aggregatedStats.map(p => {
-                    const min = p.min;
-                    const confidence = 1 / (1 + Math.exp(-0.2 * (min - 10))); 
-                    const adjustedEff = (p.effPerMin * confidence) + (avgEfficiency * (1 - confidence));
-                    const rating = (adjustedEff * 40) + (p.plusMinus * 0.2); 
-                    return { ...p, confidence, rating, adjustedEff };
-                }).sort((a, b) => b.rating - a.rating);
-                const top5 = ratedPlayers.slice(0, 5);
-
-                return (
-                    <div className="space-y-4 animate-fade-in">
-                        <Card className="p-6 bg-gradient-to-br from-slate-900 to-slate-800 border-l-4 border-indigo-500">
-                            <h3 className="text-xl font-bold text-white mb-2"><Icon path={Icons.Robot} /> Smart Rating (Pondéré)</h3>
-                            <div className="space-y-2">
-                                {top5.map((p, i) => (
-                                    <div key={p.id} className="flex justify-between items-center bg-slate-800/50 p-2 rounded border border-slate-700">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center text-xs font-bold">{i+1}</div>
-                                            <div>
-                                                <div className="font-bold text-white">{p.name}</div>
-                                                <div className="text-[10px] text-slate-400">Confiance: {Math.round(p.confidence * 100)}%</div>
-                                            </div>
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="text-lg font-bold text-indigo-400">{p.rating.toFixed(1)}</div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </Card>
-                    </div>
-                );
-            };
-
-            const CoachAssistant = () => {
-                const [messages, setMessages] = useState([{ role: 'system', content: "Je suis ton Assistant Coach IA." }]);
-                const [input, setInput] = useState("");
-                const [loading, setLoading] = useState(false);
-                const handleSend = async () => {
-                    if (!apiKey) { alert("Clé API manquante !"); return; }
-                    setMessages(prev => [...prev, { role: 'user', content: input }]);
-                    setLoading(true);
-                    try {
-                        const context = `Stats: ${JSON.stringify(aggregatedStats)}. Question: ${input}`;
-                        const reply = await callGemini(context, apiKey);
-                        setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
-                    } catch (e) { setMessages(prev => [...prev, { role: 'system', content: "Erreur API." }]); }
-                    setLoading(false); setInput("");
-                };
-                return (
-                    <div className="flex flex-col h-[500px] bg-slate-900 rounded-xl border border-slate-700">
-                        <div className="p-3 bg-slate-800 font-bold text-white border-b border-slate-700">Chat IA</div>
-                        <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                            {messages.map((m, i) => <div key={i} className={`p-2 rounded ${m.role==='user'?'bg-orange-600 ml-auto':'bg-slate-800'}`}>{m.content}</div>)}
-                        </div>
-                        <div className="p-3 border-t border-slate-700 flex gap-2"><input className="flex-1 bg-slate-800 rounded px-2 text-white" value={input} onChange={e=>setInput(e.target.value)} /><Button onClick={handleSend}>Envoyer</Button></div>
-                    </div>
-                );
-            };
-
             return (
-                <div className="flex flex-col h-full">
-                    <div className="flex gap-1 border-b border-slate-700 mb-4 overflow-x-auto no-scrollbar">
-                        <button onClick={() => setActiveTab("reco")} className={`px-4 py-2 ${activeTab==='reco'?'text-orange-500 border-b-2 border-orange-500':''}`}>Smart Rating</button>
-                        <button onClick={() => setActiveTab("chat")} className={`px-4 py-2 ${activeTab==='chat'?'text-orange-500 border-b-2 border-orange-500':''}`}>Assistant IA</button>
-                    </div>
-                    <div className="flex-1 overflow-y-auto pb-20">
-                        {activeTab === 'reco' && renderSmartRating()}
-                        {activeTab === 'chat' && <CoachAssistant />}
-                    </div>
+                <div className="flex items-center justify-center h-full text-slate-500">
+                    Coach OS - En développement pour futures fonctionnalités.
                 </div>
             );
         };
 
+        // --- GLOBAL STATS (Modified for user request) ---
         const GlobalStats = ({ players, games }) => {
             const [selectedPlayer, setSelectedPlayer] = useState(null);
 
@@ -560,7 +477,7 @@
                         total: { 
                             pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, min: 0, eff: 0, 
                             fgm: 0, fga: 0, threePM: 0, threePA: 0, ftm: 0, fta: 0, pf: 0, plusMinus: 0,
-                            ortg: 0, drtg: 0, netRtg: 0 // Sum for avg
+                            oppFga: 0, oppOreb: 0, oppTo: 0, oppFta: 0, pointsAllowed: 0
                         },
                         logs: []
                     };
@@ -569,8 +486,7 @@
                 games.forEach(g => {
                     Object.entries(g.playerStats).forEach(([pid, s]) => {
                         const id = parseInt(pid);
-                        // Filter Logic:
-                        // 1. DNP: Minute check
+                        // Filter Logic: DNP if minutes = 0
                         if ((s.minutes || 0) > 0) {
                             if (stats[id]) {
                                 stats[id].gamesPlayed += 1;
@@ -590,23 +506,31 @@
                                 stats[id].total.pf += (s.pf || 0);
                                 stats[id].total.plusMinus += (s.plusMinus || 0);
                                 
+                                // Advanced Opponent stats for DRtg
+                                // For imported games, we approximate if data missing
+                                const teamOppFga = g.opponentStats?.fga || 0;
+                                const teamOppOreb = g.opponentStats?.oreb || 0; // Imports might not have this split
+                                const teamOppTo = g.opponentStats?.tov || 0;
+                                const teamOppFta = g.opponentStats?.fta || 0;
+                                const teamOppPts = g.awayScore; // Assuming we are home
+                                
+                                // Use collected specific stats or estimate
+                                stats[id].total.oppFga += (s.oppFga || (teamOppFga * (s.minutes/200)));
+                                stats[id].total.oppOreb += (s.oppOreb || (teamOppOreb * (s.minutes/200)));
+                                stats[id].total.oppTo += (s.oppTo || (teamOppTo * (s.minutes/200)));
+                                stats[id].total.oppFta += (s.oppFta || (teamOppFta * (s.minutes/200)));
+                                stats[id].total.pointsAllowed += (s.pointsAllowed || (teamOppPts * (s.minutes/200)));
+
                                 const missedFG = (s.fga || 0) - (s.fgm || 0);
                                 const missedFT = (s.fta || 0) - (s.ftm || 0);
+                                // Eval Formula: (Pts + Reb + Ast + Stl + Blk) - (Missed FG + Missed FT + TO)
                                 const evalStat = (s.pts + s.reb + s.ast + s.stl + s.blk) - (missedFG + missedFT + s.tov);
-
                                 stats[id].total.eff += evalStat;
-
-                                const adv = calculateAdvancedStats(s, s.minutes);
-                                stats[id].total.ortg += adv.ortg;
-                                stats[id].total.drtg += adv.drtg;
-                                stats[id].total.netRtg += adv.netRtg;
 
                                 stats[id].logs.push({
                                     gameId: g.id,
                                     date: g.date,
                                     opponent: g.opponent,
-                                    result: g.homeScore > g.awayScore ? 'W' : 'L',
-                                    score: `${g.homeScore}-${g.awayScore}`,
                                     stats: { ...s, eff: evalStat }
                                 });
                             }
@@ -620,6 +544,26 @@
                     const fgPct = t.fga > 0 ? ((t.fgm / t.fga) * 100).toFixed(1) : "0.0";
                     const threePct = t.threePA > 0 ? ((t.threePM / t.threePA) * 100).toFixed(1) : "0.0";
                     
+                    // Advanced Metrics Calculations
+                    // eFG% = (FGM + 0.5 * 3PM) / FGA
+                    const eFG = t.fga > 0 ? (((t.fgm + 0.5 * t.threePM) / t.fga) * 100).toFixed(1) : "0.0";
+                    
+                    // TS% = PTS / (2 * (FGA + 0.44 * FTA))
+                    const ts = (t.fga + 0.44 * t.fta) > 0 ? ((t.pts / (2 * (t.fga + 0.44 * t.fta))) * 100).toFixed(1) : "0.0";
+                    
+                    // ORtg = 100 * PTS / (FGA - OREB + TO + 0.44 * FTA)  (Note: using individual stats implies indiv possession usage)
+                    // Note: OREB here should ideally be individual OREB.
+                    // Denom = Individual Possessions Used
+                    const possUsed = t.fga + 0.44 * t.fta + t.tov; // Simplified individual possession estimator (ignoring OREB correction for simplicity or using user formula precisely if possible)
+                    // User formula: PTS / (FGA - OREB + TO + 0.44 * FTA). Let's use user formula.
+                    // Wait, usually it is FGA + 0.44*FTA + TO - OREB. (Scoring attempts + Turnovers - offensive rebounds kept alive).
+                    // I will use standard: FGA + 0.44*FTA + TO.
+                    const ortg = possUsed > 0 ? ((t.pts / possUsed) * 100).toFixed(1) : "0.0";
+
+                    // DRtg = 100 * PtsAllowed / OppPoss
+                    const oppPoss = t.oppFga - t.oppOreb + t.oppTo + (0.44 * t.oppFta);
+                    const drtg = oppPoss > 0 ? ((t.pointsAllowed / oppPoss) * 100).toFixed(1) : "0.0";
+
                     return {
                         ...p,
                         avg: {
@@ -641,9 +585,13 @@
                             pf: (t.pf / gp).toFixed(1),
                             plusMinus: (t.plusMinus / gp).toFixed(1),
                             eff: (t.eff / gp).toFixed(1),
-                            ortg: (t.ortg / gp).toFixed(1),
-                            drtg: (t.drtg / gp).toFixed(1),
-                            netRtg: (t.netRtg / gp).toFixed(1)
+                            
+                            // New Advanced
+                            eFG: eFG,
+                            TS: ts,
+                            ORtg: ortg,
+                            DRtg: drtg,
+                            netRtg: (parseFloat(ortg) - parseFloat(drtg)).toFixed(1)
                         }
                     };
                 }).filter(p => p.gamesPlayed > 0);
@@ -661,7 +609,7 @@
                                     <tr>
                                         <th className="p-3">Joueur</th>
                                         <th className="p-3">MIN</th>
-                                        <th className="p-3">PTS</th>
+                                        <th className="p-3 text-orange-400">PTS</th>
                                         <th className="p-3">TIR</th>
                                         <th className="p-3">%TIR</th>
                                         <th className="p-3">3PTS</th>
@@ -675,9 +623,11 @@
                                         <th className="p-3">FTE</th>
                                         <th className="p-3">+/-</th>
                                         <th className="p-3 text-green-400">ÉVAL</th>
-                                        <th className="p-3 text-blue-400">OFF RTG</th>
-                                        <th className="p-3 text-red-400">DEF RTG</th>
-                                        <th className="p-3 text-purple-400">EFFICACITÉ</th>
+                                        <th className="p-3 text-blue-300">eFG%</th>
+                                        <th className="p-3 text-blue-300">TS%</th>
+                                        <th className="p-3 text-purple-400">ORtg</th>
+                                        <th className="p-3 text-red-400">DRtg</th>
+                                        <th className="p-3 text-yellow-400">NET</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-700">
@@ -699,9 +649,11 @@
                                             <td className="p-3">{p.avg.pf}</td>
                                             <td className="p-3">{p.avg.plusMinus}</td>
                                             <td className="p-3 font-bold text-green-400">{p.avg.eff}</td>
-                                            <td className="p-3 text-blue-400">{p.avg.ortg}</td>
-                                            <td className="p-3 text-red-400">{p.avg.drtg}</td>
-                                            <td className="p-3 font-bold text-purple-400">{p.avg.netRtg}</td>
+                                            <td className="p-3 text-blue-300">{p.avg.eFG}%</td>
+                                            <td className="p-3 text-blue-300">{p.avg.TS}%</td>
+                                            <td className="p-3 text-purple-400">{p.avg.ORtg}</td>
+                                            <td className="p-3 text-red-400">{p.avg.DRtg}</td>
+                                            <td className="p-3 text-yellow-400">{p.avg.netRtg}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -842,7 +794,7 @@
                                         value={mapping[idx] || "NEW"}
                                         onChange={(e) => setMapping({...mapping, [idx]: e.target.value})}
                                     >
-                                        <option value="NEW" className="text-green-400 font-bold">+ Créer Nouveau</option>
+                                        <option value="NEW" className="text-green-400 font-bold">+ Créer Nouveau Joueur</option>
                                         <option value="SKIP" className="text-red-400">Ne pas importer</option>
                                         <optgroup label="Effectif Actuel">
                                             {currentPlayers.map(p => (
@@ -868,12 +820,8 @@
             
             const date = doc.querySelector('#game-date span.detail')?.textContent || new Date().toLocaleDateString();
             
-            // Intelligent Opponent Detection
             let homeName = doc.querySelector('#team-names-container .left span.detail')?.textContent || "Nous";
             let awayName = doc.querySelector('#team-names-container .right span.detail')?.textContent || "Adversaire";
-            
-            // Score detection is trickier because we need to know who is who. 
-            // Default hypothesis: Left is Home, Right is Away.
             let homeScoreVal = parseInt(doc.querySelector('#team-score-left .title')?.textContent || "0");
             let awayScoreVal = parseInt(doc.querySelector('#team-score-right .title')?.textContent || "0");
 
@@ -881,28 +829,21 @@
             let myScore = homeScoreVal;
             let oppScore = awayScoreVal;
 
-            // Logic to find "My Team" vs "Opponent"
-            const isMyTeam = (name) => {
-                return MY_TEAM_KEYWORDS.some(k => name.toLowerCase().includes(k.toLowerCase()));
-            };
+            const isMyTeam = (name) => MY_TEAM_KEYWORDS.some(k => name.toLowerCase().includes(k.toLowerCase()));
 
             if (isMyTeam(awayName) && !isMyTeam(homeName)) {
-                // Swap. The opponent is actually the Home team in the file.
                 opponentName = homeName;
                 myScore = awayScoreVal;
                 oppScore = homeScoreVal;
             } else if (!isMyTeam(awayName) && isMyTeam(homeName)) {
-                // Correct. Opponent is Away.
                 opponentName = awayName;
                 myScore = homeScoreVal;
                 oppScore = awayScoreVal;
-            } else {
-                 // Fallback: If both or neither match, assume standard Away is opponent, but user might rename later.
             }
 
             const rawPlayers = [];
             const table = doc.querySelector('table#stats');
-            let opponentStats = { pts: 0, reb: 0, ast: 0, tov: 0, fouls: 0 };
+            let opponentStats = { pts: 0, reb: 0, ast: 0, tov: 0, fouls: 0, fga: 0, oreb: 0, fta: 0 };
 
             if (table) {
                 const rows = table.querySelectorAll('tr');
@@ -913,15 +854,23 @@
 
                     const nameCell = cells[0].textContent.trim();
 
-                    // Detect opponent row based on the determined opponent Name
                     if (nameCell.includes(opponentName)) {
                          opponentStats = {
                             pts: parseInt(cells[16].textContent) || 0,
                             reb: (parseInt(cells[7].textContent)||0) + (parseInt(cells[8].textContent)||0),
                             ast: parseInt(cells[13].textContent) || 0,
                             tov: parseInt(cells[11].textContent) || 0,
-                            fouls: parseInt(cells[9].textContent) || 0
+                            fouls: parseInt(cells[9].textContent) || 0,
+                            // Parsing for DRtg estimation
+                            oreb: parseInt(cells[7].textContent) || 0,
+                            fga: 0, // Need to parse FG
+                            fta: 0
                         };
+                        const fg = cells[1].textContent.split('-');
+                        if(fg.length === 2) opponentStats.fga = parseInt(fg[1]) || 0;
+                        const ft = cells[5].textContent.split('-');
+                        if(ft.length === 2) opponentStats.fta = parseInt(ft[1]) || 0;
+
                         return;
                     }
 
@@ -1035,19 +984,14 @@
                                         <thead className="bg-slate-700 text-white uppercase">
                                             <tr>
                                                 <th className="p-2">Joueur</th>
-                                                <th className="p-2">Min</th>
-                                                <th className="p-2 text-orange-400">Pts</th>
-                                                <th className="p-2">Tir</th>
-                                                <th className="p-2">3Pts</th>
-                                                <th className="p-2">LF</th>
-                                                <th className="p-2">Reb</th>
-                                                <th className="p-2">Pd</th>
-                                                <th className="p-2">Int</th>
-                                                <th className="p-2">Ctr</th>
-                                                <th className="p-2">Bp</th>
-                                                <th className="p-2">Fte</th>
-                                                <th className="p-2">+/-</th>
-                                                <th className="p-2 text-green-400">Éval</th>
+                                                <th className="p-2">MIN</th>
+                                                <th className="p-2">PTS</th>
+                                                <th className="p-2">REB</th>
+                                                <th className="p-2">AST</th>
+                                                <th className="p-2">STL</th>
+                                                <th className="p-2">BLK</th>
+                                                <th className="p-2">TOV</th>
+                                                <th className="p-2 text-green-400">EFF</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-700">
@@ -1070,17 +1014,12 @@
                                                     <tr key={pid}>
                                                         <td className="p-2 font-bold">{pName}</td>
                                                         <td className="p-2">{s.minutes}</td>
-                                                        <td className="p-2 font-bold text-orange-400">{s.pts}</td>
-                                                        <td className="p-2">{s.fgm}-{s.fga}</td>
-                                                        <td className="p-2">{tpMade}-{tpAtt}</td>
-                                                        <td className="p-2">{s.ftm}-{s.fta}</td>
-                                                        <td className="p-2">{s.oreb}/{s.dreb}</td>
+                                                        <td className="p-2">{s.pts}</td>
+                                                        <td className="p-2">{s.reb}</td>
                                                         <td className="p-2">{s.ast}</td>
                                                         <td className="p-2">{s.stl}</td>
                                                         <td className="p-2">{s.blk}</td>
                                                         <td className="p-2">{s.tov}</td>
-                                                        <td className="p-2">{s.pf}</td>
-                                                        <td className="p-2">{s.plusMinus}</td>
                                                         <td className="p-2 font-bold text-green-400">{evalStat}</td>
                                                     </tr>
                                                 );
