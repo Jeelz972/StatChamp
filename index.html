@@ -3,26 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BasketCoach Pro - Analytics & Live Stats + Gemini AI</title>
+    <title>BasketCoach Pro - Connected</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- React & ReactDOM (Version 18) -->
+    <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     
-    <!-- Babel for JSX -->
+    <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
-    <!-- Dependance requise pour Recharts UMD -->
+    <!-- Recharts -->
     <script src="https://unpkg.com/prop-types/prop-types.min.js"></script>
-    
-    <!-- Recharts (Version Fixe Stable pour UMD) -->
     <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
 
-    <!-- Markdown Parser -->
+    <!-- Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <!-- Firebase (Modular SDK) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+        window.Firebase = { initializeApp, getFirestore, doc, getDoc, setDoc, onSnapshot };
+    </script>
 
     <!-- Tailwind Config -->
     <script>
@@ -30,7 +35,6 @@
             theme: {
                 extend: {
                     colors: {
-                        'court-wood': '#f0e6d2',
                         'court-orange': '#e65100',
                         'coach-dark': '#1e293b',
                         'coach-accent': '#f97316',
@@ -49,7 +53,6 @@
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         .markdown-body p { margin-bottom: 0.5rem; }
         .markdown-body strong { color: #f97316; }
-        .markdown-body ul { list-style-type: disc; padding-left: 1.5rem; margin-bottom: 0.5rem; }
     </style>
 </head>
 <body>
@@ -57,17 +60,7 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
-
-        const {
-            BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer
-        } = window.Recharts || {};
-
-        // Fix console warnings
-        const originalConsoleError = console.error;
-        console.error = (...args) => {
-            if (typeof args[0] === "string" && /defaultProps/.test(args[0])) return;
-            originalConsoleError(...args);
-        };
+        const { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid } = window.Recharts || {};
 
         // --- ICONS ---
         const Icon = ({ path, className }) => (
@@ -97,24 +90,14 @@
             Pause: "M10 9v6 M14 9v6",
             Timer: "M12 2v2M12 22v-2M2 12h2M22 12h-2M4.93 4.93l1.41 1.41M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41M19.07 4.93l-1.41 1.41",
             Upload: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M17 8l-5-5-5 5 M12 3v12",
-            Link: "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"
+            Link: "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71",
+            Database: "M12 2.5c5 0 9 1.8 9 4s-4 4-9 4-9-1.8-9-4 4-4 9-4zm0 6c4.6 0 8.4-1.5 8.9-3.5v5c0 2.2-4 4-9 4s-9-1.8-9-4v-5c.5 2 4.3 3.5 8.9 3.5zm0 6c4.6 0 8.4-1.5 8.9-3.5v5c0 2.2-4 4-9 4s-9-1.8-9-4v-5c.5 2 4.3 3.5 8.9 3.5z",
+            Cloud: "M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z",
+            Share: "M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8 M16 6l-4-4-4 4 M12 2v13"
         };
 
         // --- UTILS ---
         const generateId = () => Math.random().toString(36).substr(2, 9);
-
-        const callGemini = async (prompt, apiKey) => {
-            if (!apiKey) throw new Error("Clé API manquante");
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-            });
-            if (!response.ok) throw new Error("Erreur API Gemini");
-            const data = await response.json();
-            return data.candidates[0].content.parts[0].text;
-        };
-
         const defaultPlayers = [
             { id: 1, name: "Meneur A", number: 4, pos: "PG" },
             { id: 2, name: "Arrière B", number: 5, pos: "SG" },
@@ -140,13 +123,26 @@
             };
         };
 
+        const callGemini = async (prompt, apiKey) => {
+            if (!apiKey) throw new Error("Clé API manquante");
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+            });
+            if (!response.ok) throw new Error("Erreur API Gemini");
+            const data = await response.json();
+            return data.candidates[0].content.parts[0].text;
+        };
+
+        // --- COMMON COMPONENTS ---
+
         const Card = ({ children, className = "" }) => (
             <div className={`bg-slate-800 rounded-lg border border-slate-700 shadow-lg overflow-hidden ${className}`}>
                 {children}
             </div>
         );
 
-        // --- FIXED BUTTON COMPONENT ---
         const Button = ({ onClick, children, variant = "primary", className = "", size = "md", disabled=false, as="button", ...props }) => {
             const base = "font-semibold rounded transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer";
             const variants = {
@@ -159,7 +155,6 @@
             };
             const sizes = { sm: "px-2 py-1 text-xs", md: "px-4 py-2 text-sm", lg: "px-6 py-3 text-lg" };
             
-            // FIX: Pass onClick to label as well
             if (as === "label") {
                 return <label onClick={onClick} className={`${base} ${variants[variant]} ${sizes[size]} ${className}`} {...props}>{children}</label>;
             }
@@ -173,8 +168,8 @@
         const Modal = ({ isOpen, onClose, title, children }) => {
             if (!isOpen) return null;
             return (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-                    <div className="bg-slate-800 rounded-xl border border-slate-600 w-full max-w-lg shadow-2xl transform transition-all scale-100 max-h-[90vh] flex flex-col">
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+                    <div className="bg-slate-800 rounded-xl border border-slate-600 w-full max-w-2xl shadow-2xl transform transition-all scale-100 max-h-[90vh] flex flex-col">
                         <div className="flex justify-between items-center p-4 border-b border-slate-700 shrink-0">
                             <h3 className="text-xl font-bold text-white flex items-center gap-2">{title}</h3>
                             <button onClick={onClose} className="text-slate-400 hover:text-white text-2xl">&times;</button>
@@ -187,405 +182,18 @@
             );
         };
 
-        // --- HTML IMPORT PARSER ---
-        // Reads the file and tries to extract raw data without committing yet
-        const parseHTMLStats = (html) => {
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(html, 'text/html');
-            
-            // 1. Game Info
-            const date = doc.querySelector('#game-date span.detail')?.textContent || new Date().toLocaleDateString();
-            const homeName = doc.querySelector('#team-names-container .left span.detail')?.textContent || "Nous";
-            const awayName = doc.querySelector('#team-names-container .right span.detail')?.textContent || "Adversaire";
-            const homeScore = parseInt(doc.querySelector('#team-score-left .title')?.textContent || "0");
-            const awayScore = parseInt(doc.querySelector('#team-score-right .title')?.textContent || "0");
-
-            // 2. Parse Raw Rows
-            const rawPlayers = [];
-            const table = doc.querySelector('table#stats');
-            let opponentStats = { pts: 0, reb: 0, ast: 0, tov: 0, fouls: 0 };
-
-            if (table) {
-                const rows = table.querySelectorAll('tr');
-                rows.forEach(row => {
-                    const cells = row.querySelectorAll('td');
-                    if (cells.length < 15) return;
-
-                    const nameCell = cells[0].textContent.trim();
-                    
-                    // Opponent row detection (usually matches away name)
-                    if (nameCell.includes(awayName)) {
-                         opponentStats = {
-                            pts: parseInt(cells[15].textContent) || 0,
-                            reb: (parseInt(cells[6].textContent)||0) + (parseInt(cells[7].textContent)||0),
-                            ast: parseInt(cells[12].textContent) || 0,
-                            tov: parseInt(cells[10].textContent) || 0,
-                            fouls: parseInt(cells[8].textContent) || 0
-                        };
-                        return;
-                    }
-
-                    // Player row must start with #
-                    if (!nameCell.startsWith('#')) return; 
-
-                    // Parse Name & Number: "#4 N. Grosheny"
-                    const parts = nameCell.split(' ');
-                    const numberStr = parts[0].replace('#', '');
-                    const number = parseInt(numberStr);
-                    const name = parts.slice(1).join(' ');
-
-                    // Parse Stats
-                    const parseSplit = (txt) => { 
-                        if (!txt) return { made: 0, att: 0 };
-                        const [m, a] = txt.split('-'); 
-                        return { made: parseInt(m)||0, att: parseInt(a)||0 }; 
-                    };
-                    const fg = parseSplit(cells[1].textContent); // Total FG
-                    const tp = parseSplit(cells[3].textContent); // 3PT
-                    const ft = parseSplit(cells[5].textContent); // FT
-                    
-                    const twoPM = fg.made - tp.made;
-                    const twoPA = fg.att - tp.att;
-
-                    const stats = {
-                        pts: parseInt(cells[15].textContent) || 0,
-                        reb: (parseInt(cells[6].textContent)||0) + (parseInt(cells[7].textContent)||0),
-                        oreb: parseInt(cells[6].textContent) || 0,
-                        dreb: parseInt(cells[7].textContent) || 0,
-                        ast: parseInt(cells[12].textContent) || 0,
-                        stl: parseInt(cells[9].textContent) || 0,
-                        blk: parseInt(cells[11].textContent) || 0,
-                        tov: parseInt(cells[10].textContent) || 0,
-                        pf: parseInt(cells[8].textContent) || 0,
-                        fgm: twoPM, fga: twoPA, 
-                        ftm: ft.made, fta: ft.att,
-                        minutes: parseInt(cells[14].textContent) || 0,
-                        plusMinus: parseInt(cells[13].textContent) || 0,
-                    };
-
-                    rawPlayers.push({ name, number, stats });
-                });
-            }
-
-            return {
-                meta: { date, opponent: awayName, homeScore, awayScore, location: "Importé" },
-                rawPlayers,
-                opponentStats
-            };
-        };
-
-        // --- NEW COMPONENT: IMPORT REVIEW ---
-        const ImportReviewModal = ({ importData, currentPlayers, onConfirm, onCancel }) => {
-            // State to map each imported player (by index) to a DB player ID or "NEW"
-            const [mapping, setMapping] = useState({});
-
-            useEffect(() => {
-                const initialMap = {};
-                importData.rawPlayers.forEach((imp, idx) => {
-                    // Auto-match by number
-                    const match = currentPlayers.find(p => p.number === imp.number);
-                    if (match) {
-                        initialMap[idx] = match.id;
-                    } else {
-                        initialMap[idx] = "NEW";
-                    }
-                });
-                setMapping(initialMap);
-            }, [importData, currentPlayers]);
-
-            const handleFinalize = () => {
-                const finalGameStats = {};
-                const newPlayersList = [...currentPlayers];
-                let maxId = currentPlayers.length > 0 ? Math.max(...currentPlayers.map(p => p.id)) : 0;
-
-                importData.rawPlayers.forEach((imp, idx) => {
-                    const choice = mapping[idx];
-                    let pid;
-
-                    if (choice === "NEW") {
-                        // Create new player
-                        maxId++;
-                        pid = maxId;
-                        newPlayersList.push({
-                            id: pid,
-                            name: imp.name,
-                            number: imp.number,
-                            pos: "G", // Default
-                            style: "Imported"
-                        });
-                    } else if (choice === "SKIP") {
-                        return; // Don't import stats for this row
-                    } else {
-                        // Existing ID
-                        pid = parseInt(choice);
-                        // Optionally update name? No, keep DB name preferred.
-                    }
-
-                    finalGameStats[pid] = imp.stats;
-                });
-
-                const newGame = {
-                    id: generateId(),
-                    ...importData.meta,
-                    playerStats: finalGameStats,
-                    opponentStats: importData.opponentStats,
-                    actions: [] // No actions for imported game
-                };
-
-                onConfirm(newGame, newPlayersList);
-            };
-
-            return (
-                <div className="space-y-4">
-                    <div className="bg-slate-900 p-4 rounded border border-slate-700">
-                        <h4 className="text-orange-500 font-bold mb-2">Match: {importData.meta.opponent}</h4>
-                        <div className="text-white text-sm">Score: {importData.meta.homeScore} - {importData.meta.awayScore}</div>
-                    </div>
-
-                    <div className="overflow-y-auto max-h-[50vh] space-y-2">
-                        {importData.rawPlayers.map((imp, idx) => (
-                            <div key={idx} className="flex items-center gap-2 bg-slate-800 p-2 rounded border border-slate-700">
-                                <div className="w-1/3">
-                                    <div className="text-white font-bold text-sm">#{imp.number} {imp.name}</div>
-                                    <div className="text-xs text-slate-400">{imp.stats.pts} pts, {imp.stats.min} min</div>
-                                </div>
-                                <div className="text-slate-500"><Icon path={Icons.Link} /></div>
-                                <div className="flex-1">
-                                    <select 
-                                        className="w-full bg-slate-900 text-white text-sm p-2 rounded border border-slate-600"
-                                        value={mapping[idx] || "NEW"}
-                                        onChange={(e) => setMapping({...mapping, [idx]: e.target.value})}
-                                    >
-                                        <option value="NEW" className="text-green-400 font-bold">+ Créer Nouveau Joueur</option>
-                                        <option value="SKIP" className="text-red-400">Ne pas importer</option>
-                                        <optgroup label="Effectif Actuel">
-                                            {currentPlayers.map(p => (
-                                                <option key={p.id} value={p.id}>#{p.number} - {p.name}</option>
-                                            ))}
-                                        </optgroup>
-                                    </select>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-
-                    <div className="flex justify-end gap-2 pt-4 border-t border-slate-700">
-                        <Button variant="ghost" onClick={onCancel}>Annuler</Button>
-                        <Button variant="success" onClick={handleFinalize}>Confirmer l'Import</Button>
-                    </div>
-                </div>
-            );
-        };
-
-        // --- CORE COMPONENTS --- 
-
-        const History = ({ games, setGames, apiKey, onEditGame, onImportClick }) => {
-            const [analyzing, setAnalyzing] = useState(null);
-            const [modalContent, setModalContent] = useState(null);
-            const [viewDetail, setViewDetail] = useState(null);
-
-            const analyzeMatch = async (game) => {
-                if (!apiKey) { alert("Configurez votre clé API dans les paramètres !"); return; }
-                setAnalyzing(game.id);
-                try {
-                    const prompt = `Agis comme un journaliste sportif. Résumé match basket: Nous ${game.homeScore}-${game.awayScore} ${game.opponent}. Stats: ${JSON.stringify(game.playerStats)}. MVP? Clés du match?`;
-                    const text = await callGemini(prompt, apiKey);
-                    setModalContent({ title: `Analyse vs ${game.opponent}`, body: text });
-                } catch (e) { alert("Erreur analyse"); }
-                setAnalyzing(null);
-            };
-
-            return (
-                <div className="space-y-4">
-                    <div className="flex justify-end">
-                        <Button variant="primary" className="cursor-pointer" onClick={onImportClick}>
-                            <Icon path={Icons.Upload} /> Importer HTML
-                        </Button>
-                    </div>
-
-                    {games.map(g => (
-                        <div key={g.id} onClick={() => setViewDetail(g)} className="cursor-pointer">
-                            <Card className="p-4 flex flex-col gap-4 hover:border-orange-500 transition-colors">
-                                <div className="flex justify-between items-center">
-                                    <div>
-                                        <div className="text-sm text-slate-400">{g.date} - {g.location}</div>
-                                        <div className="text-xl font-bold text-white"><span className="text-green-400">{g.homeScore}</span> - <span className="text-red-400">{g.awayScore}</span> vs {g.opponent}</div>
-                                    </div>
-                                    <div className="flex flex-col md:flex-row gap-2" onClick={(e) => e.stopPropagation()}>
-                                        <Button variant="secondary" size="sm" onClick={() => onEditGame(g)}><Icon path={Icons.Edit} /> Modifier</Button>
-                                        <Button variant="magic" size="sm" onClick={() => analyzeMatch(g)} disabled={analyzing === g.id}>
-                                            {analyzing === g.id ? "..." : <><Icon path={Icons.Sparkles} /> IA</>}
-                                        </Button>
-                                        <Button variant="danger" size="sm" onClick={() => confirm("Supprimer ?") && setGames(games.filter(x => x.id !== g.id))}><Icon path={Icons.Trash} /></Button>
-                                    </div>
-                                </div>
-                            </Card>
-                        </div>
-                    ))}
-                    
-                    <Modal isOpen={!!modalContent} onClose={() => setModalContent(null)} title={modalContent?.title}>
-                        <div className="markdown-body text-slate-300 leading-relaxed" dangerouslySetInnerHTML={{ __html: marked.parse(modalContent?.body || "") }} />
-                    </Modal>
-
-                    <Modal isOpen={!!viewDetail} onClose={() => setViewDetail(null)} title={`Détails vs ${viewDetail?.opponent}`}>
-                        {viewDetail && (
-                            <div className="space-y-4">
-                                <div className="bg-slate-900 p-4 rounded-lg text-center border border-slate-700">
-                                    <h4 className="text-slate-400 uppercase text-xs">Score Final</h4>
-                                    <div className="text-3xl font-bold text-white">
-                                        <span className="text-green-400">{viewDetail.homeScore}</span> - <span className="text-red-400">{viewDetail.awayScore}</span>
-                                    </div>
-                                </div>
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-left text-xs text-slate-300">
-                                        <thead className="bg-slate-700 text-white uppercase">
-                                            <tr>
-                                                <th className="p-2">Joueur</th>
-                                                <th className="p-2">MIN</th>
-                                                <th className="p-2">PTS</th>
-                                                <th className="p-2">REB</th>
-                                                <th className="p-2">AST</th>
-                                                <th className="p-2">STL</th>
-                                                <th className="p-2">BLK</th>
-                                                <th className="p-2">TOV</th>
-                                                <th className="p-2 text-green-400">EFF</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-700">
-                                            {Object.entries(viewDetail.playerStats).map(([pid, s]) => {
-                                                const eff = (s.pts + s.reb + s.ast + s.stl + s.blk) - ((s.fga - s.fgm) + (s.fta - s.ftm) + s.tov);
-                                                return (
-                                                    <tr key={pid}>
-                                                        <td className="p-2 font-bold">ID {pid}</td>
-                                                        <td className="p-2">{s.minutes}</td>
-                                                        <td className="p-2">{s.pts}</td>
-                                                        <td className="p-2">{s.reb}</td>
-                                                        <td className="p-2">{s.ast}</td>
-                                                        <td className="p-2">{s.stl}</td>
-                                                        <td className="p-2">{s.blk}</td>
-                                                        <td className="p-2">{s.tov}</td>
-                                                        <td className="p-2 font-bold text-green-400">{eff}</td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        )}
-                    </Modal>
-                </div>
-            );
-        };
-
-        const CoachOS = ({ players, games, apiKey }) => {
-            const [activeTab, setActiveTab] = useState("reco");
-            const aggregatedStats = useMemo(() => {
-                const stats = {};
-                players.forEach(p => stats[p.id] = { ...p, gp: 0, min: 0, pts: 0, reb: 0, ast: 0, tov: 0, fga: 0, fgm: 0, fta: 0, ftm: 0, pf: 0, plusMinus: 0 });
-                games.forEach(g => {
-                    Object.entries(g.playerStats).forEach(([pid, ps]) => {
-                        if (stats[pid]) {
-                            stats[pid].gp++; 
-                            stats[pid].min += (ps.minutes||0); 
-                            stats[pid].pts += ps.pts; stats[pid].reb += ps.reb; stats[pid].ast += ps.ast; 
-                            stats[pid].tov += ps.tov; stats[pid].fga += ps.fga; stats[pid].fgm += ps.fgm;
-                            stats[pid].plusMinus += (ps.plusMinus || 0);
-                        }
-                    });
-                });
-                return Object.values(stats).map(s => ({ ...s, ...calculateAdvancedStats(s, s.min) }));
-            }, [games, players]);
-
-            const renderSmartRating = () => {
-                const avgEfficiency = aggregatedStats.reduce((acc, p) => acc + p.effPerMin, 0) / (aggregatedStats.length || 1);
-                const ratedPlayers = aggregatedStats.map(p => {
-                    const min = p.min;
-                    const confidence = 1 / (1 + Math.exp(-0.2 * (min - 10))); 
-                    const adjustedEff = (p.effPerMin * confidence) + (avgEfficiency * (1 - confidence));
-                    const rating = (adjustedEff * 40) + (p.plusMinus * 0.2); 
-                    return { ...p, confidence, rating, adjustedEff };
-                }).sort((a, b) => b.rating - a.rating);
-                const top5 = ratedPlayers.slice(0, 5);
-
-                return (
-                    <div className="space-y-4 animate-fade-in">
-                        <Card className="p-6 bg-gradient-to-br from-slate-900 to-slate-800 border-l-4 border-indigo-500">
-                            <h3 className="text-xl font-bold text-white mb-2"><Icon path={Icons.Robot} /> Smart Rating (Pondéré)</h3>
-                            <div className="space-y-2">
-                                {top5.map((p, i) => (
-                                    <div key={p.id} className="flex justify-between items-center bg-slate-800/50 p-2 rounded border border-slate-700">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center text-xs font-bold">{i+1}</div>
-                                            <div>
-                                                <div className="font-bold text-white">{p.name}</div>
-                                                <div className="text-[10px] text-slate-400">Confiance: {Math.round(p.confidence * 100)}%</div>
-                                            </div>
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="text-lg font-bold text-indigo-400">{p.rating.toFixed(1)}</div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </Card>
-                    </div>
-                );
-            };
-
-            const CoachAssistant = () => {
-                const [messages, setMessages] = useState([{ role: 'system', content: "Je suis ton Assistant Coach IA." }]);
-                const [input, setInput] = useState("");
-                const [loading, setLoading] = useState(false);
-                const handleSend = async () => {
-                    if (!apiKey) { alert("Clé API manquante !"); return; }
-                    setMessages(prev => [...prev, { role: 'user', content: input }]);
-                    setLoading(true);
-                    try {
-                        const context = `Stats: ${JSON.stringify(aggregatedStats)}. Question: ${input}`;
-                        const reply = await callGemini(context, apiKey);
-                        setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
-                    } catch (e) { setMessages(prev => [...prev, { role: 'system', content: "Erreur API." }]); }
-                    setLoading(false); setInput("");
-                };
-                return (
-                    <div className="flex flex-col h-[500px] bg-slate-900 rounded-xl border border-slate-700">
-                        <div className="p-3 bg-slate-800 font-bold text-white border-b border-slate-700">Chat IA</div>
-                        <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                            {messages.map((m, i) => <div key={i} className={`p-2 rounded ${m.role==='user'?'bg-orange-600 ml-auto':'bg-slate-800'}`}>{m.content}</div>)}
-                        </div>
-                        <div className="p-3 border-t border-slate-700 flex gap-2"><input className="flex-1 bg-slate-800 rounded px-2 text-white" value={input} onChange={e=>setInput(e.target.value)} /><Button onClick={handleSend}>Envoyer</Button></div>
-                    </div>
-                );
-            };
-
-            return (
-                <div className="flex flex-col h-full">
-                    <div className="flex gap-1 border-b border-slate-700 mb-4 overflow-x-auto no-scrollbar">
-                        <button onClick={() => setActiveTab("reco")} className={`px-4 py-2 ${activeTab==='reco'?'text-orange-500 border-b-2 border-orange-500':''}`}>Smart Rating</button>
-                        <button onClick={() => setActiveTab("chat")} className={`px-4 py-2 ${activeTab==='chat'?'text-orange-500 border-b-2 border-orange-500':''}`}>Assistant IA</button>
-                    </div>
-                    <div className="flex-1 overflow-y-auto pb-20">
-                        {activeTab === 'reco' && renderSmartRating()}
-                        {activeTab === 'chat' && <CoachAssistant />}
-                    </div>
-                </div>
-            );
-        };
+        // --- SUB-COMPONENTS ---
 
         const LiveTracker = ({ players, onSaveGame, initialGame }) => {
             const [gameState, setGameState] = useState({
                 quarter: 1, opponent: "Adversaire", location: "Domicile",
                 actions: []
             });
-            
-            // TIMER & ON COURT
             const [gameTime, setGameTime] = useState(0); 
             const [isTimerRunning, setIsTimerRunning] = useState(false);
             const [onCourt, setOnCourt] = useState([]); 
             const [accumulatedMinutes, setAccumulatedMinutes] = useState({});
 
-            // Logic Stats (reusing from previous code basically)
             const recalculateStats = (actions, players) => {
                 const pStats = {};
                 players.forEach(p => pStats[p.id] = { pts: 0, reb: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, tov: 0, fga: 0, fgm: 0, fta: 0, ftm: 0, pf: 0, pointsAllowed: 0, minutes: 0, plusMinus: 0 });
@@ -794,28 +402,594 @@
             );
         };
 
-        const Settings = ({ players, onUpdatePlayers, apiKey, setApiKey }) => {
+        const CoachOS = ({ players, games, apiKey }) => {
+            const [activeTab, setActiveTab] = useState("reco");
+            const aggregatedStats = useMemo(() => {
+                const stats = {};
+                players.forEach(p => stats[p.id] = { ...p, gp: 0, min: 0, pts: 0, reb: 0, ast: 0, tov: 0, fga: 0, fgm: 0, fta: 0, ftm: 0, pf: 0, plusMinus: 0 });
+                games.forEach(g => {
+                    Object.entries(g.playerStats).forEach(([pid, ps]) => {
+                        if (stats[pid]) {
+                            stats[pid].gp++; 
+                            stats[pid].min += (ps.minutes||0); 
+                            stats[pid].pts += ps.pts; stats[pid].reb += ps.reb; stats[pid].ast += ps.ast; 
+                            stats[pid].tov += ps.tov; stats[pid].fga += ps.fga; stats[pid].fgm += ps.fgm;
+                            stats[pid].plusMinus += (ps.plusMinus || 0);
+                        }
+                    });
+                });
+                return Object.values(stats).map(s => ({ ...s, ...calculateAdvancedStats(s, s.min) }));
+            }, [games, players]);
+
+            const renderSmartRating = () => {
+                const avgEfficiency = aggregatedStats.reduce((acc, p) => acc + p.effPerMin, 0) / (aggregatedStats.length || 1);
+                const ratedPlayers = aggregatedStats.map(p => {
+                    const min = p.min;
+                    const confidence = 1 / (1 + Math.exp(-0.2 * (min - 10))); 
+                    const adjustedEff = (p.effPerMin * confidence) + (avgEfficiency * (1 - confidence));
+                    const rating = (adjustedEff * 40) + (p.plusMinus * 0.2); 
+                    return { ...p, confidence, rating, adjustedEff };
+                }).sort((a, b) => b.rating - a.rating);
+                const top5 = ratedPlayers.slice(0, 5);
+
+                return (
+                    <div className="space-y-4 animate-fade-in">
+                        <Card className="p-6 bg-gradient-to-br from-slate-900 to-slate-800 border-l-4 border-indigo-500">
+                            <h3 className="text-xl font-bold text-white mb-2"><Icon path={Icons.Robot} /> Smart Rating (Pondéré)</h3>
+                            <div className="space-y-2">
+                                {top5.map((p, i) => (
+                                    <div key={p.id} className="flex justify-between items-center bg-slate-800/50 p-2 rounded border border-slate-700">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center text-xs font-bold">{i+1}</div>
+                                            <div>
+                                                <div className="font-bold text-white">{p.name}</div>
+                                                <div className="text-[10px] text-slate-400">Confiance: {Math.round(p.confidence * 100)}%</div>
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="text-lg font-bold text-indigo-400">{p.rating.toFixed(1)}</div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </Card>
+                    </div>
+                );
+            };
+
+            const CoachAssistant = () => {
+                const [messages, setMessages] = useState([{ role: 'system', content: "Je suis ton Assistant Coach IA." }]);
+                const [input, setInput] = useState("");
+                const [loading, setLoading] = useState(false);
+                const handleSend = async () => {
+                    if (!apiKey) { alert("Clé API manquante !"); return; }
+                    setMessages(prev => [...prev, { role: 'user', content: input }]);
+                    setLoading(true);
+                    try {
+                        const context = `Stats: ${JSON.stringify(aggregatedStats)}. Question: ${input}`;
+                        const reply = await callGemini(context, apiKey);
+                        setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
+                    } catch (e) { setMessages(prev => [...prev, { role: 'system', content: "Erreur API." }]); }
+                    setLoading(false); setInput("");
+                };
+                return (
+                    <div className="flex flex-col h-[500px] bg-slate-900 rounded-xl border border-slate-700">
+                        <div className="p-3 bg-slate-800 font-bold text-white border-b border-slate-700">Chat IA</div>
+                        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                            {messages.map((m, i) => <div key={i} className={`p-2 rounded ${m.role==='user'?'bg-orange-600 ml-auto':'bg-slate-800'}`}>{m.content}</div>)}
+                        </div>
+                        <div className="p-3 border-t border-slate-700 flex gap-2"><input className="flex-1 bg-slate-800 rounded px-2 text-white" value={input} onChange={e=>setInput(e.target.value)} /><Button onClick={handleSend}>Envoyer</Button></div>
+                    </div>
+                );
+            };
+
+            return (
+                <div className="flex flex-col h-full">
+                    <div className="flex gap-1 border-b border-slate-700 mb-4 overflow-x-auto no-scrollbar">
+                        <button onClick={() => setActiveTab("reco")} className={`px-4 py-2 ${activeTab==='reco'?'text-orange-500 border-b-2 border-orange-500':''}`}>Smart Rating</button>
+                        <button onClick={() => setActiveTab("chat")} className={`px-4 py-2 ${activeTab==='chat'?'text-orange-500 border-b-2 border-orange-500':''}`}>Assistant IA</button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto pb-20">
+                        {activeTab === 'reco' && renderSmartRating()}
+                        {activeTab === 'chat' && <CoachAssistant />}
+                    </div>
+                </div>
+            );
+        };
+
+        const GlobalStats = ({ players, games }) => {
+            const [selectedPlayer, setSelectedPlayer] = useState(null);
+
+            const aggregated = useMemo(() => {
+                const stats = {};
+                players.forEach(p => {
+                    stats[p.id] = {
+                        info: p,
+                        gamesPlayed: 0,
+                        total: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, min: 0, eff: 0 },
+                        logs: []
+                    };
+                });
+
+                games.forEach(g => {
+                    Object.entries(g.playerStats).forEach(([pid, s]) => {
+                        const id = parseInt(pid);
+                        if (stats[id]) {
+                            stats[id].gamesPlayed += 1;
+                            stats[id].total.pts += (s.pts || 0);
+                            stats[id].total.reb += (s.reb || 0);
+                            stats[id].total.ast += (s.ast || 0);
+                            stats[id].total.stl += (s.stl || 0);
+                            stats[id].total.blk += (s.blk || 0);
+                            stats[id].total.tov += (s.tov || 0);
+                            stats[id].total.min += (s.minutes || 0);
+                            
+                            const eff = (s.pts + s.reb + s.ast + s.stl + s.blk) - ((s.fga - s.fgm) + (s.fta - s.ftm) + s.tov);
+                            stats[id].total.eff += eff;
+
+                            stats[id].logs.push({
+                                gameId: g.id,
+                                date: g.date,
+                                opponent: g.opponent,
+                                result: g.homeScore > g.awayScore ? 'W' : 'L',
+                                score: `${g.homeScore}-${g.awayScore}`,
+                                stats: { ...s, eff }
+                            });
+                        }
+                    });
+                });
+
+                return Object.values(stats).map(p => {
+                    const gp = p.gamesPlayed || 1;
+                    return {
+                        ...p,
+                        avg: {
+                            pts: (p.total.pts / gp).toFixed(1),
+                            reb: (p.total.reb / gp).toFixed(1),
+                            ast: (p.total.ast / gp).toFixed(1),
+                            stl: (p.total.stl / gp).toFixed(1),
+                            blk: (p.total.blk / gp).toFixed(1),
+                            tov: (p.total.tov / gp).toFixed(1),
+                            min: (p.total.min / gp).toFixed(1),
+                            eff: (p.total.eff / gp).toFixed(1),
+                        }
+                    };
+                }).filter(p => p.gamesPlayed > 0);
+            }, [players, games]);
+
+            return (
+                <div className="space-y-4 h-full flex flex-col">
+                    <Card className="p-4 flex-1 overflow-hidden flex flex-col">
+                        <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                            <Icon path={Icons.Database} /> Statistiques Saison
+                        </h3>
+                        <div className="overflow-auto flex-1">
+                            <table className="w-full text-left text-sm text-slate-300">
+                                <thead className="bg-slate-900 text-white uppercase text-xs sticky top-0 z-10">
+                                    <tr>
+                                        <th className="p-3">Joueur</th>
+                                        <th className="p-3">MJ</th>
+                                        <th className="p-3 text-orange-400">PTS</th>
+                                        <th className="p-3">REB</th>
+                                        <th className="p-3">AST</th>
+                                        <th className="p-3">STL</th>
+                                        <th className="p-3">BLK</th>
+                                        <th className="p-3">TOV</th>
+                                        <th className="p-3 text-green-400">EFF</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-700">
+                                    {aggregated.map(p => (
+                                        <tr key={p.info.id} onClick={() => setSelectedPlayer(p)} className="hover:bg-slate-700/50 cursor-pointer transition-colors">
+                                            <td className="p-3 font-bold text-white">{p.info.name} <span className="text-xs text-slate-500">#{p.info.number}</span></td>
+                                            <td className="p-3">{p.gamesPlayed}</td>
+                                            <td className="p-3 font-bold text-orange-400">{p.avg.pts}</td>
+                                            <td className="p-3">{p.avg.reb}</td>
+                                            <td className="p-3">{p.avg.ast}</td>
+                                            <td className="p-3">{p.avg.stl}</td>
+                                            <td className="p-3">{p.avg.blk}</td>
+                                            <td className="p-3">{p.avg.tov}</td>
+                                            <td className="p-3 font-bold text-green-400">{p.avg.eff}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </Card>
+
+                    <Modal isOpen={!!selectedPlayer} onClose={() => setSelectedPlayer(null)} title={selectedPlayer?.info.name || ""}>
+                        {selectedPlayer && (
+                            <div className="space-y-6">
+                                <div className="grid grid-cols-4 gap-2 bg-slate-900 p-4 rounded-lg">
+                                    <div className="text-center">
+                                        <div className="text-xs text-slate-500 uppercase">Points</div>
+                                        <div className="text-2xl font-bold text-white">{selectedPlayer.avg.pts}</div>
+                                    </div>
+                                    <div className="text-center">
+                                        <div className="text-xs text-slate-500 uppercase">Rebonds</div>
+                                        <div className="text-2xl font-bold text-white">{selectedPlayer.avg.reb}</div>
+                                    </div>
+                                    <div className="text-center">
+                                        <div className="text-xs text-slate-500 uppercase">Passes</div>
+                                        <div className="text-2xl font-bold text-white">{selectedPlayer.avg.ast}</div>
+                                    </div>
+                                    <div className="text-center">
+                                        <div className="text-xs text-slate-500 uppercase">Eval</div>
+                                        <div className="text-2xl font-bold text-green-400">{selectedPlayer.avg.eff}</div>
+                                    </div>
+                                </div>
+                                <div className="h-48 w-full">
+                                    <h4 className="text-xs text-slate-400 mb-2 uppercase">Évolution Points</h4>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <LineChart data={selectedPlayer.logs}>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                                            <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} />
+                                            <YAxis stroke="#94a3b8" fontSize={10} />
+                                            <Tooltip contentStyle={{backgroundColor: '#1e293b', border: 'none'}} />
+                                            <Line type="monotone" dataKey="stats.pts" stroke="#f97316" strokeWidth={2} dot={{r: 4}} />
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                </div>
+                                <div>
+                                    <h4 className="text-xs text-slate-400 mb-2 uppercase">Historique</h4>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left text-xs text-slate-300">
+                                            <thead className="bg-slate-700 text-white">
+                                                <tr>
+                                                    <th className="p-2">Date</th>
+                                                    <th className="p-2">Adv</th>
+                                                    <th className="p-2">MIN</th>
+                                                    <th className="p-2">PTS</th>
+                                                    <th className="p-2">EFF</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-700">
+                                                {selectedPlayer.logs.map((log, i) => (
+                                                    <tr key={i}>
+                                                        <td className="p-2">{log.date}</td>
+                                                        <td className="p-2 font-bold">{log.opponent}</td>
+                                                        <td className="p-2">{log.stats.minutes}</td>
+                                                        <td className="p-2 font-bold text-white">{log.stats.pts}</td>
+                                                        <td className="p-2">{log.stats.eff}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </Modal>
+                </div>
+            );
+        };
+
+        const ImportReviewModal = ({ importData, currentPlayers, onConfirm, onCancel }) => {
+            const [mapping, setMapping] = useState({});
+
+            useEffect(() => {
+                const initialMap = {};
+                importData.rawPlayers.forEach((imp, idx) => {
+                    const match = currentPlayers.find(p => p.number === imp.number);
+                    if (match) {
+                        initialMap[idx] = match.id;
+                    } else {
+                        initialMap[idx] = "NEW";
+                    }
+                });
+                setMapping(initialMap);
+            }, [importData, currentPlayers]);
+
+            const handleFinalize = () => {
+                const finalGameStats = {};
+                const newPlayersList = [...currentPlayers];
+                let maxId = currentPlayers.length > 0 ? Math.max(...currentPlayers.map(p => p.id)) : 0;
+
+                importData.rawPlayers.forEach((imp, idx) => {
+                    const choice = mapping[idx];
+                    let pid;
+                    if (choice === "NEW") {
+                        maxId++;
+                        pid = maxId;
+                        newPlayersList.push({ id: pid, name: imp.name, number: imp.number, pos: "G" });
+                    } else if (choice === "SKIP") {
+                        return;
+                    } else {
+                        pid = parseInt(choice);
+                    }
+                    finalGameStats[pid] = imp.stats;
+                });
+
+                const newGame = {
+                    id: generateId(),
+                    ...importData.meta,
+                    playerStats: finalGameStats,
+                    opponentStats: importData.opponentStats,
+                    actions: []
+                };
+                onConfirm(newGame, newPlayersList);
+            };
+
+            return (
+                <div className="space-y-4">
+                    <div className="bg-slate-900 p-4 rounded border border-slate-700">
+                        <h4 className="text-orange-500 font-bold mb-2">Match: {importData.meta.opponent}</h4>
+                        <div className="text-white text-sm">Score: {importData.meta.homeScore} - {importData.meta.awayScore}</div>
+                    </div>
+                    <div className="overflow-y-auto max-h-[50vh] space-y-2">
+                        {importData.rawPlayers.map((imp, idx) => (
+                            <div key={idx} className="flex items-center gap-2 bg-slate-800 p-2 rounded border border-slate-700">
+                                <div className="w-1/3">
+                                    <div className="text-white font-bold text-sm">#{imp.number} {imp.name}</div>
+                                    <div className="text-xs text-slate-400">{imp.stats.pts} pts, {imp.stats.min} min</div>
+                                </div>
+                                <div className="text-slate-500"><Icon path={Icons.Link} /></div>
+                                <div className="flex-1">
+                                    <select 
+                                        className="w-full bg-slate-900 text-white text-sm p-2 rounded border border-slate-600"
+                                        value={mapping[idx] || "NEW"}
+                                        onChange={(e) => setMapping({...mapping, [idx]: e.target.value})}
+                                    >
+                                        <option value="NEW" className="text-green-400 font-bold">+ Créer Nouveau</option>
+                                        <option value="SKIP" className="text-red-400">Ne pas importer</option>
+                                        <optgroup label="Effectif Actuel">
+                                            {currentPlayers.map(p => (
+                                                <option key={p.id} value={p.id}>#{p.number} - {p.name}</option>
+                                            ))}
+                                        </optgroup>
+                                    </select>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="flex justify-end gap-2 pt-4 border-t border-slate-700">
+                        <Button variant="ghost" onClick={onCancel}>Annuler</Button>
+                        <Button variant="success" onClick={handleFinalize}>Confirmer l'Import</Button>
+                    </div>
+                </div>
+            );
+        };
+
+        const History = ({ games, players, setGames, apiKey, onEditGame, onImportClick }) => {
+            const [analyzing, setAnalyzing] = useState(null);
+            const [modalContent, setModalContent] = useState(null);
+            const [viewDetail, setViewDetail] = useState(null);
+
+            const analyzeMatch = async (game) => {
+                if (!apiKey) { alert("Configurez votre clé API dans les paramètres !"); return; }
+                setAnalyzing(game.id);
+                try {
+                    const prompt = `Agis comme un journaliste sportif. Résumé match basket: Nous ${game.homeScore}-${game.awayScore} ${game.opponent}. Stats: ${JSON.stringify(game.playerStats)}. MVP? Clés du match?`;
+                    const text = await callGemini(prompt, apiKey);
+                    setModalContent({ title: `Analyse vs ${game.opponent}`, body: text });
+                } catch (e) { alert("Erreur analyse"); }
+                setAnalyzing(null);
+            };
+
+            return (
+                <div className="space-y-4">
+                    <div className="flex justify-end">
+                        <Button variant="primary" className="cursor-pointer" onClick={onImportClick}>
+                            <Icon path={Icons.Upload} /> Importer HTML
+                        </Button>
+                    </div>
+
+                    {games.map(g => (
+                        <div key={g.id} onClick={() => setViewDetail(g)} className="cursor-pointer">
+                            <Card className="p-4 flex flex-col gap-4 hover:border-orange-500 transition-colors">
+                                <div className="flex justify-between items-center">
+                                    <div>
+                                        <div className="text-sm text-slate-400">{g.date} - {g.location}</div>
+                                        <div className="text-xl font-bold text-white"><span className="text-green-400">{g.homeScore}</span> - <span className="text-red-400">{g.awayScore}</span> vs {g.opponent}</div>
+                                    </div>
+                                    <div className="flex flex-col md:flex-row gap-2" onClick={(e) => e.stopPropagation()}>
+                                        <Button variant="secondary" size="sm" onClick={() => onEditGame(g)}><Icon path={Icons.Edit} /> Modifier</Button>
+                                        <Button variant="magic" size="sm" onClick={() => analyzeMatch(g)} disabled={analyzing === g.id}>
+                                            {analyzing === g.id ? "..." : <><Icon path={Icons.Sparkles} /> IA</>}
+                                        </Button>
+                                        <Button variant="danger" size="sm" onClick={() => confirm("Supprimer ?") && setGames(games.filter(x => x.id !== g.id))}><Icon path={Icons.Trash} /></Button>
+                                    </div>
+                                </div>
+                            </Card>
+                        </div>
+                    ))}
+                    
+                    <Modal isOpen={!!modalContent} onClose={() => setModalContent(null)} title={modalContent?.title}>
+                        <div className="markdown-body text-slate-300 leading-relaxed" dangerouslySetInnerHTML={{ __html: marked.parse(modalContent?.body || "") }} />
+                    </Modal>
+
+                    <Modal isOpen={!!viewDetail} onClose={() => setViewDetail(null)} title={`Détails vs ${viewDetail?.opponent}`}>
+                        {viewDetail && (
+                            <div className="space-y-4">
+                                <div className="bg-slate-900 p-4 rounded-lg text-center border border-slate-700">
+                                    <h4 className="text-slate-400 uppercase text-xs">Score Final</h4>
+                                    <div className="text-3xl font-bold text-white">
+                                        <span className="text-green-400">{viewDetail.homeScore}</span> - <span className="text-red-400">{viewDetail.awayScore}</span>
+                                    </div>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-xs text-slate-300">
+                                        <thead className="bg-slate-700 text-white uppercase">
+                                            <tr>
+                                                <th className="p-2">Joueur</th>
+                                                <th className="p-2">MIN</th>
+                                                <th className="p-2">PTS</th>
+                                                <th className="p-2">REB</th>
+                                                <th className="p-2">AST</th>
+                                                <th className="p-2">STL</th>
+                                                <th className="p-2">BLK</th>
+                                                <th className="p-2">TOV</th>
+                                                <th className="p-2 text-green-400">EFF</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-700">
+                                            {Object.entries(viewDetail.playerStats).map(([pid, s]) => {
+                                                const eff = (s.pts + s.reb + s.ast + s.stl + s.blk) - ((s.fga - s.fgm) + (s.fta - s.ftm) + s.tov);
+                                                // FIX: Player Name Lookup
+                                                const player = players.find(p => p.id === parseInt(pid));
+                                                const pName = player ? player.name : `Inconnu #${pid}`;
+                                                
+                                                return (
+                                                    <tr key={pid}>
+                                                        <td className="p-2 font-bold">{pName}</td>
+                                                        <td className="p-2">{s.minutes}</td>
+                                                        <td className="p-2">{s.pts}</td>
+                                                        <td className="p-2">{s.reb}</td>
+                                                        <td className="p-2">{s.ast}</td>
+                                                        <td className="p-2">{s.stl}</td>
+                                                        <td className="p-2">{s.blk}</td>
+                                                        <td className="p-2">{s.tov}</td>
+                                                        <td className="p-2 font-bold text-green-400">{eff}</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+                    </Modal>
+                </div>
+            );
+        };
+        
+        const parseHTMLStats = (html) => {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            
+            const date = doc.querySelector('#game-date span.detail')?.textContent || new Date().toLocaleDateString();
+            const homeName = doc.querySelector('#team-names-container .left span.detail')?.textContent || "Nous";
+            const awayName = doc.querySelector('#team-names-container .right span.detail')?.textContent || "Adversaire";
+            const homeScore = parseInt(doc.querySelector('#team-score-left .title')?.textContent || "0");
+            const awayScore = parseInt(doc.querySelector('#team-score-right .title')?.textContent || "0");
+
+            const rawPlayers = [];
+            const table = doc.querySelector('table#stats');
+            let opponentStats = { pts: 0, reb: 0, ast: 0, tov: 0, fouls: 0 };
+
+            if (table) {
+                const rows = table.querySelectorAll('tr');
+                rows.forEach(row => {
+                    const cells = row.querySelectorAll('td');
+                    if (cells.length < 15) return;
+
+                    const nameCell = cells[0].textContent.trim();
+                    if (nameCell.includes(awayName)) {
+                         opponentStats = {
+                            pts: parseInt(cells[15].textContent) || 0,
+                            reb: (parseInt(cells[6].textContent)||0) + (parseInt(cells[7].textContent)||0),
+                            ast: parseInt(cells[12].textContent) || 0,
+                            tov: parseInt(cells[10].textContent) || 0,
+                            fouls: parseInt(cells[8].textContent) || 0
+                        };
+                        return;
+                    }
+                    if (!nameCell.startsWith('#')) return; 
+
+                    const parts = nameCell.split(' ');
+                    const numberStr = parts[0].replace('#', '');
+                    const number = parseInt(numberStr);
+                    const name = parts.slice(1).join(' ');
+
+                    const parseSplit = (txt) => { 
+                        if (!txt) return { made: 0, att: 0 };
+                        const [m, a] = txt.split('-'); 
+                        return { made: parseInt(m)||0, att: parseInt(a)||0 }; 
+                    };
+                    const fg = parseSplit(cells[1].textContent);
+                    const tp = parseSplit(cells[3].textContent);
+                    const ft = parseSplit(cells[5].textContent);
+                    
+                    const twoPM = fg.made - tp.made;
+                    const twoPA = fg.att - tp.att;
+
+                    const stats = {
+                        pts: parseInt(cells[15].textContent) || 0,
+                        reb: (parseInt(cells[6].textContent)||0) + (parseInt(cells[7].textContent)||0),
+                        oreb: parseInt(cells[6].textContent) || 0,
+                        dreb: parseInt(cells[7].textContent) || 0,
+                        ast: parseInt(cells[12].textContent) || 0,
+                        stl: parseInt(cells[9].textContent) || 0,
+                        blk: parseInt(cells[11].textContent) || 0,
+                        tov: parseInt(cells[10].textContent) || 0,
+                        pf: parseInt(cells[8].textContent) || 0,
+                        fgm: twoPM, fga: twoPA, 
+                        ftm: ft.made, fta: ft.att,
+                        minutes: parseInt(cells[14].textContent) || 0,
+                        plusMinus: parseInt(cells[13].textContent) || 0,
+                    };
+                    rawPlayers.push({ name, number, stats });
+                });
+            }
+
+            return {
+                meta: { date, opponent: awayName, homeScore, awayScore, location: "Importé" },
+                rawPlayers,
+                opponentStats
+            };
+        };
+
+        const Settings = ({ players, onUpdatePlayers, apiKey, setApiKey, firebaseConfig, setFirebaseConfig }) => {
+            const [localConfig, setLocalConfig] = useState(JSON.stringify(firebaseConfig, null, 2) || "");
+            
+            const handleSaveConfig = () => {
+                try {
+                    const parsed = JSON.parse(localConfig);
+                    setFirebaseConfig(parsed);
+                    alert("Configuration Firebase sauvegardée ! Rechargez la page.");
+                } catch (e) {
+                    alert("Erreur de format JSON. Vérifiez votre configuration.");
+                }
+            };
+
+            const generatePlayerLink = () => {
+                const url = new URL(window.location.href);
+                url.searchParams.set('mode', 'player');
+                navigator.clipboard.writeText(url.toString());
+                alert("Lien 'Joueur' copié dans le presse-papier !");
+            };
+
             const addPlayer = () => {
                 const newId = players.length > 0 ? Math.max(...players.map(p => p.id)) + 1 : 1;
                 onUpdatePlayers([...players, { id: newId, name: "Nouveau", number: 0, pos: "G" }]);
             };
+
             return (
-                <div className="space-y-4">
-                    <Card className="p-4 border-l-4 border-purple-500">
-                        <div className="font-bold text-white mb-2">API Gemini</div>
-                        <input type="password" className="w-full bg-slate-900 rounded p-2 text-white" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Clé API..." />
+                <div className="space-y-6">
+                    <Card className="p-6 border-l-4 border-purple-500 bg-gradient-to-br from-slate-800 to-slate-900">
+                        <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4"><Icon path={Icons.Settings} /> Synchronisation Cloud</h3>
+                        <p className="text-sm text-slate-400 mb-2">Pour synchroniser les données entre appareils, collez votre configuration Firebase ci-dessous.</p>
+                        <textarea 
+                            className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-xs text-white font-mono h-32 mb-2"
+                            placeholder='{ "apiKey": "...", "authDomain": "...", ... }'
+                            value={localConfig}
+                            onChange={(e) => setLocalConfig(e.target.value)}
+                        />
+                        <Button onClick={handleSaveConfig} variant="secondary" size="sm">Sauvegarder Config Cloud</Button>
                     </Card>
-                    <div className="flex justify-between">
-                        <h2 className="text-white text-xl">Effectif</h2>
-                        <Button onClick={addPlayer} size="sm">Ajouter</Button>
+
+                    <Card className="p-6">
+                         <h3 className="text-lg font-bold text-white mb-4">Partage</h3>
+                         <div className="flex items-center justify-between">
+                            <span className="text-slate-400 text-sm">Générer un lien en lecture seule pour les joueurs.</span>
+                            <Button onClick={generatePlayerLink} variant="magic"><Icon path={Icons.Share} /> Générer Lien Joueurs</Button>
+                         </div>
+                    </Card>
+
+                    <div className="flex justify-between items-center">
+                        <h2 className="text-2xl font-bold text-white">Effectif</h2>
+                        <Button onClick={addPlayer} variant="success"><Icon path={Icons.Plus} /> Ajouter Joueur</Button>
                     </div>
-                    <div className="grid gap-2">
+                    <div className="grid gap-3">
                         {players.map((p, i) => (
-                            <div key={p.id} className="bg-slate-800 p-2 rounded flex gap-2">
-                                <input className="bg-transparent text-white w-8" value={p.number} onChange={e => {const n=[...players]; n[i].number=parseInt(e.target.value); onUpdatePlayers(n)}} />
-                                <input className="bg-transparent text-white flex-1" value={p.name} onChange={e => {const n=[...players]; n[i].name=e.target.value; onUpdatePlayers(n)}} />
-                                <button onClick={() => onUpdatePlayers(players.filter(x => x.id !== p.id))} className="text-red-500">X</button>
-                            </div>
+                            <Card key={p.id} className="p-3 flex gap-3 items-center">
+                                <div className="w-10 h-10 bg-slate-700 rounded-full flex items-center justify-center font-bold">{p.number}</div>
+                                <div className="flex-1 grid grid-cols-2 gap-2">
+                                    <input className="bg-transparent text-white font-bold w-full outline-none" value={p.name} onChange={(e) => {const n=[...players]; n[i].name=e.target.value; onUpdatePlayers(n)}} />
+                                    <input className="bg-transparent text-slate-400 text-sm w-full outline-none" value={p.pos} onChange={(e) => {const n=[...players]; n[i].pos=e.target.value; onUpdatePlayers(n)}} />
+                                </div>
+                                <button onClick={() => onUpdatePlayers(players.filter(x => x.id !== p.id))} className="text-red-500 hover:text-red-300 p-2"><Icon path={Icons.Trash} /></button>
+                            </Card>
                         ))}
                     </div>
                 </div>
@@ -829,18 +1003,95 @@
             const [apiKey, setApiKey] = useState("");
             const [activeGame, setActiveGame] = useState(null);
             
+            // Firebase & Sync
+            const [firebaseConfig, setFirebaseConfig] = useState(null);
+            const [isCloudEnabled, setIsCloudEnabled] = useState(false);
+            const [db, setDb] = useState(null);
+
             // Import State
             const [importData, setImportData] = useState(null);
 
-            useEffect(() => {
-                setPlayers(JSON.parse(localStorage.getItem('basket_players')) || defaultPlayers);
-                setGames(JSON.parse(localStorage.getItem('basket_games')) || []);
-                setApiKey(localStorage.getItem('gemini_api_key') || "");
+            // Player Mode
+            const isPlayerMode = useMemo(() => {
+                return new URLSearchParams(window.location.search).get('mode') === 'player';
             }, []);
 
-            useEffect(() => { localStorage.setItem('basket_players', JSON.stringify(players)); }, [players]);
-            useEffect(() => { localStorage.setItem('basket_games', JSON.stringify(games)); }, [games]);
+            // Initial Load
+            useEffect(() => {
+                // Load local config
+                const savedFbConfig = localStorage.getItem('basket_firebase_config');
+                const savedApiKey = localStorage.getItem('gemini_api_key');
+                if (savedApiKey) setApiKey(savedApiKey);
+
+                if (savedFbConfig) {
+                    try {
+                        const config = JSON.parse(savedFbConfig);
+                        setFirebaseConfig(config);
+                    } catch (e) { console.error("Invalid Firebase Config in LocalStorage"); }
+                }
+
+                // If no cloud, load local data immediately
+                if (!savedFbConfig) {
+                    setPlayers(JSON.parse(localStorage.getItem('basket_players')) || defaultPlayers);
+                    setGames(JSON.parse(localStorage.getItem('basket_games')) || []);
+                }
+            }, []);
+
+            // Firebase Init
+            useEffect(() => {
+                if (firebaseConfig && window.Firebase) {
+                    try {
+                        const app = window.Firebase.initializeApp(firebaseConfig);
+                        const database = window.Firebase.getFirestore(app);
+                        setDb(database);
+                        setIsCloudEnabled(true);
+                        console.log("Firebase Connected");
+
+                        // Listeners
+                        const unsubPlayers = window.Firebase.onSnapshot(window.Firebase.doc(database, "team_data", "roster"), (doc) => {
+                            if (doc.exists()) setPlayers(doc.data().list);
+                        });
+                        const unsubGames = window.Firebase.onSnapshot(window.Firebase.doc(database, "team_data", "games"), (doc) => {
+                            if (doc.exists()) setGames(doc.data().list);
+                        });
+
+                        return () => { unsubPlayers(); unsubGames(); };
+                    } catch (e) {
+                        console.error("Firebase Init Error", e);
+                        setIsCloudEnabled(false);
+                    }
+                }
+            }, [firebaseConfig]);
+
+            // Save Effects (Local or Cloud)
+            useEffect(() => {
+                if (isCloudEnabled && db) {
+                    window.Firebase.setDoc(window.Firebase.doc(db, "team_data", "roster"), { list: players });
+                } else {
+                    localStorage.setItem('basket_players', JSON.stringify(players));
+                }
+            }, [players, isCloudEnabled, db]);
+
+            useEffect(() => {
+                if (isCloudEnabled && db) {
+                    window.Firebase.setDoc(window.Firebase.doc(db, "team_data", "games"), { list: games });
+                } else {
+                    localStorage.setItem('basket_games', JSON.stringify(games));
+                }
+            }, [games, isCloudEnabled, db]);
+
+            useEffect(() => {
+                if (firebaseConfig) localStorage.setItem('basket_firebase_config', JSON.stringify(firebaseConfig));
+            }, [firebaseConfig]);
+            
             useEffect(() => { localStorage.setItem('gemini_api_key', apiKey); }, [apiKey]);
+
+            // Enforce Player Mode View
+            useEffect(() => {
+                if (isPlayerMode) {
+                    setView("global_stats");
+                }
+            }, [isPlayerMode]);
 
             const handleSaveGame = (gameState) => {
                 const gameId = activeGame?.id || generateId();
@@ -874,6 +1125,21 @@
                 setView('history');
             };
 
+            // Player Mode UI Lock
+            if (isPlayerMode) {
+                return (
+                    <div className="max-w-5xl mx-auto h-screen bg-slate-950 flex flex-col font-sans text-slate-200">
+                         <header className="h-16 bg-slate-900/80 backdrop-blur border-b border-slate-800 flex items-center px-6 shrink-0 justify-between">
+                            <h1 className="font-bold text-lg text-white">🏀 Stats Saison</h1>
+                            <div className="text-xs text-orange-500 font-bold px-2 py-1 bg-orange-900/20 rounded border border-orange-900">Mode Joueur</div>
+                        </header>
+                        <div className="flex-1 p-4 overflow-y-auto bg-slate-950 no-scrollbar">
+                            <GlobalStats players={players} games={games} />
+                        </div>
+                    </div>
+                );
+            }
+
             return (
                 <div className="max-w-5xl mx-auto h-screen bg-slate-950 flex flex-col md:flex-row overflow-hidden font-sans text-slate-200">
                     
@@ -905,6 +1171,7 @@
                         {[
                             { id: "live", icon: Icons.Play },
                             { id: "intelligent", icon: Icons.Activity },
+                            { id: "global_stats", icon: Icons.Chart },
                             { id: "history", icon: Icons.Clipboard },
                             { id: "settings", icon: Icons.Settings }
                         ].map(btn => (
@@ -918,23 +1185,36 @@
                             <h1 className="font-bold text-lg text-white flex items-center gap-2">
                                 {view === 'live' && (activeGame ? "✏️ Modifier Match" : "🔴 Match en Direct")}
                                 {view === 'intelligent' && "🧠 Coach OS"}
+                                {view === 'global_stats' && "📊 Stats Saison"}
                                 {view === 'history' && "📜 Historique"}
                                 {view === 'settings' && "⚙️ Paramètres"}
                             </h1>
+                            {isCloudEnabled && <span className="ml-auto text-xs text-green-400 flex items-center gap-1"><Icon path={Icons.Cloud} /> Synchro</span>}
                         </header>
                         <div className="flex-1 p-4 overflow-y-auto bg-slate-950 no-scrollbar">
                             {view === 'live' && <LiveTracker players={players} onSaveGame={handleSaveGame} initialGame={activeGame} />}
                             {view === 'intelligent' && <CoachOS players={players} games={games} apiKey={apiKey} />}
+                            {view === 'global_stats' && <GlobalStats players={players} games={games} />}
                             {view === 'history' && (
                                 <History 
                                     games={games} 
+                                    players={players}
                                     setGames={setGames} 
                                     apiKey={apiKey} 
                                     onEditGame={(g) => { setActiveGame(g); setView('live'); }} 
                                     onImportClick={() => document.getElementById('html-upload').click()} 
                                 />
                             )}
-                            {view === 'settings' && <Settings players={players} onUpdatePlayers={setPlayers} apiKey={apiKey} setApiKey={setApiKey} />}
+                            {view === 'settings' && (
+                                <Settings 
+                                    players={players} 
+                                    onUpdatePlayers={setPlayers} 
+                                    apiKey={apiKey} 
+                                    setApiKey={setApiKey} 
+                                    firebaseConfig={firebaseConfig}
+                                    setFirebaseConfig={setFirebaseConfig}
+                                />
+                            )}
                         </div>
                     </main>
                 </div>
