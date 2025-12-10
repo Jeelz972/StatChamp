@@ -62,10 +62,8 @@
         // ==========================================
         // 🛠️ ZONE DE CONFIGURATION AUTOMATIQUE 🛠️
         // ==========================================
-        // Collez vos informations Firebase ici (remplacez les valeurs vides "").
-        // Si vous remplissez ceci, plus personne n'aura besoin de configurer l'app manuellement.
         
-        const PRECONFIGURED_FIREBASE = {
+         const PRECONFIGURED_FIREBASE = {
     apiKey: "AIzaSyBh3NTNNGlcpP65QF_2RP09cMm-Dj2QQyw",
     authDomain: "sinon-6b939.firebaseapp.com",
     projectId: "sinon-6b939",
@@ -144,14 +142,26 @@
 
         const calculateAdvancedStats = (stats, minOverride = null) => {
             const min = minOverride !== null ? minOverride : (stats.minutes || 0);
-            const eff = (stats.pts + (stats.oreb + stats.dreb) + stats.ast + stats.stl + stats.blk) - 
-                        ((stats.fga - stats.fgm) + (stats.fta - stats.ftm) + stats.tov);
+            
+            // Calcul Evaluation (Formule LNB simplifiée sans les fautes provoquées car non trackées)
+            // (Pts + Reb + Ast + Stl + Blk) - ((Tirs Tentés - Tirs Réussis) + (LF Tentés - LF Réussis) + Balles Perdues)
+            const missedFG = (stats.fga || 0) - (stats.fgm || 0);
+            const missedFT = (stats.fta || 0) - (stats.ftm || 0);
+            const evalStat = (stats.pts + stats.reb + stats.ast + stats.stl + stats.blk) - (missedFG + missedFT + stats.tov);
+
+            // Efficacité (Souvent synonyme d'éval ou parfois Pts + Reb + Ast + Stl + Blk - Missed FG - Missed FT - TO)
+            // Ici on utilise Eval comme "Efficacité Globale"
+            
+            // Possessions (Approx)
             const poss = stats.fga + (0.44 * stats.fta) + stats.tov;
+            
             const ortg = poss > 0 ? (stats.pts / poss) * 100 : 0;
             const drtg = poss > 0 ? (stats.pointsAllowed / poss) * 100 : 100;
+
             return {
-                eff: eff,
-                effPerMin: min > 0 ? (eff / min) : 0,
+                eff: evalStat, // On stocke l'éval dans 'eff' pour compatibilité
+                eval: evalStat,
+                effPerMin: min > 0 ? (evalStat / min) : 0,
                 ortg: parseFloat(ortg.toFixed(1)),
                 drtg: parseFloat(drtg.toFixed(1)),
                 netRtg: parseFloat((ortg - drtg).toFixed(1)),
@@ -238,7 +248,7 @@
             if (!isOpen) return null;
             return (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-                    <div className="bg-slate-800 rounded-xl border border-slate-600 w-full max-w-2xl shadow-2xl transform transition-all scale-100 max-h-[90vh] flex flex-col">
+                    <div className="bg-slate-800 rounded-xl border border-slate-600 w-full max-w-4xl shadow-2xl transform transition-all scale-100 max-h-[90vh] flex flex-col">
                         <div className="flex justify-between items-center p-4 border-b border-slate-700 shrink-0">
                             <h3 className="text-xl font-bold text-white flex items-center gap-2">{title}</h3>
                             <button onClick={onClose} className="text-slate-400 hover:text-white text-2xl">&times;</button>
@@ -550,8 +560,12 @@
                             stats[id].total.tov += (s.tov || 0);
                             stats[id].total.min += (s.minutes || 0);
                             
-                            const eff = (s.pts + s.reb + s.ast + s.stl + s.blk) - ((s.fga - s.fgm) + (s.fta - s.ftm) + s.tov);
-                            stats[id].total.eff += eff;
+                            // Recalculate Eval based on stored raw stats
+                            const missedFG = (s.fga || 0) - (s.fgm || 0);
+                            const missedFT = (s.fta || 0) - (s.ftm || 0);
+                            const evalStat = (s.pts + s.reb + s.ast + s.stl + s.blk) - (missedFG + missedFT + s.tov);
+
+                            stats[id].total.eff += evalStat;
 
                             stats[id].logs.push({
                                 gameId: g.id,
@@ -559,7 +573,7 @@
                                 opponent: g.opponent,
                                 result: g.homeScore > g.awayScore ? 'W' : 'L',
                                 score: `${g.homeScore}-${g.awayScore}`,
-                                stats: { ...s, eff }
+                                stats: { ...s, eff: evalStat }
                             });
                         }
                     });
@@ -595,13 +609,14 @@
                                     <tr>
                                         <th className="p-3">Joueur</th>
                                         <th className="p-3">MJ</th>
-                                        <th className="p-3 text-orange-400">PTS</th>
-                                        <th className="p-3">REB</th>
-                                        <th className="p-3">AST</th>
-                                        <th className="p-3">STL</th>
-                                        <th className="p-3">BLK</th>
-                                        <th className="p-3">TOV</th>
-                                        <th className="p-3 text-green-400">EFF</th>
+                                        <th className="p-3">Min</th>
+                                        <th className="p-3 text-orange-400">Pts</th>
+                                        <th className="p-3">Reb</th>
+                                        <th className="p-3">Pd</th>
+                                        <th className="p-3">Int</th>
+                                        <th className="p-3">Ctr</th>
+                                        <th className="p-3">Bp</th>
+                                        <th className="p-3 text-green-400">Éval</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-700">
@@ -609,6 +624,7 @@
                                         <tr key={p.info.id} onClick={() => setSelectedPlayer(p)} className="hover:bg-slate-700/50 cursor-pointer transition-colors">
                                             <td className="p-3 font-bold text-white">{p.info.name} <span className="text-xs text-slate-500">#{p.info.number}</span></td>
                                             <td className="p-3">{p.gamesPlayed}</td>
+                                            <td className="p-3">{p.avg.min}</td>
                                             <td className="p-3 font-bold text-orange-400">{p.avg.pts}</td>
                                             <td className="p-3">{p.avg.reb}</td>
                                             <td className="p-3">{p.avg.ast}</td>
@@ -640,7 +656,7 @@
                                         <div className="text-2xl font-bold text-white">{selectedPlayer.avg.ast}</div>
                                     </div>
                                     <div className="text-center">
-                                        <div className="text-xs text-slate-500 uppercase">Eval</div>
+                                        <div className="text-xs text-slate-500 uppercase">Éval</div>
                                         <div className="text-2xl font-bold text-green-400">{selectedPlayer.avg.eff}</div>
                                     </div>
                                 </div>
@@ -666,7 +682,7 @@
                                                     <th className="p-2">Adv</th>
                                                     <th className="p-2">MIN</th>
                                                     <th className="p-2">PTS</th>
-                                                    <th className="p-2">EFF</th>
+                                                    <th className="p-2">ÉVAL</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-700">
@@ -792,21 +808,30 @@
 
             if (table) {
                 const rows = table.querySelectorAll('tr');
-                rows.forEach(row => {
+                rows.forEach((row, i) => {
+                    // Skip header row
+                    if (i === 0) return;
+
                     const cells = row.querySelectorAll('td');
-                    if (cells.length < 15) return;
+                    // Based on HTML analysis:
+                    // 0: Name, 1: FG, 2: FG%, 3: 3PT, 4: 3PT%, 5: FT, 6: FT%, 7: OREB, 8: DREB, 9: FOUL, 10: STL, 11: TO, 12: BLK, 13: ASST, 14: +/-, 15: MIN, 16: PTS
+                    
+                    if (cells.length < 17) return;
 
                     const nameCell = cells[0].textContent.trim();
+
+                    // Check if Opponent Row (usually at bottom)
                     if (nameCell.includes(awayName)) {
                          opponentStats = {
-                            pts: parseInt(cells[15].textContent) || 0,
-                            reb: (parseInt(cells[6].textContent)||0) + (parseInt(cells[7].textContent)||0),
-                            ast: parseInt(cells[12].textContent) || 0,
-                            tov: parseInt(cells[10].textContent) || 0,
-                            fouls: parseInt(cells[8].textContent) || 0
+                            pts: parseInt(cells[16].textContent) || 0,
+                            reb: (parseInt(cells[7].textContent)||0) + (parseInt(cells[8].textContent)||0),
+                            ast: parseInt(cells[13].textContent) || 0,
+                            tov: parseInt(cells[11].textContent) || 0,
+                            fouls: parseInt(cells[9].textContent) || 0
                         };
                         return;
                     }
+
                     if (!nameCell.startsWith('#')) return; 
 
                     const parts = nameCell.split(' ');
@@ -815,32 +840,48 @@
                     const name = parts.slice(1).join(' ');
 
                     const parseSplit = (txt) => { 
-                        if (!txt) return { made: 0, att: 0 };
+                        if (!txt || txt === '-') return { made: 0, att: 0 };
                         const [m, a] = txt.split('-'); 
                         return { made: parseInt(m)||0, att: parseInt(a)||0 }; 
                     };
-                    const fg = parseSplit(cells[1].textContent);
-                    const tp = parseSplit(cells[3].textContent);
-                    const ft = parseSplit(cells[5].textContent);
                     
+                    // Column mapping based on user description + HTML check
+                    const fg = parseSplit(cells[1].textContent); // Fg (Includes 3pt usually in these exports)
+                    const tp = parseSplit(cells[3].textContent); // 3pt
+                    const ft = parseSplit(cells[5].textContent); // Ft
+
+                    // 2pt is total FG - 3pt (usually)
+                    // If the footnote says "Fg column includes 2pt & 3pt", then:
                     const twoPM = fg.made - tp.made;
                     const twoPA = fg.att - tp.att;
-
+                    
                     const stats = {
-                        pts: parseInt(cells[15].textContent) || 0,
-                        reb: (parseInt(cells[6].textContent)||0) + (parseInt(cells[7].textContent)||0),
-                        oreb: parseInt(cells[6].textContent) || 0,
-                        dreb: parseInt(cells[7].textContent) || 0,
-                        ast: parseInt(cells[12].textContent) || 0,
-                        stl: parseInt(cells[9].textContent) || 0,
-                        blk: parseInt(cells[11].textContent) || 0,
-                        tov: parseInt(cells[10].textContent) || 0,
-                        pf: parseInt(cells[8].textContent) || 0,
-                        fgm: twoPM, fga: twoPA, 
+                        fgm: twoPM, fga: twoPA, // 2 Points
                         ftm: ft.made, fta: ft.att,
-                        minutes: parseInt(cells[14].textContent) || 0,
-                        plusMinus: parseInt(cells[13].textContent) || 0,
+                        pts: parseInt(cells[16].textContent) || 0,
+                        reb: (parseInt(cells[7].textContent)||0) + (parseInt(cells[8].textContent)||0),
+                        oreb: parseInt(cells[7].textContent) || 0,
+                        dreb: parseInt(cells[8].textContent) || 0,
+                        ast: parseInt(cells[13].textContent) || 0,
+                        stl: parseInt(cells[10].textContent) || 0,
+                        blk: parseInt(cells[12].textContent) || 0,
+                        tov: parseInt(cells[11].textContent) || 0,
+                        pf: parseInt(cells[9].textContent) || 0,
+                        minutes: parseInt(cells[15].textContent) || 0,
+                        plusMinus: parseInt(cells[14].textContent) || 0,
+                        // Store raw 3pt for later if needed, but standard schema uses 2pt/3pt breakdown
+                        // But wait, the app recalculates stats from actions in Live mode. 
+                        // For imported games, we store this 'stats' object directly. 
+                        // We need to ensure we store 3PM/3PA as well.
+                        threePM: tp.made, threePA: tp.att
                     };
+                    
+                    // We need to augment the 'stats' object to hold 3pt data if the app structure expects it separately, 
+                    // or just use 'fgm' as 2pt made.
+                    // The standard recalculateGameStats uses action types like 'FGM3'. 
+                    // But imported games skip actions and use `playerStats` directly.
+                    // So we must ensure `playerStats` has everything needed for display.
+                    
                     rawPlayers.push({ name, number, stats });
                 });
             }
@@ -914,20 +955,39 @@
                                         <thead className="bg-slate-700 text-white uppercase">
                                             <tr>
                                                 <th className="p-2">Joueur</th>
-                                                <th className="p-2">MIN</th>
-                                                <th className="p-2">PTS</th>
-                                                <th className="p-2">REB</th>
-                                                <th className="p-2">AST</th>
-                                                <th className="p-2">STL</th>
-                                                <th className="p-2">BLK</th>
-                                                <th className="p-2">TOV</th>
-                                                <th className="p-2 text-green-400">EFF</th>
+                                                <th className="p-2">Min</th>
+                                                <th className="p-2 text-orange-400">Pts</th>
+                                                <th className="p-2">Tir</th>
+                                                <th className="p-2">3Pts</th>
+                                                <th className="p-2">LF</th>
+                                                <th className="p-2">Reb</th>
+                                                <th className="p-2">Pd</th>
+                                                <th className="p-2">Int</th>
+                                                <th className="p-2">Ctr</th>
+                                                <th className="p-2">Bp</th>
+                                                <th className="p-2">Fte</th>
+                                                <th className="p-2">+/-</th>
+                                                <th className="p-2 text-green-400">Éval</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-700">
                                             {Object.entries(viewDetail.playerStats).map(([pid, s]) => {
-                                                const eff = (s.pts + s.reb + s.ast + s.stl + s.blk) - ((s.fga - s.fgm) + (s.fta - s.ftm) + s.tov);
-                                                // Player Name Lookup
+                                                // Check for imported 3pt data or fallback
+                                                const tpMade = s.threePM !== undefined ? s.threePM : 0; // Fallback if live game didn't track separate 3pt att in stats object
+                                                const tpAtt = s.threePA !== undefined ? s.threePA : 0;
+                                                
+                                                // Note: LiveTracker recalculateGameStats doesn't populate threePM/threePA in the stats object, 
+                                                // it only tracks FGM. For consistency, LiveTracker should ideally update this.
+                                                // For imported games, we have it.
+                                                
+                                                const missedFG = (s.fga || 0) - (s.fgm || 0); // 2pt miss
+                                                const missed3PT = (tpAtt - tpMade);
+                                                const missedFT = (s.fta || 0) - (s.ftm || 0);
+                                                
+                                                const totalPts = s.pts;
+                                                const totalReb = s.reb;
+                                                const evalStat = (totalPts + totalReb + s.ast + s.stl + s.blk) - (missedFG + missed3PT + missedFT + s.tov);
+
                                                 const player = players.find(p => p.id === parseInt(pid));
                                                 const pName = player ? player.name : `Inconnu #${pid}`;
                                                 
@@ -935,13 +995,18 @@
                                                     <tr key={pid}>
                                                         <td className="p-2 font-bold">{pName}</td>
                                                         <td className="p-2">{s.minutes}</td>
-                                                        <td className="p-2">{s.pts}</td>
-                                                        <td className="p-2">{s.reb}</td>
+                                                        <td className="p-2 font-bold text-orange-400">{s.pts}</td>
+                                                        <td className="p-2">{s.fgm}-{s.fga}</td>
+                                                        <td className="p-2">{tpMade}-{tpAtt}</td>
+                                                        <td className="p-2">{s.ftm}-{s.fta}</td>
+                                                        <td className="p-2">{s.oreb}/{s.dreb}</td>
                                                         <td className="p-2">{s.ast}</td>
                                                         <td className="p-2">{s.stl}</td>
                                                         <td className="p-2">{s.blk}</td>
                                                         <td className="p-2">{s.tov}</td>
-                                                        <td className="p-2 font-bold text-green-400">{eff}</td>
+                                                        <td className="p-2">{s.pf}</td>
+                                                        <td className="p-2">{s.plusMinus}</td>
+                                                        <td className="p-2 font-bold text-green-400">{evalStat}</td>
                                                     </tr>
                                                 );
                                             })}
@@ -964,7 +1029,6 @@
                     try {
                         parsed = JSON.parse(localConfig);
                     } catch (e) {
-                        // Relaxed JSON parsing for JS objects
                         const fixed = localConfig.replace(/(['"])?([a-zA-Z0-9_]+)(['"])?:/g, '"$2":').replace(/'/g, '"');
                         parsed = JSON.parse(fixed);
                     }
@@ -1055,14 +1119,21 @@
                 const savedApiKey = localStorage.getItem('gemini_api_key');
                 if (savedApiKey) setApiKey(savedApiKey);
 
-                if (savedFbConfig) {
+                // Use preconfigured if available and not overridden
+                if (PRECONFIGURED_FIREBASE.apiKey && !savedFbConfig) {
+                     setFirebaseConfig(PRECONFIGURED_FIREBASE);
+                } else if (savedFbConfig) {
                     try {
                         const config = JSON.parse(savedFbConfig);
                         setFirebaseConfig(config);
                     } catch (e) { console.error("Invalid Firebase Config in LocalStorage"); }
                 }
 
-                if (!savedFbConfig) {
+                if (PRECONFIGURED_GEMINI_KEY && !savedApiKey) {
+                    setApiKey(PRECONFIGURED_GEMINI_KEY);
+                }
+
+                if (!savedFbConfig && !PRECONFIGURED_FIREBASE.apiKey) {
                     setPlayers(JSON.parse(localStorage.getItem('basket_players')) || defaultPlayers);
                     setGames(JSON.parse(localStorage.getItem('basket_games')) || []);
                 }
