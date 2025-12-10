@@ -17,7 +17,7 @@
     
     <!-- Recharts -->
     <script src="https://unpkg.com/prop-types/prop-types.min.js"></script>
-    <script src="https://unpkg.com/recharts@2.12.7/umd/recharts.js"></script>
+    <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
 
     <!-- Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -59,6 +59,29 @@
     <div id="root"></div>
 
     <script type="text/babel">
+        // ==========================================
+        // 🛠️ ZONE DE CONFIGURATION AUTOMATIQUE 🛠️
+        // ==========================================
+        // Collez vos informations Firebase ici (remplacez les valeurs vides "").
+        // Si vous remplissez ceci, plus personne n'aura besoin de configurer l'app manuellement.
+        
+        const PRECONFIGURED_FIREBASE = {
+    apiKey: "AIzaSyBh3NTNNGlcpP65QF_2RP09cMm-Dj2QQyw",
+    authDomain: "sinon-6b939.firebaseapp.com",
+    projectId: "sinon-6b939",
+    storageBucket: "sinon-6b939.firebasestorage.app",
+    messagingSenderId: "655166210370",
+    appId: "1:655166210370:web:991a43bad42186034e88db",
+    measurementId: "G-Y1JF9KKLEC"
+  };
+
+        const PRECONFIGURED_GEMINI_KEY = "AIzaSyCndzKJOR46K3OSgwSYoOHed3FhWL5o7lc"; // Votre clé API Gemini (AIza...)
+
+        // ==========================================
+        // FIN DE LA ZONE DE CONFIGURATION
+        // ==========================================
+
+
         const { useState, useEffect, useMemo, useRef } = React;
         const { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid } = window.Recharts || {};
 
@@ -73,7 +96,7 @@
             { id: 5, name: "Pivot E", number: 15, pos: "C" },
         ];
 
-        // Logic to calculate stats from a list of actions (Moved outside component for safety)
+        // Logic to calculate stats from a list of actions
         const recalculateGameStats = (actions, players) => {
             const pStats = {};
             players.forEach(p => pStats[p.id] = { pts: 0, reb: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, tov: 0, fga: 0, fgm: 0, fta: 0, ftm: 0, pf: 0, pointsAllowed: 0, minutes: 0, plusMinus: 0 });
@@ -228,8 +251,7 @@
             );
         };
 
-        // --- SUB COMPONENTS ---
-
+        // --- LIVE TRACKER ---
         const LiveTracker = ({ players, onSaveGame, initialGame }) => {
             const [gameState, setGameState] = useState({
                 quarter: 1, opponent: "Adversaire", location: "Domicile",
@@ -1037,7 +1059,7 @@
                     try {
                         const config = JSON.parse(savedFbConfig);
                         setFirebaseConfig(config);
-                    } catch (e) { console.error("Invalid Firebase Config"); }
+                    } catch (e) { console.error("Invalid Firebase Config in LocalStorage"); }
                 }
 
                 if (!savedFbConfig) {
@@ -1093,13 +1115,6 @@
             
             useEffect(() => { localStorage.setItem('gemini_api_key', apiKey); }, [apiKey]);
 
-            // Enforce Player Mode View
-            useEffect(() => {
-                if (isPlayerMode) {
-                    setView("global_stats");
-                }
-            }, [isPlayerMode]);
-
             const handleSaveGame = (gameState) => {
                 const gameId = activeGame?.id || generateId();
                 const newGame = { ...gameState, id: gameId, date: activeGame?.date || new Date().toLocaleDateString() };
@@ -1147,6 +1162,7 @@
 
             return (
                 <div className="max-w-5xl mx-auto h-screen bg-slate-950 flex flex-col md:flex-row overflow-hidden font-sans text-slate-200">
+                    
                     <input 
                         type="file" 
                         accept=".html" 
