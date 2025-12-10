@@ -17,7 +17,7 @@
     
     <!-- Recharts -->
     <script src="https://unpkg.com/prop-types/prop-types.min.js"></script>
-    <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+    <script src="https://unpkg.com/recharts@2.12.7/umd/recharts.js"></script>
 
     <!-- Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -80,7 +80,6 @@
         // FIN DE LA ZONE DE CONFIGURATION
         // ==========================================
 
-
         const { useState, useEffect, useMemo, useRef } = React;
         const { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid } = window.Recharts || {};
 
@@ -100,7 +99,13 @@
         // Logic to calculate stats from a list of actions (Live Mode)
         const recalculateGameStats = (actions, players) => {
             const pStats = {};
-            players.forEach(p => pStats[p.id] = { pts: 0, reb: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, tov: 0, fga: 0, fgm: 0, fta: 0, ftm: 0, pf: 0, pointsAllowed: 0, minutes: 0, plusMinus: 0 });
+            players.forEach(p => {
+                pStats[p.id] = { 
+                    pts: 0, reb: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, tov: 0, 
+                    fga: 0, fgm: 0, fta: 0, ftm: 0, pf: 0, pointsAllowed: 0, minutes: 0, plusMinus: 0,
+                    threePM: 0, threePA: 0 // New trackers for explicit 3PT stats
+                };
+            });
             const oppStats = { pts: 0, reb: 0, ast: 0, tov: 0, fouls: 0, fga: 0, fgm: 0, fta: 0, ftm: 0 };
             let home = 0, away = 0;
 
@@ -120,11 +125,21 @@
                     }
                 } else if (pStats[playerId]) {
                     const ps = pStats[playerId];
-                    if (type.includes('FGM')) {
-                        const val = type === 'FGM1' ? 1 : type === 'FGM2' ? 2 : 3;
-                        ps.pts += val; home += val; ptsScored = val;
-                    }
-                    if (type === 'PF') ps.pf++;
+                    if (type === 'FGM1') { ps.pts += 1; ps.ftm += 1; ps.fta += 1; home += 1; ptsScored = 1; }
+                    if (type === 'FGA1') { ps.fta += 1; }
+                    if (type === 'FGM2') { ps.pts += 2; ps.fgm += 1; ps.fga += 1; home += 2; ptsScored = 2; }
+                    if (type === 'FGA2') { ps.fga += 1; }
+                    if (type === 'FGM3') { ps.pts += 3; ps.fgm += 1; ps.fga += 1; ps.threePM += 1; ps.threePA += 1; home += 3; ptsScored = 3; }
+                    if (type === 'FGA3') { ps.fga += 1; ps.threePA += 1; }
+                    
+                    if (type === 'OREB') { ps.reb += 1; ps.oreb += 1; }
+                    if (type === 'DREB') { ps.reb += 1; ps.dreb += 1; }
+                    if (type === 'AST') ps.ast += 1;
+                    if (type === 'STL') ps.stl += 1;
+                    if (type === 'BLK') ps.blk += 1;
+                    if (type === 'TOV') ps.tov += 1;
+                    if (type === 'PF') ps.pf += 1;
+
                     if (consequence && consequence.includes('score')) {
                         const val = parseInt(consequence.split('_')[1]);
                         ps.pointsAllowed += val; away += val; ptsConceded = val;
@@ -257,7 +272,8 @@
             );
         };
 
-        // --- LIVE TRACKER ---
+        // --- SUB COMPONENTS ---
+
         const LiveTracker = ({ players, onSaveGame, initialGame }) => {
             const [gameState, setGameState] = useState({
                 quarter: 1, opponent: "Adversaire", location: "Domicile",
@@ -541,7 +557,11 @@
                     stats[p.id] = {
                         info: p,
                         gamesPlayed: 0,
-                        total: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, min: 0, eff: 0 },
+                        total: { 
+                            pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, min: 0, eff: 0, 
+                            fgm: 0, fga: 0, threePM: 0, threePA: 0, ftm: 0, fta: 0, pf: 0, plusMinus: 0,
+                            ortg: 0, drtg: 0, netRtg: 0 // Sum for avg
+                        },
                         logs: []
                     };
                 });
@@ -561,12 +581,25 @@
                                 stats[id].total.blk += (s.blk || 0);
                                 stats[id].total.tov += (s.tov || 0);
                                 stats[id].total.min += (s.minutes || 0);
+                                stats[id].total.fgm += (s.fgm || 0);
+                                stats[id].total.fga += (s.fga || 0);
+                                stats[id].total.threePM += (s.threePM || 0);
+                                stats[id].total.threePA += (s.threePA || 0);
+                                stats[id].total.ftm += (s.ftm || 0);
+                                stats[id].total.fta += (s.fta || 0);
+                                stats[id].total.pf += (s.pf || 0);
+                                stats[id].total.plusMinus += (s.plusMinus || 0);
                                 
                                 const missedFG = (s.fga || 0) - (s.fgm || 0);
                                 const missedFT = (s.fta || 0) - (s.ftm || 0);
                                 const evalStat = (s.pts + s.reb + s.ast + s.stl + s.blk) - (missedFG + missedFT + s.tov);
 
                                 stats[id].total.eff += evalStat;
+
+                                const adv = calculateAdvancedStats(s, s.minutes);
+                                stats[id].total.ortg += adv.ortg;
+                                stats[id].total.drtg += adv.drtg;
+                                stats[id].total.netRtg += adv.netRtg;
 
                                 stats[id].logs.push({
                                     gameId: g.id,
@@ -583,17 +616,34 @@
 
                 return Object.values(stats).map(p => {
                     const gp = p.gamesPlayed || 1;
+                    const t = p.total;
+                    const fgPct = t.fga > 0 ? ((t.fgm / t.fga) * 100).toFixed(1) : "0.0";
+                    const threePct = t.threePA > 0 ? ((t.threePM / t.threePA) * 100).toFixed(1) : "0.0";
+                    
                     return {
                         ...p,
                         avg: {
-                            pts: (p.total.pts / gp).toFixed(1),
-                            reb: (p.total.reb / gp).toFixed(1),
-                            ast: (p.total.ast / gp).toFixed(1),
-                            stl: (p.total.stl / gp).toFixed(1),
-                            blk: (p.total.blk / gp).toFixed(1),
-                            tov: (p.total.tov / gp).toFixed(1),
-                            min: (p.total.min / gp).toFixed(1),
-                            eff: (p.total.eff / gp).toFixed(1),
+                            min: (t.min / gp).toFixed(1),
+                            pts: (t.pts / gp).toFixed(1),
+                            fgm: (t.fgm / gp).toFixed(1),
+                            fga: (t.fga / gp).toFixed(1),
+                            fgPct: fgPct,
+                            threePM: (t.threePM / gp).toFixed(1),
+                            threePA: (t.threePA / gp).toFixed(1),
+                            threePct: threePct,
+                            ftm: (t.ftm / gp).toFixed(1),
+                            fta: (t.fta / gp).toFixed(1),
+                            reb: (t.reb / gp).toFixed(1),
+                            ast: (t.ast / gp).toFixed(1),
+                            stl: (t.stl / gp).toFixed(1),
+                            blk: (t.blk / gp).toFixed(1),
+                            tov: (t.tov / gp).toFixed(1),
+                            pf: (t.pf / gp).toFixed(1),
+                            plusMinus: (t.plusMinus / gp).toFixed(1),
+                            eff: (t.eff / gp).toFixed(1),
+                            ortg: (t.ortg / gp).toFixed(1),
+                            drtg: (t.drtg / gp).toFixed(1),
+                            netRtg: (t.netRtg / gp).toFixed(1)
                         }
                     };
                 }).filter(p => p.gamesPlayed > 0);
@@ -606,34 +656,52 @@
                             <Icon path={Icons.Chart} /> Statistiques Saison
                         </h3>
                         <div className="overflow-auto flex-1">
-                            <table className="w-full text-left text-sm text-slate-300">
+                            <table className="w-full text-left text-sm text-slate-300 whitespace-nowrap">
                                 <thead className="bg-slate-900 text-white uppercase text-xs sticky top-0 z-10">
                                     <tr>
                                         <th className="p-3">Joueur</th>
-                                        <th className="p-3">MJ</th>
-                                        <th className="p-3">Min</th>
-                                        <th className="p-3 text-orange-400">Pts</th>
-                                        <th className="p-3">Reb</th>
-                                        <th className="p-3">Pd</th>
-                                        <th className="p-3">Int</th>
-                                        <th className="p-3">Ctr</th>
-                                        <th className="p-3">Bp</th>
-                                        <th className="p-3 text-green-400">Éval</th>
+                                        <th className="p-3">MIN</th>
+                                        <th className="p-3">PTS</th>
+                                        <th className="p-3">TIR</th>
+                                        <th className="p-3">%TIR</th>
+                                        <th className="p-3">3PTS</th>
+                                        <th className="p-3">3PTS%</th>
+                                        <th className="p-3">LF</th>
+                                        <th className="p-3">REB</th>
+                                        <th className="p-3">PD</th>
+                                        <th className="p-3">INT</th>
+                                        <th className="p-3">CTR</th>
+                                        <th className="p-3">BP</th>
+                                        <th className="p-3">FTE</th>
+                                        <th className="p-3">+/-</th>
+                                        <th className="p-3 text-green-400">ÉVAL</th>
+                                        <th className="p-3 text-blue-400">OFF RTG</th>
+                                        <th className="p-3 text-red-400">DEF RTG</th>
+                                        <th className="p-3 text-purple-400">EFFICACITÉ</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-700">
                                     {aggregated.map(p => (
                                         <tr key={p.info.id} onClick={() => setSelectedPlayer(p)} className="hover:bg-slate-700/50 cursor-pointer transition-colors">
-                                            <td className="p-3 font-bold text-white">{p.info.name} <span className="text-xs text-slate-500">#{p.info.number}</span></td>
-                                            <td className="p-3">{p.gamesPlayed}</td>
+                                            <td className="p-3 font-bold text-white sticky left-0 bg-slate-800">{p.info.name}</td>
                                             <td className="p-3">{p.avg.min}</td>
                                             <td className="p-3 font-bold text-orange-400">{p.avg.pts}</td>
+                                            <td className="p-3">{p.avg.fgm}-{p.avg.fga}</td>
+                                            <td className="p-3">{p.avg.fgPct}%</td>
+                                            <td className="p-3">{p.avg.threePM}-{p.avg.threePA}</td>
+                                            <td className="p-3">{p.avg.threePct}%</td>
+                                            <td className="p-3">{p.avg.ftm}-{p.avg.fta}</td>
                                             <td className="p-3">{p.avg.reb}</td>
                                             <td className="p-3">{p.avg.ast}</td>
                                             <td className="p-3">{p.avg.stl}</td>
                                             <td className="p-3">{p.avg.blk}</td>
                                             <td className="p-3">{p.avg.tov}</td>
+                                            <td className="p-3">{p.avg.pf}</td>
+                                            <td className="p-3">{p.avg.plusMinus}</td>
                                             <td className="p-3 font-bold text-green-400">{p.avg.eff}</td>
+                                            <td className="p-3 text-blue-400">{p.avg.ortg}</td>
+                                            <td className="p-3 text-red-400">{p.avg.drtg}</td>
+                                            <td className="p-3 font-bold text-purple-400">{p.avg.netRtg}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -984,15 +1052,10 @@
                                         </thead>
                                         <tbody className="divide-y divide-slate-700">
                                             {Object.entries(viewDetail.playerStats).map(([pid, s]) => {
-                                                // Check for imported 3pt data or fallback
-                                                const tpMade = s.threePM !== undefined ? s.threePM : 0; // Fallback if live game didn't track separate 3pt att in stats object
+                                                const tpMade = s.threePM !== undefined ? s.threePM : 0; 
                                                 const tpAtt = s.threePA !== undefined ? s.threePA : 0;
                                                 
-                                                // Note: LiveTracker recalculateGameStats doesn't populate threePM/threePA in the stats object, 
-                                                // it only tracks FGM. For consistency, LiveTracker should ideally update this.
-                                                // For imported games, we have it.
-                                                
-                                                const missedFG = (s.fga || 0) - (s.fgm || 0); // 2pt miss
+                                                const missedFG = (s.fga || 0) - (s.fgm || 0); 
                                                 const missed3PT = (tpAtt - tpMade);
                                                 const missedFT = (s.fta || 0) - (s.ftm || 0);
                                                 
