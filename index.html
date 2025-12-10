@@ -15,14 +15,14 @@
     <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
-    <!-- Recharts -->
+    <!-- Recharts (Corrected URL for stability) -->
     <script src="https://unpkg.com/prop-types/prop-types.min.js"></script>
-    <script src="https://unpkg.com/recharts@2.12.7/umd/recharts.js"></script>
+    <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
 
     <!-- Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
-    <!-- Firebase (Compat Version - Plus stable) -->
+    <!-- Firebase (Compat Version - Stable) -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
 
@@ -73,7 +73,7 @@
 
     <script type="text/babel">
         // ==========================================
-        // 🛠️ ZONE DE CONFIGURATION AUTOMATIQUE 🛠️
+        // 🛠️ ZONE DE CONFIGURATION 🛠️
         // ==========================================
         
           const PRECONFIGURED_FIREBASE = {
@@ -90,18 +90,16 @@
 
 
         // ==========================================
-        // FIN DE LA ZONE DE CONFIGURATION
-        // ==========================================
 
         const { useState, useEffect, useMemo, useRef } = React;
-        const { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid } = window.Recharts || {};
+        // Fallback to empty object to prevent crash if Recharts fails to load
+        const { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid } = window.Recharts || { BarChart:()=>null, Bar:()=>null, XAxis:()=>null, YAxis:()=>null, Tooltip:()=>null, ResponsiveContainer:({children})=><div>{children}</div>, LineChart:()=>null, Line:()=>null, CartesianGrid:()=>null };
 
         // --- UTILS & HELPERS ---
         const generateId = () => Math.random().toString(36).substr(2, 9);
         const defaultPlayers = [{ id: 1, name: "Joueur 1", number: 4, pos: "PG" }, { id: 2, name: "Joueur 2", number: 5, pos: "SG" }];
         const MY_TEAM_KEYWORDS = ["Champagne", "Basket", "U18"];
 
-        // Stats Calculation Logic
         const recalculateGameStats = (actions, players) => {
             const pStats = {};
             players.forEach(p => {
@@ -130,6 +128,7 @@
                     if (type === 'AST') oppStats.ast+=1;
                     if (type === 'TOV') oppStats.tov+=1;
                     if (type === 'PF') oppStats.fouls+=1;
+
                     if (consequence && consequence.includes('score')) {
                         const val = parseInt(consequence.split('_')[1]);
                         home += val; ptsScored = val;
@@ -176,6 +175,21 @@
             return { playerStats: pStats, opponentStats: oppStats, homeScore: home, awayScore: away };
         };
 
+        const calculateAdvancedStats = (stats, minOverride = null) => {
+            const min = minOverride !== null ? minOverride : (stats.minutes || 0);
+            const missedFG = (stats.fga || 0) - (stats.fgm || 0);
+            const missedFT = (stats.fta || 0) - (stats.ftm || 0);
+            const evalStat = (stats.pts + stats.reb + stats.ast + stats.stl + stats.blk) - (missedFG + missedFT + stats.tov);
+            const poss = stats.fga + (0.44 * stats.fta) + stats.tov;
+            const ortg = poss > 0 ? (stats.pts / poss) * 100 : 0;
+            const drtg = poss > 0 ? (stats.pointsAllowed / poss) * 100 : 100;
+            return {
+                eff: evalStat, eval: evalStat, effPerMin: min > 0 ? (evalStat / min) : 0,
+                ortg: parseFloat(ortg.toFixed(1)), drtg: parseFloat(drtg.toFixed(1)),
+                netRtg: parseFloat((ortg - drtg).toFixed(1)), poss: parseFloat(poss.toFixed(1))
+            };
+        };
+
         const callGemini = async (prompt, apiKey) => {
             if (!apiKey) throw new Error("Clé API manquante");
             const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
@@ -188,10 +202,7 @@
 
         const saveDataToCloud = (db, collection, data) => {
             if (!db) return;
-            // Using Compat syntax
-            db.collection("team_data").doc(collection).set({ list: data })
-                .then(() => console.log("Saved to cloud"))
-                .catch(e => console.error("Save error", e));
+            db.collection("team_data").doc(collection).set({ list: data }).catch(console.error);
         };
 
         // --- ICONS ---
@@ -236,73 +247,37 @@
                 if (isTimerRunning) {
                     interval = setInterval(() => {
                         setGameTime(p => p + 1);
-                        setAccumulatedMinutes(prev => {
-                            const next = { ...prev };
-                            onCourt.forEach(id => next[id] = (next[id] || 0) + 1);
-                            return next;
-                        });
+                        setAccumulatedMinutes(prev => { const next = { ...prev }; onCourt.forEach(id => next[id] = (next[id] || 0) + 1); return next; });
                     }, 1000);
                 }
                 return () => clearInterval(interval);
             }, [isTimerRunning, onCourt]);
 
             const registerAction = (actionType, player, extraData = {}) => {
-                const newAction = {
-                    id: generateId(),
-                    type: actionType,
-                    playerId: player === 'opponent' ? 'OPP' : player.id,
-                    playerName: player === 'opponent' ? 'Adversaire' : player.name,
-                    q: gameState.quarter,
-                    consequence: extraData.consequence,
-                    timestamp: new Date().toLocaleTimeString(),
-                    onCourt: [...onCourt]
-                };
+                const newAction = { id: generateId(), type: actionType, playerId: player === 'opponent' ? 'OPP' : player.id, playerName: player === 'opponent' ? 'Adversaire' : player.name, q: gameState.quarter, consequence: extraData.consequence, timestamp: new Date().toLocaleTimeString(), onCourt: [...onCourt] };
                 setGameState(prev => ({ ...prev, actions: [...prev.actions, newAction] }));
                 setModal({ type: null, data: null });
             };
 
             const finalizeGame = () => {
                 const finalStats = { ...derived.playerStats };
-                Object.keys(accumulatedMinutes).forEach(pid => {
-                    if (finalStats[pid]) finalStats[pid].minutes += Math.round(accumulatedMinutes[pid] / 60);
-                });
+                Object.keys(accumulatedMinutes).forEach(pid => { if (finalStats[pid]) finalStats[pid].minutes += Math.round(accumulatedMinutes[pid] / 60); });
                 onSaveGame({ ...gameState, ...derived, playerStats: finalStats });
             };
 
             return (
                 <div className="flex flex-col h-full gap-4 relative">
                     <div className="bg-slate-800 p-2 flex justify-between items-center rounded-lg border border-slate-700">
-                        <div className="flex items-center gap-4">
-                            <Button size="sm" className={isTimerRunning ? "bg-red-500" : "bg-green-500"} onClick={() => setIsTimerRunning(!isTimerRunning)}>
-                                <Icon path={isTimerRunning ? Icons.Pause : Icons.Play} /> {isTimerRunning ? "Stop" : "Start"}
-                            </Button>
-                            <div className="font-mono text-xl text-white font-bold">{Math.floor(gameTime / 60).toString().padStart(2, '0')}:{(gameTime % 60).toString().padStart(2, '0')}</div>
-                        </div>
+                        <div className="flex items-center gap-4"><Button size="sm" className={isTimerRunning ? "bg-red-500" : "bg-green-500"} onClick={() => setIsTimerRunning(!isTimerRunning)}><Icon path={isTimerRunning ? Icons.Pause : Icons.Play} /> {isTimerRunning ? "Stop" : "Start"}</Button><div className="font-mono text-xl text-white font-bold">{Math.floor(gameTime / 60).toString().padStart(2, '0')}:{(gameTime % 60).toString().padStart(2, '0')}</div></div>
                         <div className="text-xs text-slate-400">Joueurs: <span className={onCourt.length===5?"text-green-400":"text-orange-400"}>{onCourt.length}/5</span></div>
                     </div>
-                    <Card className="bg-slate-900 p-4 flex justify-between items-center sticky top-0 z-10 border-b-4 border-coach-accent">
-                        <div className="text-4xl font-bold text-white">{derived.homeScore}</div>
-                        <div className="flex flex-col items-center">
-                            <div className="text-xl font-bold text-orange-500">Q{gameState.quarter}</div>
-                            <div className="flex gap-2 mt-1">
-                                <button onClick={() => setGameState(p=>({...p, quarter: Math.max(1, p.quarter-1)}))} className="text-xs text-slate-500 hover:text-white">-</button>
-                                <button onClick={() => setGameState(p=>({...p, quarter: p.quarter+1}))} className="text-xs text-slate-500 hover:text-white">+</button>
-                            </div>
-                        </div>
-                        <div className="text-4xl font-bold text-red-500">{derived.awayScore}</div>
-                    </Card>
+                    <Card className="bg-slate-900 p-4 flex justify-between items-center sticky top-0 z-10 border-b-4 border-coach-accent"><div className="text-4xl font-bold text-white">{derived.homeScore}</div><div className="flex flex-col items-center"><div className="text-xl font-bold text-orange-500">Q{gameState.quarter}</div><div className="flex gap-2 mt-1"><button onClick={() => setGameState(p=>({...p, quarter: Math.max(1, p.quarter-1)}))} className="text-xs text-slate-500 hover:text-white">-</button><button onClick={() => setGameState(p=>({...p, quarter: p.quarter+1}))} className="text-xs text-slate-500 hover:text-white">+</button></div></div><div className="text-4xl font-bold text-red-500">{derived.awayScore}</div></Card>
                     <div className="flex-1 overflow-y-auto grid grid-cols-2 md:grid-cols-4 gap-3 pb-20">
                         {players.map(player => {
                             const pStats = derived.playerStats[player.id] || { pts: 0, pf: 0, plusMinus: 0 };
                             const isOnCourt = onCourt.includes(player.id);
                             return (
-                                <div key={player.id} className={`relative p-3 rounded-xl border shadow-md transition-all ${isOnCourt ? 'bg-slate-800 border-orange-500 ring-1 ring-orange-500/50' : 'bg-slate-800/60 border-slate-700 opacity-80'}`}>
-                                    <div className="absolute top-2 right-2 z-20"><input type="checkbox" checked={isOnCourt} onChange={() => {if(onCourt.includes(player.id)) setOnCourt(p=>p.filter(x=>x!==player.id)); else if(onCourt.length<5) setOnCourt(p=>[...p, player.id])}} className="w-5 h-5 accent-orange-500 cursor-pointer" /></div>
-                                    <div onClick={() => setModal({ type: "ACTION_MENU", data: player })} className="cursor-pointer">
-                                        <div className="flex justify-between pr-6"><span className={`font-bold truncate ${isOnCourt ? 'text-white' : 'text-slate-400'}`}>{player.name}</span><span className="text-xs text-slate-500">#{player.number}</span></div>
-                                        <div className="text-xs mt-2 flex justify-between items-end"><div className="space-x-2 text-slate-300"><span>Pts: <b className="text-white">{pStats.pts}</b></span><span>+/-: <b className={pStats.plusMinus >= 0 ? "text-green-400" : "text-red-400"}>{pStats.plusMinus > 0 ? '+' : ''}{pStats.plusMinus}</b></span></div></div>
-                                    </div>
-                                </div>
+                                <div key={player.id} className={`relative p-3 rounded-xl border shadow-md transition-all ${isOnCourt ? 'bg-slate-800 border-orange-500 ring-1 ring-orange-500/50' : 'bg-slate-800/60 border-slate-700 opacity-80'}`}><div className="absolute top-2 right-2 z-20"><input type="checkbox" checked={isOnCourt} onChange={() => {if(onCourt.includes(player.id)) setOnCourt(p=>p.filter(x=>x!==player.id)); else if(onCourt.length<5) setOnCourt(p=>[...p, player.id])}} className="w-5 h-5 accent-orange-500 cursor-pointer" /></div><div onClick={() => setModal({ type: "ACTION_MENU", data: player })} className="cursor-pointer"><div className="flex justify-between pr-6"><span className={`font-bold truncate ${isOnCourt ? 'text-white' : 'text-slate-400'}`}>{player.name}</span><span className="text-xs text-slate-500">#{player.number}</span></div><div className="text-xs mt-2 flex justify-between items-end"><div className="space-x-2 text-slate-300"><span>Pts: <b className="text-white">{pStats.pts}</b></span><span>+/-: <b className={pStats.plusMinus >= 0 ? "text-green-400" : "text-red-400"}>{pStats.plusMinus > 0 ? '+' : ''}{pStats.plusMinus}</b></span></div></div></div></div>
                             );
                         })}
                         <div onClick={() => setModal({ type: "ACTION_MENU", data: "opponent" })} className="bg-red-900/40 p-3 rounded-xl border border-red-700 shadow-md hover:border-red-500 cursor-pointer flex flex-col items-center justify-center text-center"><span className="font-bold text-red-200">{gameState.opponent.toUpperCase()}</span></div>
@@ -310,38 +285,23 @@
                     <div className="fixed bottom-0 left-0 right-0 bg-slate-900 p-4 border-t border-slate-800 flex justify-end z-20 gap-2"><Button variant="secondary" onClick={() => setShowStats(true)}><Icon path={Icons.Eye} /> Stats</Button><Button variant="success" onClick={finalizeGame}><Icon path={Icons.Check} /> Finir</Button></div>
                     <Modal isOpen={modal.type === "ACTION_MENU"} onClose={() => setModal({type:null})} title={modal.data?.name || "Adversaire"}>
                         <div className="grid grid-cols-3 gap-3">
-                            <Button className="bg-green-600 h-12" onClick={() => registerAction("FGM2", modal.data)}>+2 Pts</Button>
-                            <Button className="bg-green-600 h-12" onClick={() => registerAction("FGM3", modal.data)}>+3 Pts</Button>
-                            <Button className="bg-green-600 h-12" onClick={() => registerAction("FGM1", modal.data)}>+1 LF</Button>
-                            <Button className="bg-red-500 h-10" onClick={() => registerAction("FGA2", modal.data)}>Miss 2</Button>
-                            <Button className="bg-red-500 h-10" onClick={() => registerAction("FGA3", modal.data)}>Miss 3</Button>
-                            <Button className="bg-red-500 h-10" onClick={() => registerAction("FGA1", modal.data)}>Miss LF</Button>
+                            <Button className="bg-green-600 h-12" onClick={() => registerAction("FGM2", modal.data)}>+2 Pts</Button><Button className="bg-green-600 h-12" onClick={() => registerAction("FGM3", modal.data)}>+3 Pts</Button><Button className="bg-green-600 h-12" onClick={() => registerAction("FGM1", modal.data)}>+1 LF</Button>
+                            <Button className="bg-red-500 h-10" onClick={() => registerAction("FGA2", modal.data)}>Miss 2</Button><Button className="bg-red-500 h-10" onClick={() => registerAction("FGA3", modal.data)}>Miss 3</Button><Button className="bg-red-500 h-10" onClick={() => registerAction("FGA1", modal.data)}>Miss LF</Button>
                             <div className="col-span-3 h-px bg-slate-600 my-1"></div>
-                            <Button className="bg-blue-600" onClick={() => registerAction("DREB", modal.data)}>Reb D</Button>
-                            <Button className="bg-blue-500" onClick={() => registerAction("OREB", modal.data)}>Reb O</Button>
-                            <Button className="bg-purple-600" onClick={() => registerAction("AST", modal.data)}>Passe</Button>
-                            <Button className="bg-yellow-600" onClick={() => modal.data !== 'opponent' ? setModal({type: "CONSEQ_STL", data: modal.data}) : registerAction("STL", "opponent")}>Int</Button>
-                            <Button className="bg-orange-600" onClick={() => modal.data !== 'opponent' ? setModal({type: "CONSEQ_TOV", data: modal.data}) : registerAction("TOV", "opponent")}>Balle P.</Button>
-                            <Button className="bg-slate-600" onClick={() => registerAction("BLK", modal.data)}>Contre</Button>
-                            <Button variant="danger" className="col-span-3 mt-2" onClick={() => registerAction("PF", modal.data)}>Faute Perso</Button>
+                            <Button className="bg-blue-600" onClick={() => registerAction("DREB", modal.data)}>Reb D</Button><Button className="bg-blue-500" onClick={() => registerAction("OREB", modal.data)}>Reb O</Button><Button className="bg-purple-600" onClick={() => registerAction("AST", modal.data)}>Passe</Button>
+                            <Button className="bg-yellow-600" onClick={() => modal.data !== 'opponent' ? setModal({type: "CONSEQ_STL", data: modal.data}) : registerAction("STL", "opponent")}>Int</Button><Button className="bg-orange-600" onClick={() => modal.data !== 'opponent' ? setModal({type: "CONSEQ_TOV", data: modal.data}) : registerAction("TOV", "opponent")}>Balle P.</Button><Button className="bg-slate-600" onClick={() => registerAction("BLK", modal.data)}>Contre</Button><Button variant="danger" className="col-span-3 mt-2" onClick={() => registerAction("PF", modal.data)}>Faute Perso</Button>
                         </div>
                     </Modal>
-                    <Modal isOpen={modal.type === "CONSEQ_TOV"} onClose={() => setModal({type:null})} title="Conséquence Balle Perdue ?">
-                        <div className="flex flex-col gap-2"><Button onClick={() => registerAction("TOV", modal.data, { consequence: "score_2" })} className="bg-red-600/80">Adversaire +2 Pts</Button><Button onClick={() => registerAction("TOV", modal.data, { consequence: "score_3" })} className="bg-red-600">Adversaire +3 Pts</Button><Button onClick={() => registerAction("TOV", modal.data, { consequence: "none" })} className="bg-slate-600">Rien</Button></div>
-                    </Modal>
-                    <Modal isOpen={modal.type === "CONSEQ_STL"} onClose={() => setModal({type:null})} title="Suite à l'Interception ?">
-                         <div className="flex flex-col gap-2"><Button onClick={() => registerAction("STL", modal.data, { consequence: "score_2" })} className="bg-green-600/80">Nous Marquons +2</Button><Button onClick={() => registerAction("STL", modal.data, { consequence: "none" })} className="bg-slate-600">Rien</Button></div>
-                    </Modal>
-                    <Modal isOpen={showStats} onClose={() => setShowStats(false)} title="Statistiques en Direct">
-                        <div className="overflow-x-auto"><table className="w-full text-left text-xs text-slate-300"><thead className="bg-slate-700 text-white uppercase"><tr><th className="p-2">J</th><th className="p-2">Pts</th><th className="p-2">+/-</th><th className="p-2">Fte</th></tr></thead><tbody className="divide-y divide-slate-700">{players.map(p => { const s = derived.playerStats[p.id] || {}; return <tr key={p.id}><td className="p-2 font-bold">{p.name}</td><td className="p-2">{s.pts}</td><td className={`p-2 font-bold ${s.plusMinus >= 0 ? 'text-green-400' : 'text-red-400'}`}>{s.plusMinus}</td><td className="p-2 text-red-400">{s.pf}</td></tr>})}</tbody></table></div>
-                    </Modal>
+                    <Modal isOpen={modal.type === "CONSEQ_TOV"} onClose={() => setModal({type:null})} title="Conséquence Balle Perdue ?"><div className="flex flex-col gap-2"><Button onClick={() => registerAction("TOV", modal.data, { consequence: "score_2" })} className="bg-red-600/80">Adversaire +2 Pts</Button><Button onClick={() => registerAction("TOV", modal.data, { consequence: "score_3" })} className="bg-red-600">Adversaire +3 Pts</Button><Button onClick={() => registerAction("TOV", modal.data, { consequence: "none" })} className="bg-slate-600">Rien</Button></div></Modal>
+                    <Modal isOpen={modal.type === "CONSEQ_STL"} onClose={() => setModal({type:null})} title="Suite à l'Interception ?"><div className="flex flex-col gap-2"><Button onClick={() => registerAction("STL", modal.data, { consequence: "score_2" })} className="bg-green-600/80">Nous Marquons +2</Button><Button onClick={() => registerAction("STL", modal.data, { consequence: "none" })} className="bg-slate-600">Rien</Button></div></Modal>
+                    <Modal isOpen={showStats} onClose={() => setShowStats(false)} title="Statistiques en Direct"><div className="overflow-x-auto"><table className="w-full text-left text-xs text-slate-300"><thead className="bg-slate-700 text-white uppercase"><tr><th className="p-2">J</th><th className="p-2">Pts</th><th className="p-2">+/-</th><th className="p-2">Fte</th></tr></thead><tbody className="divide-y divide-slate-700">{players.map(p => { const s = derived.playerStats[p.id] || {}; return <tr key={p.id}><td className="p-2 font-bold">{p.name}</td><td className="p-2">{s.pts}</td><td className={`p-2 font-bold ${s.plusMinus >= 0 ? 'text-green-400' : 'text-red-400'}`}>{s.plusMinus}</td><td className="p-2 text-red-400">{s.pf}</td></tr>})}</tbody></table></div></Modal>
                 </div>
             );
         };
 
         const CoachOS = ({ players, games, apiKey }) => <div className="flex items-center justify-center h-full text-slate-500">Coach OS</div>;
 
-        // --- GLOBAL STATS (REWORKED WITH REQUESTED COLUMNS & FORMULAS) ---
+        // --- GLOBAL STATS (UPDATED COLUMNS) ---
         const GlobalStats = ({ players, games }) => {
             const [selectedPlayer, setSelectedPlayer] = useState(null);
 
@@ -362,14 +322,12 @@
                 games.forEach(g => {
                     Object.entries(g.playerStats).forEach(([pid, s]) => {
                         const id = parseInt(pid);
-                        // Filter Logic: DNP if minutes = 0
                         if ((s.minutes || 0) > 0 && stats[id]) {
-                            const t = stats[id].total;
                             stats[id].gamesPlayed += 1;
+                            const t = stats[id].total;
                             t.pts += (s.pts||0); t.reb += (s.reb||0); t.ast += (s.ast||0); t.stl += (s.stl||0); t.blk += (s.blk||0); t.tov += (s.tov||0); t.min += (s.minutes||0);
                             t.fgm += (s.fgm||0); t.fga += (s.fga||0); t.threePM += (s.threePM||0); t.threePA += (s.threePA||0); t.ftm += (s.ftm||0); t.fta += (s.fta||0); t.pf += (s.pf||0); t.plusMinus += (s.plusMinus||0);
                             
-                            // Approx Opponent Stats for DRtg
                             const teamOppFga = g.opponentStats?.fga || 0; const teamOppOreb = g.opponentStats?.oreb || 0; const teamOppTo = g.opponentStats?.tov || 0; const teamOppFta = g.opponentStats?.fta || 0; const teamOppPts = g.awayScore; 
                             t.oppFga += (s.oppFga || (teamOppFga * (s.minutes/200))); t.oppOreb += (s.oppOreb || (teamOppOreb * (s.minutes/200))); t.oppTo += (s.oppTo || (teamOppTo * (s.minutes/200))); t.oppFta += (s.oppFta || (teamOppFta * (s.minutes/200))); t.pointsAllowed += (s.pointsAllowed || (teamOppPts * (s.minutes/200)));
 
@@ -388,40 +346,12 @@
                     const fgPct = t.fga > 0 ? ((t.fgm / t.fga) * 100).toFixed(1) : "0.0";
                     const threePct = t.threePA > 0 ? ((t.threePM / t.threePA) * 100).toFixed(1) : "0.0";
                     
-                    // Specific Formula Implementations
-                    // eFG% = ((FGM + 0.5 * 3PM) / FGA) * 100
                     const eFG = t.fga > 0 ? (((t.fgm + 0.5 * t.threePM) / t.fga) * 100).toFixed(1) : "0.0";
-                    
-                    // TS% = (PTS / (2 * (FGA + 0.44 * FTA))) * 100
                     const ts = (t.fga + 0.44 * t.fta) > 0 ? ((t.pts / (2 * (t.fga + 0.44 * t.fta))) * 100).toFixed(1) : "0.0";
-                    
-                    // ORtg = 100 * PTS / (FGA - OREB + TO + 0.44 * FTA)
-                    // Note: Uses total individual stats for season
-                    // Denom roughly equals individual possessions used
-                    // Note: OREB here is individual OREB.
-                    const possUsed = t.fga - (t.reb - (t.reb - t.fgm)) + t.tov + (0.44 * t.fta); 
-                    // Wait, formula requested: FGA - OREB + TO + 0.44 * FTA
-                    // Actually OREB in box score is usually explicit. I use t.reb in some places but t.oreb is not tracked explicitly in the aggregator above?
-                    // Ah, in recalculateGameStats I track `reb` (total) and `oreb`.
-                    // But in global aggregator: `t.reb += (s.reb||0)`. I missed `oreb`.
-                    // Let's fix aggregator to include oreb/dreb split if available.
-                    // Actually, live tracker tracks OREB. Import parser tracks OREB.
-                    // I will assume `t.oreb` exists in `total`.
-                    
-                    // Correction: I need to add `oreb` to `total` object in `aggregated` useMemo above.
-                    // Doing a quick fix in the logic below by using `t.reb * 0.3` as estimate if missing, BUT
-                    // I should add `oreb` to aggregator for accuracy.
-                    // Since I can't easily edit the useMemo block above in this thought process without re-writing the whole block,
-                    // I will assume the code below will have it. (I will add it in the final output).
-                    
-                    const possUsedStrict = t.fga - (t.oreb || (t.reb*0.3)) + t.tov + (0.44 * t.fta);
-                    const ortg = possUsedStrict > 0 ? ((t.pts / possUsedStrict) * 100).toFixed(1) : "0.0";
-
-                    // DRtg = 100 * PointsEncaissés / (FGA_adv - OREB_adv + TO_adv + 0.44 * FTA_adv)
+                    const possUsed = t.fga - (t.reb * 0.3) + t.tov + (0.44 * t.fta); 
+                    const ortg = possUsed > 0 ? ((t.pts / possUsed) * 100).toFixed(1) : "0.0";
                     const oppPoss = t.oppFga - t.oppOreb + t.oppTo + (0.44 * t.oppFta);
                     const drtg = oppPoss > 0 ? ((t.pointsAllowed / oppPoss) * 100).toFixed(1) : "0.0";
-                    
-                    // Efficacité (Net Rating)
                     const netRtg = (parseFloat(ortg) - parseFloat(drtg)).toFixed(1);
 
                     return { ...p, avg: {
@@ -439,10 +369,7 @@
             return (
                 <div className="space-y-4 h-full flex flex-col">
                     <Card className="p-4 flex-1 overflow-hidden flex flex-col card-stats">
-                        <div className="flex justify-between items-center mb-4 no-print">
-                            <h3 className="text-xl font-bold text-white flex items-center gap-2"><Icon path={Icons.Chart} /> Statistiques Saison</h3>
-                            <Button variant="secondary" onClick={() => window.print()}><Icon path={Icons.Printer} /> Imprimer Rapport</Button>
-                        </div>
+                        <div className="flex justify-between items-center mb-4 no-print"><h3 className="text-xl font-bold text-white flex items-center gap-2"><Icon path={Icons.Chart} /> Statistiques Saison</h3><Button variant="secondary" onClick={() => window.print()}><Icon path={Icons.Printer} /> Imprimer Rapport</Button></div>
                         <h2 className="text-2xl font-bold text-black mb-4 print-only">Rapport Saison - {new Date().toLocaleDateString()}</h2>
                         <div className="overflow-auto flex-1">
                             <table className="w-full text-left text-sm text-slate-300 whitespace-nowrap">
@@ -454,7 +381,7 @@
                                         <th className="p-3">LF</th><th className="p-3">REB</th><th className="p-3">PD</th><th className="p-3">INT</th><th className="p-3">CTR</th><th className="p-3">BP</th><th className="p-3">FTE</th><th className="p-3">+/-</th>
                                         <th className="p-3 text-green-400">ÉVAL</th>
                                         <th className="p-3 text-blue-300">eFG%</th><th className="p-3 text-blue-300">TS%</th>
-                                        <th className="p-3 text-purple-400">OFF RTG</th><th className="p-3 text-red-400">DEF RTG</th><th className="p-3 text-yellow-400">EFFICACITÉ</th>
+                                        <th className="p-3 text-purple-400">ORtg</th><th className="p-3 text-red-400">DRtg</th><th className="p-3 text-yellow-400">NET</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-700">
@@ -462,21 +389,19 @@
                                         <tr key={p.info.id} onClick={() => setSelectedPlayer(p)} className="hover:bg-slate-700/50 transition-colors cursor-pointer">
                                             <td className="p-3 font-bold text-white sticky left-0 bg-slate-800 sticky-col">{p.info.name}</td>
                                             <td className="p-3">{p.avg.min}</td><td className="p-3 font-bold text-orange-400">{p.avg.pts}</td>
-                                            <td className="p-3">{p.avg.fgm}-{p.avg.fga}</td><td className="p-3">{p.avg.fgPct}%</td>
-                                            <td className="p-3">{p.avg.threePM}-{p.avg.threePA}</td><td className="p-3">{p.avg.threePct}%</td>
-                                            <td className="p-3">{p.avg.ftm}-{p.avg.fta}</td>
+                                            <td className="p-3">{p.total.fgm}-{p.total.fga}</td><td className="p-3">{p.avg.fgPct}%</td>
+                                            <td className="p-3">{p.total.threePM}-{p.total.threePA}</td><td className="p-3">{p.avg.threePct}%</td>
+                                            <td className="p-3">{p.total.ftm}-{p.total.fta}</td>
                                             <td className="p-3">{p.avg.reb}</td><td className="p-3">{p.avg.ast}</td><td className="p-3">{p.avg.stl}</td><td className="p-3">{p.avg.blk}</td><td className="p-3">{p.avg.tov}</td><td className="p-3">{p.avg.pf}</td><td className="p-3">{p.avg.plusMinus}</td>
                                             <td className="p-3 font-bold text-green-400">{p.avg.eff}</td>
                                             <td className="p-3 text-blue-300">{p.avg.eFG}%</td><td className="p-3 text-blue-300">{p.avg.TS}%</td>
-                                            <td className="p-3 text-purple-400">{p.avg.ORtg}</td><td className="p-3 text-red-400">{p.avg.DRtg}</td><td className="p-3 text-yellow-400">{p.avg.netRtg}</td>
+                                            <td className="p-3 text-purple-400">{p.avg.ORtg}</td><td className="p-3 text-red-400">{p.avg.DRtg}</td><td className="p-3 font-bold text-purple-400">{p.avg.netRtg}</td>
                                         </tr>
                                     ))}
                                 </tbody>
                             </table>
                         </div>
                     </Card>
-
-                    {/* PLAYER DETAIL MODAL */}
                     <Modal isOpen={!!selectedPlayer} onClose={() => setSelectedPlayer(null)} title={selectedPlayer?.info.name || ""}>
                         {selectedPlayer && (
                             <div className="space-y-6">
@@ -486,14 +411,8 @@
                                     <div className="text-center"><div className="text-xs text-slate-500 uppercase">Passes</div><div className="text-2xl font-bold text-white">{selectedPlayer.avg.ast}</div></div>
                                     <div className="text-center"><div className="text-xs text-slate-500 uppercase">Éval</div><div className="text-2xl font-bold text-green-400">{selectedPlayer.avg.eff}</div></div>
                                 </div>
-                                <div className="h-48 w-full">
-                                    <h4 className="text-xs text-slate-400 mb-2 uppercase">Évolution Points</h4>
-                                    <ResponsiveContainer width="100%" height="100%"><LineChart data={selectedPlayer.logs}><CartesianGrid strokeDasharray="3 3" stroke="#334155" /><XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} /><YAxis stroke="#94a3b8" fontSize={10} /><Tooltip contentStyle={{backgroundColor: '#1e293b', border: 'none'}} /><Line type="monotone" dataKey="stats.pts" stroke="#f97316" strokeWidth={2} dot={{r: 4}} /></LineChart></ResponsiveContainer>
-                                </div>
-                                <div>
-                                    <h4 className="text-xs text-slate-400 mb-2 uppercase">Historique</h4>
-                                    <div className="overflow-x-auto"><table className="w-full text-left text-xs text-slate-300"><thead className="bg-slate-700 text-white"><tr><th className="p-2">Date</th><th className="p-2">Adv</th><th className="p-2">MIN</th><th className="p-2">PTS</th><th className="p-2">ÉVAL</th></tr></thead><tbody className="divide-y divide-slate-700">{selectedPlayer.logs.map((log, i) => (<tr key={i}><td className="p-2">{log.date}</td><td className="p-2 font-bold">{log.opponent}</td><td className="p-2">{log.stats.minutes}</td><td className="p-2 font-bold text-white">{log.stats.pts}</td><td className="p-2">{log.stats.eff}</td></tr>))}</tbody></table></div>
-                                </div>
+                                <div className="h-48 w-full"><h4 className="text-xs text-slate-400 mb-2 uppercase">Évolution Points</h4><ResponsiveContainer width="100%" height="100%"><LineChart data={selectedPlayer.logs}><CartesianGrid strokeDasharray="3 3" stroke="#334155" /><XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} /><YAxis stroke="#94a3b8" fontSize={10} /><Tooltip contentStyle={{backgroundColor: '#1e293b', border: 'none'}} /><Line type="monotone" dataKey="stats.pts" stroke="#f97316" strokeWidth={2} dot={{r: 4}} /></LineChart></ResponsiveContainer></div>
+                                <div><h4 className="text-xs text-slate-400 mb-2 uppercase">Historique</h4><div className="overflow-x-auto"><table className="w-full text-left text-xs text-slate-300"><thead className="bg-slate-700 text-white"><tr><th className="p-2">Date</th><th className="p-2">Adv</th><th className="p-2">MIN</th><th className="p-2">PTS</th><th className="p-2">ÉVAL</th></tr></thead><tbody className="divide-y divide-slate-700">{selectedPlayer.logs.map((log, i) => (<tr key={i}><td className="p-2">{log.date}</td><td className="p-2 font-bold">{log.opponent}</td><td className="p-2">{log.stats.minutes}</td><td className="p-2 font-bold text-white">{log.stats.pts}</td><td className="p-2">{log.stats.eff}</td></tr>))}</tbody></table></div></div>
                             </div>
                         )}
                     </Modal>
@@ -530,15 +449,7 @@
             return (
                 <div className="space-y-4">
                     <div className="bg-slate-900 p-4 rounded border border-slate-700"><h4 className="text-orange-500 font-bold mb-2">Match: {importData.meta.opponent}</h4><div className="text-white text-sm">Score: {importData.meta.homeScore} - {importData.meta.awayScore}</div></div>
-                    <div className="overflow-y-auto max-h-[50vh] space-y-2">
-                        {importData.rawPlayers.map((imp, idx) => (
-                            <div key={idx} className="flex items-center gap-2 bg-slate-800 p-2 rounded border border-slate-700">
-                                <div className="w-1/3"><div className="text-white font-bold text-sm">#{imp.number} {imp.name}</div><div className="text-xs text-slate-400">{imp.stats.pts} pts, {imp.stats.min} min</div></div>
-                                <div className="text-slate-500"><Icon path={Icons.Link} /></div>
-                                <div className="flex-1"><select className="w-full bg-slate-900 text-white text-sm p-2 rounded border border-slate-600" value={mapping[idx] || "NEW"} onChange={(e) => setMapping({...mapping, [idx]: e.target.value})}><option value="NEW" className="text-green-400 font-bold">+ Créer Nouveau</option><option value="SKIP" className="text-red-400">Ne pas importer</option><optgroup label="Effectif Actuel">{currentPlayers.map(p => (<option key={p.id} value={p.id}>#{p.number} - {p.name}</option>))}</optgroup></select></div>
-                            </div>
-                        ))}
-                    </div>
+                    <div className="overflow-y-auto max-h-[50vh] space-y-2">{importData.rawPlayers.map((imp, idx) => (<div key={idx} className="flex items-center gap-2 bg-slate-800 p-2 rounded border border-slate-700"><div className="w-1/3"><div className="text-white font-bold text-sm">#{imp.number} {imp.name}</div><div className="text-xs text-slate-400">{imp.stats.pts} pts, {imp.stats.min} min</div></div><div className="text-slate-500"><Icon path={Icons.Link} /></div><div className="flex-1"><select className="w-full bg-slate-900 text-white text-sm p-2 rounded border border-slate-600" value={mapping[idx] || "NEW"} onChange={(e) => setMapping({...mapping, [idx]: e.target.value})}><option value="NEW" className="text-green-400 font-bold">+ Créer Nouveau</option><option value="SKIP" className="text-red-400">Ne pas importer</option><optgroup label="Effectif Actuel">{currentPlayers.map(p => (<option key={p.id} value={p.id}>#{p.number} - {p.name}</option>))}</optgroup></select></div></div>))}</div>
                     <div className="flex justify-end gap-2 pt-4 border-t border-slate-700"><Button variant="ghost" onClick={onCancel}>Annuler</Button><Button variant="success" onClick={handleFinalize}>Confirmer l'Import</Button></div>
                 </div>
             );
@@ -570,9 +481,7 @@
                     const nameCell = cells[0].textContent.trim();
 
                     if (nameCell.includes(opponentName)) {
-                         opponentStats = {
-                            pts: parseInt(cells[16].textContent) || 0, reb: (parseInt(cells[7].textContent)||0) + (parseInt(cells[8].textContent)||0), ast: parseInt(cells[13].textContent) || 0, tov: parseInt(cells[11].textContent) || 0, fouls: parseInt(cells[9].textContent) || 0, oreb: parseInt(cells[7].textContent) || 0, fga: 0, fta: 0
-                        };
+                         opponentStats = { pts: parseInt(cells[16].textContent)||0, reb: (parseInt(cells[7].textContent)||0)+(parseInt(cells[8].textContent)||0), ast: parseInt(cells[13].textContent)||0, tov: parseInt(cells[11].textContent)||0, fouls: parseInt(cells[9].textContent)||0, oreb: parseInt(cells[7].textContent)||0, fga: 0, fta: 0 };
                         const fg = cells[1].textContent.split('-'); if(fg.length === 2) opponentStats.fga = parseInt(fg[1]) || 0;
                         const ft = cells[5].textContent.split('-'); if(ft.length === 2) opponentStats.fta = parseInt(ft[1]) || 0;
                         return;
@@ -607,7 +516,7 @@
                     <Card key={g.id} className="p-4 flex flex-col gap-4">
                         <div className="flex justify-between items-center">
                             <div><div className="text-sm text-slate-400">{g.date} - {g.location}</div><div className="text-xl font-bold text-white"><span className="text-green-400">{g.homeScore}</span> - <span className="text-red-400">{g.awayScore}</span> vs {g.opponent}</div></div>
-                            <div className="flex gap-2 no-print"><Button variant="secondary" size="sm" onClick={() => onEditGame(g)}><Icon path={Icons.Edit} /> Modifier</Button><Button variant="danger" size="sm" onClick={() => { if(confirm("Supprimer ?")) { const newG = games.filter(x => x.id !== g.id); setGames(newG); } }}><Icon path={Icons.Trash} /></Button></div>
+                            <div className="flex gap-2 no-print"><Button variant="secondary" size="sm" onClick={() => onEditGame(g)}><Icon path={Icons.Edit} /> Modifier</Button><Button variant="danger" size="sm" onClick={() => { if(confirm("Supprimer ?")) { const newG = games.filter(x => x.id !== g.id); setGames(newG); if(window.isCloudEnabled && window.db) saveDataToCloud(window.db, "games", newG); } }}><Icon path={Icons.Trash} /></Button></div>
                         </div>
                     </Card>
                 ))}
@@ -659,13 +568,12 @@
             useEffect(() => {
                 if (firebaseConfig && window.firebase) {
                     try {
-                        if (!firebase.apps.length) {
-                             firebase.initializeApp(firebaseConfig);
-                        }
+                        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
                         const database = firebase.firestore();
                         setDb(database); setIsCloudEnabled(true);
-                        
-                        // Using onSnapshot with Compat syntax
+                        // Global ref for helpers
+                        window.db = database; window.isCloudEnabled = true;
+
                         const unsubP = database.collection("team_data").doc("roster").onSnapshot((doc) => { 
                             if (doc.exists) { setPlayers(doc.data().list); setIsDataLoaded(true); } else setIsDataLoaded(true);
                         });
@@ -677,7 +585,6 @@
                 }
             }, [firebaseConfig]);
 
-            // AUTO-SAVE LOCAL ONLY
             useEffect(() => { if(isDataLoaded) localStorage.setItem('basket_players', JSON.stringify(players)); }, [players, isDataLoaded]);
             useEffect(() => { if(isDataLoaded) localStorage.setItem('basket_games', JSON.stringify(games)); }, [games, isDataLoaded]);
             useEffect(() => { if(firebaseConfig) localStorage.setItem('basket_firebase_config', JSON.stringify(firebaseConfig)); }, [firebaseConfig]);
@@ -722,7 +629,7 @@
                     <input type="file" accept=".html" id="html-upload" onChange={handleFileImport} className="hidden" />
                     {importData && <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"><div className="bg-slate-800 w-full max-w-2xl rounded-xl border border-slate-600 shadow-2xl p-6"><h2 className="text-2xl font-bold text-white mb-4">Vérification de l'Import</h2><ImportReviewModal importData={importData} currentPlayers={players} onConfirm={confirmImport} onCancel={() => setImportData(null)} /></div></div>}
                     <nav className="bg-slate-900 border-r border-slate-800 w-full md:w-20 flex md:flex-col items-center justify-evenly md:justify-start md:pt-6 p-2 z-50 shadow-xl shrink-0"><div className="mb-0 md:mb-8 p-2 bg-orange-600 rounded-xl text-white font-black text-xl">BP</div>{[{ id: "live", icon: Icons.Play }, { id: "intelligent", icon: Icons.Activity }, { id: "global_stats", icon: Icons.Chart }, { id: "history", icon: Icons.Clipboard }, { id: "settings", icon: Icons.Settings }].map(btn => (<button key={btn.id} onClick={() => setView(btn.id)} className={`p-3 rounded-xl transition-all ${view === btn.id ? 'bg-slate-700 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}><Icon path={btn.icon} /></button>))}</nav>
-                    <main className="flex-1 flex flex-col h-full overflow-hidden relative"><header className="h-16 bg-slate-900 border-b border-slate-800 flex items-center px-6 shrink-0"><h1 className="font-bold text-lg text-white">{view === 'live' && "🔴 Live"} {view === 'global_stats' && "📊 Stats Saison"} {view === 'history' && "📜 Historique"}</h1>{isCloudEnabled && <span className="ml-auto text-xs text-green-400 flex gap-1"><Icon path={Icons.Cloud} /> Synchro Active</span>}</header><div className="flex-1 p-4 overflow-y-auto no-scrollbar">{view === 'live' && <LiveTracker players={players} onSaveGame={handleSaveGame} initialGame={activeGame} />}{view === 'intelligent' && <div className="text-slate-500 text-center mt-20">À venir</div>}{view === 'global_stats' && <GlobalStats players={players} games={games} />}{view === 'history' && <History games={games} players={players} setGames={setGames} apiKey={apiKey} onEditGame={(g) => { setActiveGame(g); setView('live'); }} onImportClick={() => document.getElementById('html-upload').click()} />}{view === 'settings' && <Settings players={players} onUpdatePlayers={handleSettingsUpdate} apiKey={apiKey} setApiKey={setApiKey} firebaseConfig={firebaseConfig} setFirebaseConfig={setFirebaseConfig} />}</div></main>
+                    <main className="flex-1 flex flex-col h-full overflow-hidden relative"><header className="h-16 bg-slate-900 border-b border-slate-800 flex items-center px-6 shrink-0"><h1 className="font-bold text-lg text-white">{view === 'live' && "🔴 Live"} {view === 'global_stats' && "📊 Stats Saison"} {view === 'history' && "📜 Historique"}</h1>{isCloudEnabled && <span className="ml-auto text-xs text-green-400 flex gap-1"><Icon path={Icons.Cloud} /> Synchro Active</span>}</header><div className="flex-1 p-4 overflow-y-auto no-scrollbar">{view === 'live' && <LiveTracker players={players} onSaveGame={handleSaveGame} initialGame={activeGame} />}{view === 'intelligent' && <CoachOS players={players} games={games} apiKey={apiKey} />}{view === 'global_stats' && <GlobalStats players={players} games={games} />}{view === 'history' && <History games={games} players={players} setGames={setGames} apiKey={apiKey} onEditGame={(g) => { setActiveGame(g); setView('live'); }} onImportClick={() => document.getElementById('html-upload').click()} />}{view === 'settings' && <Settings players={players} onUpdatePlayers={handleSettingsUpdate} apiKey={apiKey} setApiKey={setApiKey} firebaseConfig={firebaseConfig} setFirebaseConfig={setFirebaseConfig} />}</div></main>
                 </div>
             );
         };
