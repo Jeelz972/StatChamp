@@ -63,7 +63,7 @@
         // 🛠️ ZONE DE CONFIGURATION AUTOMATIQUE 🛠️
         // ==========================================
         
-       const PRECONFIGURED_FIREBASE = {
+        const PRECONFIGURED_FIREBASE = {
     apiKey: "AIzaSyBh3NTNNGlcpP65QF_2RP09cMm-Dj2QQyw",
     authDomain: "sinon-6b939.firebaseapp.com",
     projectId: "sinon-6b939",
@@ -79,6 +79,7 @@
         // ==========================================
         // FIN DE LA ZONE DE CONFIGURATION
         // ==========================================
+
 
         const { useState, useEffect, useMemo, useRef } = React;
         const { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid } = window.Recharts || {};
@@ -983,10 +984,15 @@
                                         </thead>
                                         <tbody className="divide-y divide-slate-700">
                                             {Object.entries(viewDetail.playerStats).map(([pid, s]) => {
-                                                const tpMade = s.threePM !== undefined ? s.threePM : 0; 
+                                                // Check for imported 3pt data or fallback
+                                                const tpMade = s.threePM !== undefined ? s.threePM : 0; // Fallback if live game didn't track separate 3pt att in stats object
                                                 const tpAtt = s.threePA !== undefined ? s.threePA : 0;
                                                 
-                                                const missedFG = (s.fga || 0) - (s.fgm || 0); 
+                                                // Note: LiveTracker recalculateGameStats doesn't populate threePM/threePA in the stats object, 
+                                                // it only tracks FGM. For consistency, LiveTracker should ideally update this.
+                                                // For imported games, we have it.
+                                                
+                                                const missedFG = (s.fga || 0) - (s.fgm || 0); // 2pt miss
                                                 const missed3PT = (tpAtt - tpMade);
                                                 const missedFT = (s.fta || 0) - (s.ftm || 0);
                                                 
