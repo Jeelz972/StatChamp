@@ -96,7 +96,8 @@
             Edit: "M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7 M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z",
             Pause: "M10 9v6 M14 9v6",
             Timer: "M12 2v2M12 22v-2M2 12h2M22 12h-2M4.93 4.93l1.41 1.41M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41M19.07 4.93l-1.41 1.41",
-            Upload: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M17 8l-5-5-5 5 M12 3v12"
+            Upload: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M17 8l-5-5-5 5 M12 3v12",
+            Link: "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"
         };
 
         // --- UTILS ---
@@ -185,23 +186,23 @@
         };
 
         // --- HTML IMPORT PARSER ---
-        const parseHTMLStats = (html, existingPlayers) => {
+        // Reads the file and tries to extract raw data without committing yet
+        const parseHTMLStats = (html) => {
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, 'text/html');
             
             // 1. Game Info
-            const date = doc.querySelector('#game-date .detail')?.textContent || new Date().toLocaleDateString();
-            const homeName = doc.querySelector('#team-names-container .left .detail')?.textContent || "Nous";
-            const awayName = doc.querySelector('#team-names-container .right .detail')?.textContent || "Adversaire";
+            const date = doc.querySelector('#game-date span.detail')?.textContent || new Date().toLocaleDateString();
+            const homeName = doc.querySelector('#team-names-container .left span.detail')?.textContent || "Nous";
+            const awayName = doc.querySelector('#team-names-container .right span.detail')?.textContent || "Adversaire";
             const homeScore = parseInt(doc.querySelector('#team-score-left .title')?.textContent || "0");
             const awayScore = parseInt(doc.querySelector('#team-score-right .title')?.textContent || "0");
 
-            // 2. Parse Players & Stats
-            const playerStats = {};
-            let newPlayersList = [...existingPlayers];
-            let maxId = existingPlayers.length > 0 ? Math.max(...existingPlayers.map(p => p.id)) : 0;
-
+            // 2. Parse Raw Rows
+            const rawPlayers = [];
             const table = doc.querySelector('table#stats');
+            let opponentStats = { pts: 0, reb: 0, ast: 0, tov: 0, fouls: 0 };
+
             if (table) {
                 const rows = table.querySelectorAll('tr');
                 rows.forEach(row => {
@@ -209,98 +210,177 @@
                     if (cells.length < 15) return;
 
                     const nameCell = cells[0].textContent.trim();
-                    if (!nameCell.startsWith('#')) return; // Skip summaries
+                    
+                    // Opponent row detection (usually matches away name)
+                    if (nameCell.includes(awayName)) {
+                         opponentStats = {
+                            pts: parseInt(cells[15].textContent) || 0,
+                            reb: (parseInt(cells[6].textContent)||0) + (parseInt(cells[7].textContent)||0),
+                            ast: parseInt(cells[12].textContent) || 0,
+                            tov: parseInt(cells[10].textContent) || 0,
+                            fouls: parseInt(cells[8].textContent) || 0
+                        };
+                        return;
+                    }
+
+                    // Player row must start with #
+                    if (!nameCell.startsWith('#')) return; 
 
                     // Parse Name & Number: "#4 N. Grosheny"
                     const parts = nameCell.split(' ');
-                    const number = parseInt(parts[0].replace('#', ''));
+                    const numberStr = parts[0].replace('#', '');
+                    const number = parseInt(numberStr);
                     const name = parts.slice(1).join(' ');
 
-                    // Find or Create Player
-                    let player = newPlayersList.find(p => p.number === number && p.name === name);
-                    if (!player) {
-                        // Fuzzy match by number only if name is close? For now strict.
-                        player = newPlayersList.find(p => p.number === number);
-                        if (!player) {
-                            maxId++;
-                            player = { id: maxId, name, number, pos: "G", style: "Imported" };
-                            newPlayersList.push(player);
-                        }
-                    }
-
                     // Parse Stats
-                    const parseSplit = (txt) => { const [m, a] = txt.split('-'); return { made: parseInt(m)||0, att: parseInt(a)||0 }; };
-                    const fg = parseSplit(cells[1].textContent);
-                    const tp = parseSplit(cells[3].textContent);
-                    const ft = parseSplit(cells[5].textContent);
+                    const parseSplit = (txt) => { 
+                        if (!txt) return { made: 0, att: 0 };
+                        const [m, a] = txt.split('-'); 
+                        return { made: parseInt(m)||0, att: parseInt(a)||0 }; 
+                    };
+                    const fg = parseSplit(cells[1].textContent); // Total FG
+                    const tp = parseSplit(cells[3].textContent); // 3PT
+                    const ft = parseSplit(cells[5].textContent); // FT
                     
                     const twoPM = fg.made - tp.made;
                     const twoPA = fg.att - tp.att;
 
-                    playerStats[player.id] = {
-                        pts: parseInt(cells[16].textContent) || 0,
-                        reb: (parseInt(cells[7].textContent)||0) + (parseInt(cells[8].textContent)||0),
-                        oreb: parseInt(cells[7].textContent) || 0,
-                        dreb: parseInt(cells[8].textContent) || 0,
-                        ast: parseInt(cells[13].textContent) || 0,
-                        stl: parseInt(cells[10].textContent) || 0,
-                        blk: parseInt(cells[12].textContent) || 0,
-                        tov: parseInt(cells[11].textContent) || 0,
-                        pf: parseInt(cells[9].textContent) || 0,
+                    const stats = {
+                        pts: parseInt(cells[15].textContent) || 0,
+                        reb: (parseInt(cells[6].textContent)||0) + (parseInt(cells[7].textContent)||0),
+                        oreb: parseInt(cells[6].textContent) || 0,
+                        dreb: parseInt(cells[7].textContent) || 0,
+                        ast: parseInt(cells[12].textContent) || 0,
+                        stl: parseInt(cells[9].textContent) || 0,
+                        blk: parseInt(cells[11].textContent) || 0,
+                        tov: parseInt(cells[10].textContent) || 0,
+                        pf: parseInt(cells[8].textContent) || 0,
                         fgm: twoPM, fga: twoPA, 
                         ftm: ft.made, fta: ft.att,
-                        minutes: parseInt(cells[15].textContent) || 0,
-                        plusMinus: parseInt(cells[14].textContent) || 0,
+                        minutes: parseInt(cells[14].textContent) || 0,
+                        plusMinus: parseInt(cells[13].textContent) || 0,
                     };
+
+                    rawPlayers.push({ name, number, stats });
                 });
             }
 
-            // 3. Opponent Stats from Summary Row
-            const oppRow = Array.from(table.querySelectorAll('tr')).find(r => r.cells[0].textContent.includes(awayName));
-            let opponentStats = { pts: 0, reb: 0, ast: 0, tov: 0, fouls: 0 };
-            if (oppRow) {
-                const cells = oppRow.querySelectorAll('td');
-                opponentStats = {
-                    pts: parseInt(cells[16].textContent) || 0,
-                    reb: (parseInt(cells[7].textContent)||0) + (parseInt(cells[8].textContent)||0),
-                    ast: parseInt(cells[13].textContent) || 0,
-                    tov: parseInt(cells[11].textContent) || 0,
-                    fouls: parseInt(cells[9].textContent) || 0
-                };
-            }
-
             return {
-                game: {
-                    id: generateId(),
-                    date,
-                    opponent: awayName,
-                    location: "Importé",
-                    homeScore,
-                    awayScore,
-                    playerStats,
-                    opponentStats,
-                    actions: [] 
-                },
-                updatedPlayers: newPlayersList
+                meta: { date, opponent: awayName, homeScore, awayScore, location: "Importé" },
+                rawPlayers,
+                opponentStats
             };
+        };
+
+        // --- NEW COMPONENT: IMPORT REVIEW ---
+        const ImportReviewModal = ({ importData, currentPlayers, onConfirm, onCancel }) => {
+            // State to map each imported player (by index) to a DB player ID or "NEW"
+            const [mapping, setMapping] = useState({});
+
+            useEffect(() => {
+                const initialMap = {};
+                importData.rawPlayers.forEach((imp, idx) => {
+                    // Auto-match by number
+                    const match = currentPlayers.find(p => p.number === imp.number);
+                    if (match) {
+                        initialMap[idx] = match.id;
+                    } else {
+                        initialMap[idx] = "NEW";
+                    }
+                });
+                setMapping(initialMap);
+            }, [importData, currentPlayers]);
+
+            const handleFinalize = () => {
+                const finalGameStats = {};
+                const newPlayersList = [...currentPlayers];
+                let maxId = currentPlayers.length > 0 ? Math.max(...currentPlayers.map(p => p.id)) : 0;
+
+                importData.rawPlayers.forEach((imp, idx) => {
+                    const choice = mapping[idx];
+                    let pid;
+
+                    if (choice === "NEW") {
+                        // Create new player
+                        maxId++;
+                        pid = maxId;
+                        newPlayersList.push({
+                            id: pid,
+                            name: imp.name,
+                            number: imp.number,
+                            pos: "G", // Default
+                            style: "Imported"
+                        });
+                    } else if (choice === "SKIP") {
+                        return; // Don't import stats for this row
+                    } else {
+                        // Existing ID
+                        pid = parseInt(choice);
+                        // Optionally update name? No, keep DB name preferred.
+                    }
+
+                    finalGameStats[pid] = imp.stats;
+                });
+
+                const newGame = {
+                    id: generateId(),
+                    ...importData.meta,
+                    playerStats: finalGameStats,
+                    opponentStats: importData.opponentStats,
+                    actions: [] // No actions for imported game
+                };
+
+                onConfirm(newGame, newPlayersList);
+            };
+
+            return (
+                <div className="space-y-4">
+                    <div className="bg-slate-900 p-4 rounded border border-slate-700">
+                        <h4 className="text-orange-500 font-bold mb-2">Match: {importData.meta.opponent}</h4>
+                        <div className="text-white text-sm">Score: {importData.meta.homeScore} - {importData.meta.awayScore}</div>
+                    </div>
+
+                    <div className="overflow-y-auto max-h-[50vh] space-y-2">
+                        {importData.rawPlayers.map((imp, idx) => (
+                            <div key={idx} className="flex items-center gap-2 bg-slate-800 p-2 rounded border border-slate-700">
+                                <div className="w-1/3">
+                                    <div className="text-white font-bold text-sm">#{imp.number} {imp.name}</div>
+                                    <div className="text-xs text-slate-400">{imp.stats.pts} pts, {imp.stats.min} min</div>
+                                </div>
+                                <div className="text-slate-500"><Icon path={Icons.Link} /></div>
+                                <div className="flex-1">
+                                    <select 
+                                        className="w-full bg-slate-900 text-white text-sm p-2 rounded border border-slate-600"
+                                        value={mapping[idx] || "NEW"}
+                                        onChange={(e) => setMapping({...mapping, [idx]: e.target.value})}
+                                    >
+                                        <option value="NEW" className="text-green-400 font-bold">+ Créer Nouveau Joueur</option>
+                                        <option value="SKIP" className="text-red-400">Ne pas importer</option>
+                                        <optgroup label="Effectif Actuel">
+                                            {currentPlayers.map(p => (
+                                                <option key={p.id} value={p.id}>#{p.number} - {p.name}</option>
+                                            ))}
+                                        </optgroup>
+                                    </select>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-4 border-t border-slate-700">
+                        <Button variant="ghost" onClick={onCancel}>Annuler</Button>
+                        <Button variant="success" onClick={handleFinalize}>Confirmer l'Import</Button>
+                    </div>
+                </div>
+            );
         };
 
         // --- CORE COMPONENTS --- 
 
-        const History = ({ games, setGames, apiKey, onEditGame, onImport }) => {
+        const History = ({ games, setGames, apiKey, onEditGame, onImportClick }) => {
             const [analyzing, setAnalyzing] = useState(null);
             const [modalContent, setModalContent] = useState(null);
             const [viewDetail, setViewDetail] = useState(null);
-
-            const handleFileChange = (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    onImport(event.target.result);
-                };
-                reader.readAsText(file);
-            };
 
             const analyzeMatch = async (game) => {
                 if (!apiKey) { alert("Configurez votre clé API dans les paramètres !"); return; }
@@ -316,29 +396,29 @@
             return (
                 <div className="space-y-4">
                     <div className="flex justify-end">
-                        <Button variant="primary" as="label" className="cursor-pointer">
+                        <Button variant="primary" as="label" className="cursor-pointer" onClick={onImportClick}>
                             <Icon path={Icons.Upload} /> Importer HTML
-                            <input type="file" accept=".html" onChange={handleFileChange} className="hidden" />
                         </Button>
                     </div>
 
                     {games.map(g => (
-                        <Card key={g.id} className="p-4 flex flex-col gap-4">
-                            <div className="flex justify-between items-center">
-                                <div>
-                                    <div className="text-sm text-slate-400">{g.date} - {g.location}</div>
-                                    <div className="text-xl font-bold text-white"><span className="text-green-400">{g.homeScore}</span> - <span className="text-red-400">{g.awayScore}</span> vs {g.opponent}</div>
+                        <div key={g.id} onClick={() => setViewDetail(g)} className="cursor-pointer">
+                            <Card className="p-4 flex flex-col gap-4 hover:border-orange-500 transition-colors">
+                                <div className="flex justify-between items-center">
+                                    <div>
+                                        <div className="text-sm text-slate-400">{g.date} - {g.location}</div>
+                                        <div className="text-xl font-bold text-white"><span className="text-green-400">{g.homeScore}</span> - <span className="text-red-400">{g.awayScore}</span> vs {g.opponent}</div>
+                                    </div>
+                                    <div className="flex flex-col md:flex-row gap-2" onClick={(e) => e.stopPropagation()}>
+                                        <Button variant="secondary" size="sm" onClick={() => onEditGame(g)}><Icon path={Icons.Edit} /> Modifier</Button>
+                                        <Button variant="magic" size="sm" onClick={() => analyzeMatch(g)} disabled={analyzing === g.id}>
+                                            {analyzing === g.id ? "..." : <><Icon path={Icons.Sparkles} /> IA</>}
+                                        </Button>
+                                        <Button variant="danger" size="sm" onClick={() => confirm("Supprimer ?") && setGames(games.filter(x => x.id !== g.id))}><Icon path={Icons.Trash} /></Button>
+                                    </div>
                                 </div>
-                                <div className="flex flex-col md:flex-row gap-2">
-                                    <Button variant="secondary" size="sm" onClick={() => setViewDetail(g)}><Icon path={Icons.Chart} /> Détails</Button>
-                                    <Button variant="secondary" size="sm" onClick={() => onEditGame(g)}><Icon path={Icons.Edit} /> Modifier</Button>
-                                    <Button variant="magic" size="sm" onClick={() => analyzeMatch(g)} disabled={analyzing === g.id}>
-                                        {analyzing === g.id ? "..." : <><Icon path={Icons.Sparkles} /> IA</>}
-                                    </Button>
-                                    <Button variant="danger" size="sm" onClick={() => confirm("Supprimer ?") && setGames(games.filter(x => x.id !== g.id))}><Icon path={Icons.Trash} /></Button>
-                                </div>
-                            </div>
-                        </Card>
+                            </Card>
+                        </div>
                     ))}
                     
                     <Modal isOpen={!!modalContent} onClose={() => setModalContent(null)} title={modalContent?.title}>
@@ -348,6 +428,12 @@
                     <Modal isOpen={!!viewDetail} onClose={() => setViewDetail(null)} title={`Détails vs ${viewDetail?.opponent}`}>
                         {viewDetail && (
                             <div className="space-y-4">
+                                <div className="bg-slate-900 p-4 rounded-lg text-center border border-slate-700">
+                                    <h4 className="text-slate-400 uppercase text-xs">Score Final</h4>
+                                    <div className="text-3xl font-bold text-white">
+                                        <span className="text-green-400">{viewDetail.homeScore}</span> - <span className="text-red-400">{viewDetail.awayScore}</span>
+                                    </div>
+                                </div>
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-left text-xs text-slate-300">
                                         <thead className="bg-slate-700 text-white uppercase">
@@ -740,6 +826,9 @@
             const [games, setGames] = useState([]);
             const [apiKey, setApiKey] = useState("");
             const [activeGame, setActiveGame] = useState(null);
+            
+            // Import State
+            const [importData, setImportData] = useState(null);
 
             useEffect(() => {
                 setPlayers(JSON.parse(localStorage.getItem('basket_players')) || defaultPlayers);
@@ -762,16 +851,53 @@
                 setView('history');
             };
 
-            const handleImport = (htmlContent) => {
-                const { game, updatedPlayers } = parseHTMLStats(htmlContent, players);
+            const handleFileImport = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const result = parseHTMLStats(event.target.result);
+                    setImportData(result);
+                };
+                reader.readAsText(file);
+                // Reset file input
+                e.target.value = null;
+            };
+
+            const confirmImport = (newGame, updatedPlayers) => {
                 setPlayers(updatedPlayers);
-                setGames(prev => [game, ...prev]);
+                setGames(prev => [newGame, ...prev]);
+                setImportData(null);
                 alert("Match importé avec succès !");
                 setView('history');
             };
 
             return (
                 <div className="max-w-5xl mx-auto h-screen bg-slate-950 flex flex-col md:flex-row overflow-hidden font-sans text-slate-200">
+                    
+                    {/* HIDDEN FILE INPUT FOR IMPORT */}
+                    <input 
+                        type="file" 
+                        accept=".html" 
+                        id="html-upload" 
+                        onChange={handleFileImport} 
+                        className="hidden" 
+                    />
+
+                    {importData && (
+                        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                            <div className="bg-slate-800 w-full max-w-2xl rounded-xl border border-slate-600 shadow-2xl p-6">
+                                <h2 className="text-2xl font-bold text-white mb-4">Vérification de l'Import</h2>
+                                <ImportReviewModal 
+                                    importData={importData} 
+                                    currentPlayers={players} 
+                                    onConfirm={confirmImport} 
+                                    onCancel={() => setImportData(null)} 
+                                />
+                            </div>
+                        </div>
+                    )}
+
                     <nav className="bg-slate-900 border-r border-slate-800 w-full md:w-20 flex md:flex-col items-center justify-evenly md:justify-start md:pt-6 p-2 z-50 shadow-xl shrink-0">
                         <div className="mb-0 md:mb-8 p-2 bg-orange-600 rounded-xl text-white font-black text-xl">BP</div>
                         {[
@@ -797,7 +923,15 @@
                         <div className="flex-1 p-4 overflow-y-auto bg-slate-950 no-scrollbar">
                             {view === 'live' && <LiveTracker players={players} onSaveGame={handleSaveGame} initialGame={activeGame} />}
                             {view === 'intelligent' && <CoachOS players={players} games={games} apiKey={apiKey} />}
-                            {view === 'history' && <History games={games} setGames={setGames} apiKey={apiKey} onEditGame={(g) => { setActiveGame(g); setView('live'); }} onImport={handleImport} />}
+                            {view === 'history' && (
+                                <History 
+                                    games={games} 
+                                    setGames={setGames} 
+                                    apiKey={apiKey} 
+                                    onEditGame={(g) => { setActiveGame(g); setView('live'); }} 
+                                    onImportClick={() => document.getElementById('html-upload').click()} 
+                                />
+                            )}
                             {view === 'settings' && <Settings players={players} onUpdatePlayers={setPlayers} apiKey={apiKey} setApiKey={setApiKey} />}
                         </div>
                     </main>
