@@ -348,7 +348,7 @@
                             const teamOppFga = g.opponentStats?.fga || 0; const teamOppOreb = g.opponentStats?.oreb || 0; const teamOppTo = g.opponentStats?.tov || 0; const teamOppFta = g.opponentStats?.fta || 0; const teamOppPts = g.awayScore; 
                             t.oppFga += (s.oppFga || (teamOppFga * (s.minutes/200))); t.oppOreb += (s.oppOreb || (teamOppOreb * (s.minutes/200))); t.oppTo += (s.oppTo || (teamOppTo * (s.minutes/200))); t.oppFta += (s.oppFta || (teamOppFta * (s.minutes/200))); t.pointsAllowed += (s.pointsAllowed || (teamOppPts * (s.minutes/200)));
 
-                            const missedFG = (s.fga || 0) - (s.fgm || 0); const missedFT = (s.fta || 0) - (s.ftm || 0);
+                            const missedFG = (s.fga + s.threePA|| 0) - (s.fgm + s.threePM|| 0); const missedFT = (s.fta || 0) - (s.ftm || 0);
                             const evalStat = (s.pts + s.reb + s.ast + s.stl + s.blk) - (missedFG + missedFT + s.tov);
                             t.eff += evalStat;
 
