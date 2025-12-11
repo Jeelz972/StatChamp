@@ -356,9 +356,9 @@
                     const threePct = t.threePA > 0 ? ((t.threePM / t.threePA) * 100).toFixed(1) : "0.0";
                     const ftPct = t.fta > 0 ? ((t.ftm / t.fta) * 100).toFixed(1) : "0.0";
                     
-                    const eFG = t.fga > 0 ? (((t.fgm + 0.5 * t.threePM) / (t.fga+t.threePA) * 100).toFixed(1) : "0.0";
-                    const ts = (t.fga + 0.44 * t.fta) > 0 ? ((t.pts / (2 * ((t.fga+t.threePA)  + 0.44 * t.fta))) * 100).toFixed(1) : "0.0";
-                    const possUsed = (t.fga+t.threePA)  - (t.reb * 0.3) + t.tov + (0.44 * t.fta); 
+                    const eFG = t.fga > 0 ? (((t.fgm + 0.5 * t.threePM) / t.fga) * 100).toFixed(1) : "0.0";
+                    const ts = (t.fga + 0.44 * t.fta) > 0 ? ((t.pts / (2 * (t.fga + 0.44 * t.fta))) * 100).toFixed(1) : "0.0";
+                    const possUsed = t.fga - (t.reb * 0.3) + t.tov + (0.44 * t.fta); 
                     const ortg = possUsed > 0 ? ((t.pts / possUsed) * 100).toFixed(1) : "0.0";
                     const oppPoss = t.oppFga - t.oppOreb + t.oppTo + (0.44 * t.oppFta);
                     const drtg = oppPoss > 0 ? ((t.pointsAllowed / oppPoss) * 100).toFixed(1) : "0.0";
@@ -366,11 +366,11 @@
 
                     // GENERATE CALC LOGS
                     p.calcLogs = [
-                        `eFG% = ((${t.fgm} + 0.5 * ${t.threePM}) / (${t.fga}+${t.threePA})) * 100 = ${eFG}%`,
-                        `TS% = (${t.pts} / (2 * ((${t.fga}+${t.threePA}) + 0.44 * ${t.fta.toFixed(0)}))) * 100 = ${ts}%`,
+                        `eFG% = ((${t.fgm} + 0.5 * ${t.threePM}) / ${t.fga}) * 100 = ${eFG}%`,
+                        `TS% = (${t.pts} / (2 * (${t.fga} + 0.44 * ${t.fta.toFixed(0)}))) * 100 = ${ts}%`,
                         `ORtg = (${t.pts} / ${possUsed.toFixed(1)}) * 100 = ${ortg}`,
                         `DRtg = (${t.pointsAllowed.toFixed(0)} / ${oppPoss.toFixed(1)}) * 100 = ${drtg}`,
-                        `Possessions Utilisées = (${t.fga}+${t.threePA}) - ${(t.reb*0.3).toFixed(1)} + ${t.tov} + (0.44 * ${t.fta}) = ${possUsed.toFixed(1)}`
+                        `Possessions Utilisées = ${t.fga} - ${(t.reb*0.3).toFixed(1)} + ${t.tov} + (0.44 * ${t.fta}) = ${possUsed.toFixed(1)}`
                     ];
 
                     return { ...p, avg: {
