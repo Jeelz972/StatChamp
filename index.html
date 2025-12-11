@@ -88,10 +88,9 @@
         const PRECONFIGURED_GEMINI_KEY = ""; 
 
         // ==========================================
-        // FIN DE LA ZONE DE CONFIGURATION
-        // ==========================================
 
         const { useState, useEffect, useMemo, useRef } = React;
+        // Fallback sécurisé pour Recharts
         const { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid } = window.Recharts || { BarChart:()=>null, Bar:()=>null, XAxis:()=>null, YAxis:()=>null, Tooltip:()=>null, ResponsiveContainer:({children})=><div>{children}</div>, LineChart:()=>null, Line:()=>null, CartesianGrid:()=>null };
 
         // --- UTILS & HELPERS ---
@@ -99,10 +98,10 @@
         const defaultPlayers = [{ id: 1, name: "Joueur 1", number: 4, pos: "PG" }, { id: 2, name: "Joueur 2", number: 5, pos: "SG" }];
         const MY_TEAM_KEYWORDS = ["Champagne", "Basket", "U18"];
 
-        // Helper to format percentage
+        // Helper
         const fmtPct = (n) => isNaN(n) ? "0.0" : n.toFixed(1);
 
-        // Stats Calculation Logic
+        // --- STATS LOGIC ---
         const recalculateGameStats = (actions, players) => {
             const pStats = {};
             players.forEach(p => {
@@ -131,10 +130,12 @@
                     if (type === 'AST') oppStats.ast+=1;
                     if (type === 'TOV') oppStats.tov+=1;
                     if (type === 'PF') oppStats.fouls+=1;
+
                     if (consequence && consequence.includes('score')) {
                         const val = parseInt(consequence.split('_')[1]);
                         home += val; ptsScored = val;
                     }
+                    
                     if (onCourt && Array.isArray(onCourt)) {
                         onCourt.forEach(pid => {
                             if (pStats[pid]) {
@@ -179,16 +180,23 @@
 
         const calculateAdvancedStats = (stats, minOverride = null) => {
             const min = minOverride !== null ? minOverride : (stats.minutes || 0);
+            
             const missedFG = (stats.fga || 0) - (stats.fgm || 0);
             const missedFT = (stats.fta || 0) - (stats.ftm || 0);
             const evalStat = (stats.pts + stats.reb + stats.ast + stats.stl + stats.blk) - (missedFG + missedFT + stats.tov);
+
             const poss = stats.fga + (0.44 * stats.fta) + stats.tov;
             const ortg = poss > 0 ? (stats.pts / poss) * 100 : 0;
             const drtg = poss > 0 ? (stats.pointsAllowed / poss) * 100 : 100;
+
             return {
-                eff: evalStat, eval: evalStat, effPerMin: min > 0 ? (evalStat / min) : 0,
-                ortg: parseFloat(ortg.toFixed(1)), drtg: parseFloat(drtg.toFixed(1)),
-                netRtg: parseFloat((ortg - drtg).toFixed(1)), poss: parseFloat(poss.toFixed(1))
+                eff: evalStat,
+                eval: evalStat,
+                effPerMin: min > 0 ? (evalStat / min) : 0,
+                ortg: parseFloat(ortg.toFixed(1)),
+                drtg: parseFloat(drtg.toFixed(1)),
+                netRtg: parseFloat((ortg - drtg).toFixed(1)),
+                poss: parseFloat(poss.toFixed(1))
             };
         };
 
@@ -204,6 +212,7 @@
 
         const saveDataToCloud = (db, collection, data) => {
             if (!db) return;
+            // Using Compat syntax
             db.collection("team_data").doc(collection).set({ list: data }).catch(console.error);
         };
 
@@ -309,7 +318,7 @@
         // --- GLOBAL STATS (UPDATED - Split Columns) ---
         const GlobalStats = ({ players, games }) => {
             const [selectedPlayer, setSelectedPlayer] = useState(null);
-            const [viewMode, setViewMode] = useState('classic'); 
+            const [viewMode, setViewMode] = useState('classic'); 
             const [showLogs, setShowLogs] = useState(false); // To toggle logs view in modal
 
             const aggregated = useMemo(() => {
@@ -317,8 +326,8 @@
                 players.forEach(p => {
                     stats[p.id] = {
                         info: p, gamesPlayed: 0,
-                        total: { 
-                            pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, min: 0, eff: 0, 
+                        total: { 
+                            pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, min: 0, eff: 0, 
                             fgm: 0, fga: 0, threePM: 0, threePA: 0, ftm: 0, fta: 0, pf: 0, plusMinus: 0,
                             oppFga: 0, oppOreb: 0, oppTo: 0, oppFta: 0, pointsAllowed: 0
                         },
@@ -336,7 +345,7 @@
                             t.pts += (s.pts||0); t.reb += (s.reb||0); t.ast += (s.ast||0); t.stl += (s.stl||0); t.blk += (s.blk||0); t.tov += (s.tov||0); t.min += (s.minutes||0);
                             t.fgm += (s.fgm||0); t.fga += (s.fga||0); t.threePM += (s.threePM||0); t.threePA += (s.threePA||0); t.ftm += (s.ftm||0); t.fta += (s.fta||0); t.pf += (s.pf||0); t.plusMinus += (s.plusMinus||0);
                             
-                            const teamOppFga = g.opponentStats?.fga || 0; const teamOppOreb = g.opponentStats?.oreb || 0; const teamOppTo = g.opponentStats?.tov || 0; const teamOppFta = g.opponentStats?.fta || 0; const teamOppPts = g.awayScore; 
+                            const teamOppFga = g.opponentStats?.fga || 0; const teamOppOreb = g.opponentStats?.oreb || 0; const teamOppTo = g.opponentStats?.tov || 0; const teamOppFta = g.opponentStats?.fta || 0; const teamOppPts = g.awayScore; 
                             t.oppFga += (s.oppFga || (teamOppFga * (s.minutes/200))); t.oppOreb += (s.oppOreb || (teamOppOreb * (s.minutes/200))); t.oppTo += (s.oppTo || (teamOppTo * (s.minutes/200))); t.oppFta += (s.oppFta || (teamOppFta * (s.minutes/200))); t.pointsAllowed += (s.pointsAllowed || (teamOppPts * (s.minutes/200)));
 
                             const missedFG = (s.fga || 0) - (s.fgm || 0); const missedFT = (s.fta || 0) - (s.ftm || 0);
@@ -356,9 +365,10 @@
                     const threePct = t.threePA > 0 ? ((t.threePM / t.threePA) * 100).toFixed(1) : "0.0";
                     const ftPct = t.fta > 0 ? ((t.ftm / t.fta) * 100).toFixed(1) : "0.0";
                     
-                    const eFG = t.fga > 0 ? (((t.fgm + 0.5 * t.threePM) / t.fga) * 100).toFixed(1) : "0.0";
-                    const ts = (t.fga + 0.44 * t.fta) > 0 ? ((t.pts / (2 * (t.fga + 0.44 * t.fta))) * 100).toFixed(1) : "0.0";
-                    const possUsed = t.fga - (t.reb * 0.3) + t.tov + (0.44 * t.fta); 
+                    const eFG = (t.fga + t.threePA) > 0 ? (((t.fgm + 0.5 * t.threePM) / (t.fga + t.threePA)) * 100).toFixed(1) : "0.0";
+                    const ts = ((t.fga + t.threePA) + 0.44 * t.fta) > 0 ? ((t.pts / (2 * ((t.fga + t.threePA) + 0.44 * t.fta))) * 100).toFixed(1) : "0.0";
+                    const possUsed = (t.fga + t.threePA) - (t.reb * 0.3) + t.tov + (0.44 * t.fta);
+                    
                     const ortg = possUsed > 0 ? ((t.pts / possUsed) * 100).toFixed(1) : "0.0";
                     const oppPoss = t.oppFga - t.oppOreb + t.oppTo + (0.44 * t.oppFta);
                     const drtg = oppPoss > 0 ? ((t.pointsAllowed / oppPoss) * 100).toFixed(1) : "0.0";
@@ -366,11 +376,11 @@
 
                     // GENERATE CALC LOGS
                     p.calcLogs = [
-                        `eFG% = ((${t.fgm} + 0.5 * ${t.threePM}) / ${t.fga}) * 100 = ${eFG}%`,
-                        `TS% = (${t.pts} / (2 * (${t.fga} + 0.44 * ${t.fta.toFixed(0)}))) * 100 = ${ts}%`,
+                        `eFG% = ((${t.fgm} + 0.5 * ${t.threePM}) / (${t.fga}+${t.threePA})) * 100 = ${eFG}%`,
+                        `TS% = (${t.pts} / (2 * ((${t.fga}+${t.threePA}) + 0.44 * ${t.fta.toFixed(0)}))) * 100 = ${ts}%`,
                         `ORtg = (${t.pts} / ${possUsed.toFixed(1)}) * 100 = ${ortg}`,
                         `DRtg = (${t.pointsAllowed.toFixed(0)} / ${oppPoss.toFixed(1)}) * 100 = ${drtg}`,
-                        `Possessions Utilisées = ${t.fga} - ${(t.reb*0.3).toFixed(1)} + ${t.tov} + (0.44 * ${t.fta}) = ${possUsed.toFixed(1)}`
+                        `Possessions Utilisées = (${t.fga}+${t.threePA}) - ${(t.reb*0.3).toFixed(1)} + ${t.tov} + (0.44 * ${t.fta}) = ${possUsed.toFixed(1)}`
                     ];
 
                     return { ...p, avg: {
