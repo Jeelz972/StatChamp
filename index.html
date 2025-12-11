@@ -22,7 +22,7 @@
     <!-- Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
-    <!-- Firebase (Compat Version - Chargement Global Stable) -->
+    <!-- Firebase (Compat Version - Stable) -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
 
@@ -73,22 +73,22 @@
 
     <script type="text/babel">
         // ==========================================
-        // 🛠️ ZONE DE CONFIGURATION 🛠️
+        // 🛠️ ZONE DE CONFIGURATION AUTOMATIQUE 🛠️
         // ==========================================
         
-         const PRECONFIGURED_FIREBASE = {
-    apiKey: "AIzaSyBh3NTNNGlcpP65QF_2RP09cMm-Dj2QQyw",
-    authDomain: "sinon-6b939.firebaseapp.com",
-    projectId: "sinon-6b939",
-    storageBucket: "sinon-6b939.firebasestorage.app",
-    messagingSenderId: "655166210370",
-    appId: "1:655166210370:web:991a43bad42186034e88db",
-    measurementId: "G-Y1JF9KKLEC"
-  };
+        const PRECONFIGURED_FIREBASE = {
+            apiKey: "",             
+            authDomain: "",         
+            projectId: "",          
+            storageBucket: "",      
+            messagingSenderId: "",  
+            appId: ""               
+        };
 
-        const PRECONFIGURED_GEMINI_KEY = "AIzaSyCndzKJOR46K3OSgwSYoOHed3FhWL5o7lc"; // Votre clé API Gemini (AIza...)
+        const PRECONFIGURED_GEMINI_KEY = ""; 
 
-
+        // ==========================================
+        // FIN DE LA ZONE DE CONFIGURATION
         // ==========================================
 
         const { useState, useEffect, useMemo, useRef } = React;
@@ -99,10 +99,7 @@
         const defaultPlayers = [{ id: 1, name: "Joueur 1", number: 4, pos: "PG" }, { id: 2, name: "Joueur 2", number: 5, pos: "SG" }];
         const MY_TEAM_KEYWORDS = ["Champagne", "Basket", "U18"];
 
-        // Helper to format percentage
-        const fmtPct = (n) => isNaN(n) ? "0.0" : n.toFixed(1);
-
-        // --- STATS LOGIC ---
+        // Stats Calculation Logic
         const recalculateGameStats = (actions, players) => {
             const pStats = {};
             players.forEach(p => {
@@ -131,7 +128,6 @@
                     if (type === 'AST') oppStats.ast+=1;
                     if (type === 'TOV') oppStats.tov+=1;
                     if (type === 'PF') oppStats.fouls+=1;
-
                     if (consequence && consequence.includes('score')) {
                         const val = parseInt(consequence.split('_')[1]);
                         home += val; ptsScored = val;
@@ -306,9 +302,10 @@
 
         const CoachOS = ({ players, games, apiKey }) => <div className="flex items-center justify-center h-full text-slate-500">Coach OS</div>;
 
-        // --- GLOBAL STATS (REWORKED WITH REQUESTED COLUMNS & FORMULAS) ---
+        // --- GLOBAL STATS (UPDATED - Split Columns) ---
         const GlobalStats = ({ players, games }) => {
             const [selectedPlayer, setSelectedPlayer] = useState(null);
+            const [viewMode, setViewMode] = useState('classic'); // 'classic' or 'advanced'
 
             const aggregated = useMemo(() => {
                 const stats = {};
@@ -327,14 +324,12 @@
                 games.forEach(g => {
                     Object.entries(g.playerStats).forEach(([pid, s]) => {
                         const id = parseInt(pid);
-                        // Filter Logic: DNP if minutes = 0
                         if ((s.minutes || 0) > 0 && stats[id]) {
                             const t = stats[id].total;
                             stats[id].gamesPlayed += 1;
                             t.pts += (s.pts||0); t.reb += (s.reb||0); t.ast += (s.ast||0); t.stl += (s.stl||0); t.blk += (s.blk||0); t.tov += (s.tov||0); t.min += (s.minutes||0);
                             t.fgm += (s.fgm||0); t.fga += (s.fga||0); t.threePM += (s.threePM||0); t.threePA += (s.threePA||0); t.ftm += (s.ftm||0); t.fta += (s.fta||0); t.pf += (s.pf||0); t.plusMinus += (s.plusMinus||0);
                             
-                            // Approx Opponent Stats for DRtg
                             const teamOppFga = g.opponentStats?.fga || 0; const teamOppOreb = g.opponentStats?.oreb || 0; const teamOppTo = g.opponentStats?.tov || 0; const teamOppFta = g.opponentStats?.fta || 0; const teamOppPts = g.awayScore; 
                             t.oppFga += (s.oppFga || (teamOppFga * (s.minutes/200))); t.oppOreb += (s.oppOreb || (teamOppOreb * (s.minutes/200))); t.oppTo += (s.oppTo || (teamOppTo * (s.minutes/200))); t.oppFta += (s.oppFta || (teamOppFta * (s.minutes/200))); t.pointsAllowed += (s.pointsAllowed || (teamOppPts * (s.minutes/200)));
 
@@ -348,9 +343,7 @@
                 });
 
                 return Object.values(stats).map(p => {
-                    // SORT LOGS BY DATE
                     p.logs.sort((a,b) => new Date(a.date) - new Date(b.date));
-
                     const gp = p.gamesPlayed || 1;
                     const t = p.total;
                     const fgPct = t.fga > 0 ? ((t.fgm / t.fga) * 100).toFixed(1) : "0.0";
@@ -367,11 +360,9 @@
 
                     return { ...p, avg: {
                         min: (t.min / gp).toFixed(1), pts: (t.pts / gp).toFixed(1),
-                        // TOTALS for Shots
                         fgm: t.fgm, fga: t.fga, fgPct: fgPct,
                         threePM: t.threePM, threePA: t.threePA, threePct: threePct,
                         ftm: t.ftm, fta: t.fta, ftPct: ftPct,
-                        // AVERAGES for the rest
                         reb: (t.reb / gp).toFixed(1), ast: (t.ast / gp).toFixed(1), stl: (t.stl / gp).toFixed(1), blk: (t.blk / gp).toFixed(1),
                         tov: (t.tov / gp).toFixed(1), pf: (t.pf / gp).toFixed(1), plusMinus: (t.plusMinus / gp).toFixed(1), eff: (t.eff / gp).toFixed(1),
                         eFG: eFG, TS: ts, ORtg: ortg, DRtg: drtg, netRtg: netRtg
@@ -382,32 +373,56 @@
             return (
                 <div className="space-y-4 h-full flex flex-col">
                     <Card className="p-4 flex-1 overflow-hidden flex flex-col card-stats">
-                        <div className="flex justify-between items-center mb-4 no-print"><h3 className="text-xl font-bold text-white flex items-center gap-2"><Icon path={Icons.Chart} /> Statistiques Saison</h3><Button variant="secondary" onClick={() => window.print()}><Icon path={Icons.Printer} /> Imprimer Rapport</Button></div>
+                        <div className="flex justify-between items-center mb-4 no-print">
+                            <div className="flex gap-2">
+                                <Button size="sm" variant={viewMode==='classic'?'primary':'secondary'} onClick={()=>setViewMode('classic')}>📊 Classique</Button>
+                                <Button size="sm" variant={viewMode==='advanced'?'primary':'secondary'} onClick={()=>setViewMode('advanced')}>🧠 Avancé</Button>
+                            </div>
+                            <Button variant="secondary" onClick={() => window.print()}><Icon path={Icons.Printer} /> Imprimer</Button>
+                        </div>
                         <h2 className="text-2xl font-bold text-black mb-4 print-only">Rapport Saison - {new Date().toLocaleDateString()}</h2>
                         <div className="overflow-auto flex-1">
                             <table className="w-full text-left text-sm text-slate-300 whitespace-nowrap">
                                 <thead className="bg-slate-900 text-white uppercase text-xs sticky top-0 z-10 sticky-header">
                                     <tr>
-                                        <th className="p-3 sticky-col">Joueur</th><th className="p-3">MIN</th><th className="p-3 text-orange-400">PTS</th>
-                                        <th className="p-3">TIR</th><th className="p-3">%TIR</th>
-                                        <th className="p-3">3PTS</th><th className="p-3">3PTS%</th>
-                                        <th className="p-3">LF</th><th className="p-3">LF%</th>
-                                        <th className="p-3">REB</th><th className="p-3">PD</th><th className="p-3">INT</th><th className="p-3">CTR</th><th className="p-3">BP</th><th className="p-3">FTE</th><th className="p-3">+/-</th>
-                                        <th className="p-3 text-green-400">ÉVAL</th>
-                                        <th className="p-3 text-purple-400">OFF RTG</th><th className="p-3 text-red-400">DEF RTG</th><th className="p-3 text-yellow-400">EFFICACITÉ</th>
+                                        <th className="p-3 sticky-col">Joueur</th><th className="p-3">MJ</th><th className="p-3">MIN</th>
+                                        {viewMode === 'classic' ? (
+                                            <>
+                                                <th className="p-3 text-orange-400">PTS</th>
+                                                <th className="p-3">TIR</th><th className="p-3">%TIR</th>
+                                                <th className="p-3">3PTS</th><th className="p-3">3PTS%</th>
+                                                <th className="p-3">LF</th><th className="p-3">LF%</th>
+                                                <th className="p-3">REB</th><th className="p-3">PD</th><th className="p-3">INT</th><th className="p-3">CTR</th><th className="p-3">BP</th><th className="p-3">FTE</th><th className="p-3">+/-</th>
+                                                <th className="p-3 text-green-400">ÉVAL</th>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <th className="p-3 text-blue-300">eFG%</th><th className="p-3 text-blue-300">TS%</th>
+                                                <th className="p-3 text-purple-400">OFF RTG</th><th className="p-3 text-red-400">DEF RTG</th><th className="p-3 text-yellow-400">NET RTG</th>
+                                            </>
+                                        )}
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-700">
                                     {aggregated.map(p => (
                                         <tr key={p.info.id} onClick={() => setSelectedPlayer(p)} className="hover:bg-slate-700/50 transition-colors cursor-pointer">
                                             <td className="p-3 font-bold text-white sticky left-0 bg-slate-800 sticky-col">{p.info.name}</td>
-                                            <td className="p-3">{p.avg.min}</td><td className="p-3 font-bold text-orange-400">{p.avg.pts}</td>
-                                            <td className="p-3">{p.avg.fgm}-{p.avg.fga}</td><td className="p-3">{p.avg.fgPct}%</td>
-                                            <td className="p-3">{p.avg.threePM}-{p.avg.threePA}</td><td className="p-3">{p.avg.threePct}%</td>
-                                            <td className="p-3">{p.avg.ftm}-{p.avg.fta}</td><td className="p-3">{p.avg.ftPct}%</td>
-                                            <td className="p-3">{p.avg.reb}</td><td className="p-3">{p.avg.ast}</td><td className="p-3">{p.avg.stl}</td><td className="p-3">{p.avg.blk}</td><td className="p-3">{p.avg.tov}</td><td className="p-3">{p.avg.pf}</td><td className="p-3">{p.avg.plusMinus}</td>
-                                            <td className="p-3 font-bold text-green-400">{p.avg.eff}</td>
-                                            <td className="p-3 text-purple-400">{p.avg.ORtg}</td><td className="p-3 text-red-400">{p.avg.DRtg}</td><td className="p-3 font-bold text-yellow-400">{p.avg.netRtg}</td>
+                                            <td className="p-3">{p.gamesPlayed}</td><td className="p-3">{p.avg.min}</td>
+                                            {viewMode === 'classic' ? (
+                                                <>
+                                                    <td className="p-3 font-bold text-orange-400">{p.avg.pts}</td>
+                                                    <td className="p-3">{p.avg.fgm}-{p.avg.fga}</td><td className="p-3">{p.avg.fgPct}%</td>
+                                                    <td className="p-3">{p.avg.threePM}-{p.avg.threePA}</td><td className="p-3">{p.avg.threePct}%</td>
+                                                    <td className="p-3">{p.avg.ftm}-{p.avg.fta}</td><td className="p-3">{p.avg.ftPct}%</td>
+                                                    <td className="p-3">{p.avg.reb}</td><td className="p-3">{p.avg.ast}</td><td className="p-3">{p.avg.stl}</td><td className="p-3">{p.avg.blk}</td><td className="p-3">{p.avg.tov}</td><td className="p-3">{p.avg.pf}</td><td className="p-3">{p.avg.plusMinus}</td>
+                                                    <td className="p-3 font-bold text-green-400">{p.avg.eff}</td>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <td className="p-3 text-blue-300">{p.avg.eFG}%</td><td className="p-3 text-blue-300">{p.avg.TS}%</td>
+                                                    <td className="p-3 text-purple-400">{p.avg.ORtg}</td><td className="p-3 text-red-400">{p.avg.DRtg}</td><td className="p-3 font-bold text-yellow-400">{p.avg.netRtg}</td>
+                                                </>
+                                            )}
                                         </tr>
                                     ))}
                                 </tbody>
@@ -597,6 +612,7 @@
                 }
             }, [firebaseConfig]);
 
+            // AUTO-SAVE LOCAL ONLY
             useEffect(() => { if(isDataLoaded) localStorage.setItem('basket_players', JSON.stringify(players)); }, [players, isDataLoaded]);
             useEffect(() => { if(isDataLoaded) localStorage.setItem('basket_games', JSON.stringify(games)); }, [games, isDataLoaded]);
             useEffect(() => { if(firebaseConfig) localStorage.setItem('basket_firebase_config', JSON.stringify(firebaseConfig)); }, [firebaseConfig]);
