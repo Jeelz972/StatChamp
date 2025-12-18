@@ -77,16 +77,19 @@
         // ==========================================
         
         const PRECONFIGURED_FIREBASE = {
-            apiKey: "",             
-            authDomain: "",         
-            projectId: "",          
-            storageBucket: "",      
-            messagingSenderId: "",  
-            appId: ""               
+            apiKey: "AIzaSyBaA99che1oz9BHc23IhiFoY-nK0xvg4q4",
+            authDomain: "statu18elite.firebaseapp.com",
+            projectId: "statu18elite",
+            storageBucket: "statu18elite.firebasestorage.app",
+            messagingSenderId: "862850988986",
+            appId: "1:862850988986:web:47a2b48477015506f6fb83",
+            measurementId: "G-Y4ZDKZQ7F9"        
         };
 
         const PRECONFIGURED_GEMINI_KEY = ""; 
 
+        // ==========================================
+        // FIN DE LA ZONE DE CONFIGURATION
         // ==========================================
 
         const { useState, useEffect, useMemo, useRef } = React;
@@ -166,6 +169,7 @@
                         ps.pointsAllowed += val; away += val; ptsConceded = val;
                     }
                 }
+                
                 if (onCourt && Array.isArray(onCourt)) {
                     onCourt.forEach(pid => {
                         if (pStats[pid]) {
@@ -212,8 +216,10 @@
 
         const saveDataToCloud = (db, collection, data) => {
             if (!db) return;
-            // Using Compat syntax
-            db.collection("team_data").doc(collection).set({ list: data }).catch(console.error);
+            // Using Compat syntax which is robust for simple html includes
+            db.collection("team_data").doc(collection).set({ list: data })
+                .then(() => console.log(`Données ${collection} sauvegardées.`))
+                .catch(e => console.error("Erreur sauvegarde", e));
         };
 
         // --- ICONS ---
@@ -348,7 +354,7 @@
                             const teamOppFga = g.opponentStats?.fga || 0; const teamOppOreb = g.opponentStats?.oreb || 0; const teamOppTo = g.opponentStats?.tov || 0; const teamOppFta = g.opponentStats?.fta || 0; const teamOppPts = g.awayScore; 
                             t.oppFga += (s.oppFga || (teamOppFga * (s.minutes/200))); t.oppOreb += (s.oppOreb || (teamOppOreb * (s.minutes/200))); t.oppTo += (s.oppTo || (teamOppTo * (s.minutes/200))); t.oppFta += (s.oppFta || (teamOppFta * (s.minutes/200))); t.pointsAllowed += (s.pointsAllowed || (teamOppPts * (s.minutes/200)));
 
-                            const missedFG = (s.fga + s.threePA|| 0) - (s.fgm + s.threePM|| 0); const missedFT = (s.fta || 0) - (s.ftm || 0);
+                            const missedFG = (s.fga || 0) - (s.fgm || 0); const missedFT = (s.fta || 0) - (s.ftm || 0);
                             const evalStat = (s.pts + s.reb + s.ast + s.stl + s.blk) - (missedFG + missedFT + s.tov);
                             t.eff += evalStat;
 
