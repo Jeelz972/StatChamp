@@ -287,25 +287,102 @@ function GlobalStats({ players, games, phases }) {
         }).filter(p => p.gamesPlayed > 0);
     }, [players, filteredGames]);
 
-    // Team Trends Data
+    // Team Trends Data avec logs
     const teamTrendsData = useMemo(() => {
-        return filteredGames.map(g => {
+        console.log("=== TEAM TRENDS DEBUG ===");
+        console.log("Nombre de matchs filtrés:", filteredGames.length);
+        
+        const data = filteredGames.map((g, index) => {
             let totalPts = 0, totalPoss = 0, totalPtsAllowed = g.awayScore || 0;
-            Object.values(g.playerStats).forEach(s => { totalPts += s.pts || 0; totalPoss += (s.fga || 0) + 0.44 * (s.fta || 0) + (s.tov || 0); });
+            let totalFGA = 0, totalFTA = 0, totalTOV = 0;
+            
+            Object.values(g.playerStats).forEach(s => { 
+                totalPts += s.pts || 0; 
+                totalFGA += s.fga || 0;
+                totalFTA += s.fta || 0;
+                totalTOV += s.tov || 0;
+            });
+            
+            totalPoss = totalFGA + 0.44 * totalFTA + totalTOV;
             const ortg = totalPoss > 0 ? (totalPts / totalPoss) * 100 : 0;
             const drtg = totalPoss > 0 ? (totalPtsAllowed / totalPoss) * 100 : 100;
-            return { date: g.date, opponent: g.opponent, ORtg: ortg.toFixed(1), DRtg: drtg.toFixed(1), NetRtg: (ortg - drtg).toFixed(1), score: g.homeScore, conceded: g.awayScore };
-        }).sort((a, b) => new Date(a.date) - new Date(b.date));
+            
+            // Log détaillé pour chaque match
+            console.log(`Match ${index + 1}:`, {
+                date: g.date,
+                dateObj: new Date(g.date),
+                dateTimestamp: new Date(g.date).getTime(),
+                opponent: g.opponent,
+                homeScore: g.homeScore,
+                awayScore: g.awayScore,
+                totalPts,
+                totalFGA,
+                totalFTA,
+                totalTOV,
+                totalPoss: totalPoss.toFixed(2),
+                ORtg: ortg.toFixed(1),
+                DRtg: drtg.toFixed(1)
+            });
+            
+            // Convertir la date en format comparable
+            const dateParts = g.date.split('/');
+            let dateObj;
+            if (dateParts.length === 3) {
+                // Format DD/MM/YYYY ou MM/DD/YYYY
+                dateObj = new Date(dateParts[2], dateParts[1] - 1, dateParts[0]);
+            } else {
+                dateObj = new Date(g.date);
+            }
+            
+            return { 
+                date: g.date, 
+                dateTimestamp: dateObj.getTime(),
+                opponent: g.opponent, 
+                ORtg: parseFloat(ortg.toFixed(1)), 
+                DRtg: parseFloat(drtg.toFixed(1)), 
+                NetRtg: parseFloat((ortg - drtg).toFixed(1)), 
+                score: g.homeScore, 
+                conceded: g.awayScore 
+            };
+        });
+        
+        // Tri par timestamp
+        const sorted = data.sort((a, b) => a.dateTimestamp - b.dateTimestamp);
+        
+        console.log("=== ORDRE APRÈS TRI ===");
+        sorted.forEach((d, i) => console.log(`${i + 1}. ${d.date} vs ${d.opponent} (timestamp: ${d.dateTimestamp})`));
+        
+        return sorted;
     }, [filteredGames]);
 
-    // Heatmap Data
+    // Heatmap Data - Toutes les statistiques
     const heatmapData = useMemo(() => {
-        const categories = ['pts', 'reb', 'ast', 'stl', 'eFG', 'TS'];
+        const categories = [
+            { key: 'pts', label: 'PTS' },
+            { key: 'reb', label: 'REB' },
+            { key: 'ast', label: 'AST' },
+            { key: 'stl', label: 'INT' },
+            { key: 'blk', label: 'CTR' },
+            { key: 'tov', label: 'BP', inverse: true }, // inverse = moins c'est mieux
+            { key: 'fgPct', label: 'FG%' },
+            { key: 'threePct', label: '3P%' },
+            { key: 'ftPct', label: 'LF%' },
+            { key: 'eFG', label: 'eFG%' },
+            { key: 'TS', label: 'TS%' },
+            { key: 'plusMinus', label: '+/-' },
+            { key: 'eff', label: 'ÉVAL' },
+            { key: 'ORtg', label: 'ORtg' },
+            { key: 'DRtg', label: 'DRtg', inverse: true }, // inverse = moins c'est mieux
+            { key: 'netRtg', label: 'NetRtg' }
+        ];
         const maxValues = {};
+        const minValues = {};
         categories.forEach(cat => {
-            maxValues[cat] = Math.max(...aggregated.map(p => parseFloat(p.avg[cat]) || 0), 1);
+            const values = aggregated.map(p => parseFloat(p.avg[cat.key]) || 0);
+            maxValues[cat.key] = Math.max(...values, 1);
+            minValues[cat.key] = Math.min(...values, 0);
         });
-        return { categories, maxValues, players: aggregated };
+        return { categories, maxValues, minValues, players: aggregated };
     }, [aggregated]);
 
     // Radar data pour comparaison
@@ -490,6 +567,48 @@ function GlobalStats({ players, games, phases }) {
             {/* Modal Tendances Équipe */}
             <Modal isOpen={showTeamTrends} onClose={() => setShowTeamTrends(false)} title={<><Icon path={Icons.TrendingUp} /> Tendances Équipe</>}>
                 <div className="space-y-6">
+                    {/* Formules utilisées */}
+                    <div className="bg-slate-900 p-4 rounded-lg border border-slate-700">
+                        <h4 className="text-orange-400 font-bold mb-3 flex items-center gap-2"><Icon path={Icons.Info} /> Formules utilisées</h4>
+                        <div className="text-xs font-mono text-slate-300 space-y-2">
+                            <div className="bg-slate-800 p-2 rounded">
+                                <span className="text-purple-400">Possessions</span> = FGA + (0.44 × FTA) + TOV
+                            </div>
+                            <div className="bg-slate-800 p-2 rounded">
+                                <span className="text-green-400">Offensive Rating (ORtg)</span> = (Points Marqués / Possessions) × 100
+                            </div>
+                            <div className="bg-slate-800 p-2 rounded">
+                                <span className="text-red-400">Defensive Rating (DRtg)</span> = (Points Encaissés / Possessions) × 100
+                            </div>
+                            <div className="bg-slate-800 p-2 rounded">
+                                <span className="text-yellow-400">Net Rating</span> = ORtg - DRtg
+                            </div>
+                            <div className="bg-slate-800 p-2 rounded">
+                                <span className="text-blue-400">eFG%</span> = ((FGM + 0.5 × 3PM) / (FGA + 3PA)) × 100
+                            </div>
+                            <div className="bg-slate-800 p-2 rounded">
+                                <span className="text-blue-400">TS%</span> = (PTS / (2 × (FGA + 3PA + 0.44 × FTA))) × 100
+                            </div>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-3">Note: Le coefficient 0.44 pour les FTA est une estimation standard du nombre de possessions utilisées par les lancers francs.</p>
+                    </div>
+
+                    {/* Debug info */}
+                    <div className="bg-slate-900 p-4 rounded-lg border border-yellow-600/50">
+                        <h4 className="text-yellow-400 font-bold mb-2">Debug Timeline</h4>
+                        <div className="text-xs text-slate-400 max-h-32 overflow-y-auto">
+                            {teamTrendsData.map((d, i) => (
+                                <div key={i} className="flex justify-between py-1 border-b border-slate-700">
+                                    <span>{i + 1}. {d.date}</span>
+                                    <span>vs {d.opponent}</span>
+                                    <span>{d.score}-{d.conceded}</span>
+                                    <span className="text-green-400">ORtg: {d.ORtg}</span>
+                                    <span className="text-red-400">DRtg: {d.DRtg}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
                     <div className="h-72">
                         <h4 className="text-xs text-slate-400 mb-2 uppercase">Offensive & Defensive Rating</h4>
                         <ResponsiveContainer width="100%" height="100%">
@@ -505,16 +624,16 @@ function GlobalStats({ players, games, phases }) {
                         </ResponsiveContainer>
                     </div>
                     <div className="h-64">
-                        <h4 className="text-xs text-slate-400 mb-2 uppercase">Net Rating</h4>
+                        <h4 className="text-xs text-slate-400 mb-2 uppercase">Net Rating par match</h4>
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={teamTrendsData}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                                 <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} />
                                 <YAxis stroke="#94a3b8" fontSize={10} />
                                 <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none' }} />
-                                <Bar dataKey="NetRtg" name="Net Rating" fill={(d) => parseFloat(d.NetRtg) >= 0 ? '#22c55e' : '#ef4444'}>
+                                <Bar dataKey="NetRtg" name="Net Rating">
                                     {teamTrendsData.map((entry, index) => (
-                                        <rect key={index} fill={parseFloat(entry.NetRtg) >= 0 ? '#22c55e' : '#ef4444'} />
+                                        <rect key={index} fill={entry.NetRtg >= 0 ? '#22c55e' : '#ef4444'} />
                                     ))}
                                 </Bar>
                             </BarChart>
@@ -539,33 +658,56 @@ function GlobalStats({ players, games, phases }) {
 
             {/* Modal Heatmap */}
             <Modal isOpen={showHeatmap} onClose={() => setShowHeatmap(false)} title={<><Icon path={Icons.Target} /> Heatmap Performance</>}>
-                <div className="overflow-x-auto">
-                    <table className="w-full">
-                        <thead>
-                            <tr className="text-slate-400 text-xs uppercase">
-                                <th className="p-3 text-left">Joueur</th>
-                                {heatmapData.categories.map(cat => <th key={cat} className="p-3 text-center">{cat}</th>)}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {heatmapData.players.map(p => (
-                                <tr key={p.info.id} className="border-t border-slate-700">
-                                    <td className="p-3 font-bold text-white">{p.info.name}</td>
-                                    {heatmapData.categories.map(cat => {
-                                        const val = parseFloat(p.avg[cat]) || 0;
-                                        const max = heatmapData.maxValues[cat];
-                                        const intensity = val / max;
-                                        const bg = `rgba(249, 115, 22, ${intensity * 0.8})`;
-                                        return (
-                                            <td key={cat} className="p-3 text-center font-bold" style={{ backgroundColor: bg }}>
-                                                {p.avg[cat]}
-                                            </td>
-                                        );
-                                    })}
+                <div className="space-y-4">
+                    <div className="text-xs text-slate-400 bg-slate-900 p-3 rounded">
+                        <p>🟠 Plus c'est orange, meilleure est la performance</p>
+                        <p>🔵 Pour BP et DRtg, plus c'est bleu = meilleur (valeurs basses préférées)</p>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="text-slate-400 text-xs uppercase">
+                                    <th className="p-2 text-left sticky left-0 bg-slate-800">Joueur</th>
+                                    {heatmapData.categories.map(cat => (
+                                        <th key={cat.key} className={`p-2 text-center ${cat.inverse ? 'text-blue-400' : ''}`}>
+                                            {cat.label}
+                                        </th>
+                                    ))}
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                {heatmapData.players.map(p => (
+                                    <tr key={p.info.id} className="border-t border-slate-700">
+                                        <td className="p-2 font-bold text-white sticky left-0 bg-slate-800">{p.info.name}</td>
+                                        {heatmapData.categories.map(cat => {
+                                            const val = parseFloat(p.avg[cat.key]) || 0;
+                                            const max = heatmapData.maxValues[cat.key];
+                                            const min = heatmapData.minValues[cat.key];
+                                            const range = max - min || 1;
+                                            
+                                            let intensity;
+                                            let bgColor;
+                                            
+                                            if (cat.inverse) {
+                                                // Pour les stats inverses (BP, DRtg), moins c'est mieux
+                                                intensity = 1 - ((val - min) / range);
+                                                bgColor = `rgba(59, 130, 246, ${intensity * 0.8})`; // Bleu
+                                            } else {
+                                                intensity = (val - min) / range;
+                                                bgColor = `rgba(249, 115, 22, ${intensity * 0.8})`; // Orange
+                                            }
+                                            
+                                            return (
+                                                <td key={cat.key} className="p-2 text-center font-bold text-white" style={{ backgroundColor: bgColor }}>
+                                                    {p.avg[cat.key]}
+                                                </td>
+                                            );
+                                        })}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </Modal>
         </div>
