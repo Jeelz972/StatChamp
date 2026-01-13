@@ -380,17 +380,24 @@ function GlobalStats({ players, games, phases }) {
             const fgPct = totalFGA > 0 ? ((totalFGM / totalFGA) * 100).toFixed(1) : "0.0";
             const threePct = t.threePA > 0 ? ((t.threePM / t.threePA) * 100).toFixed(1) : "0.0";
             const ftPct = t.fta > 0 ? ((t.ftm / t.fta) * 100).toFixed(1) : "0.0";
+            
+            // eFG% et TS% calculés sur les totaux
             const eFG = totalFGA > 0 ? (((totalFGM + 0.5 * t.threePM) / totalFGA) * 100).toFixed(1) : "0.0";
             const ts = (totalFGA + 0.44 * t.fta) > 0 ? ((t.pts / (2 * (totalFGA + 0.44 * t.fta))) * 100).toFixed(1) : "0.0";
             
-            // Possessions = FGA + 0.44 * FTA - ORB + TO
-            const possUsed = totalFGA + 0.44 * t.fta - t.oreb + t.tov;
-            const ortg = possUsed > 0 ? ((t.pts / possUsed) * 100).toFixed(1) : "0.0";
+            // Possessions totales = FGA + 0.44 * FTA - ORB + TO (sur toute la saison)
+            const totalPoss = totalFGA + 0.44 * t.fta - t.oreb + t.tov;
             
-            // DRtg basé sur les points concédés et possessions
-            const drtg = possUsed > 0 ? ((t.pointsAllowed / possUsed) * 100).toFixed(1) : "100.0";
+            // ORtg calculé sur les totaux (pas une moyenne des ORtg par match)
+            const ortg = totalPoss > 0 ? ((t.pts / totalPoss) * 100).toFixed(1) : "0.0";
             
-            // PIE moyen
+            // DRtg calculé sur les totaux
+            const drtg = totalPoss > 0 ? ((t.pointsAllowed / totalPoss) * 100).toFixed(1) : "100.0";
+            
+            // Net Rating = ORtg - DRtg (calculé sur les valeurs, pas moyenné)
+            const netRtg = (parseFloat(ortg) - parseFloat(drtg)).toFixed(1);
+            
+            // PIE moyen (celui-ci peut être moyenné car c'est un pourcentage relatif par match)
             const avgPIE = (t.pie / gp).toFixed(1);
             
             return { 
@@ -421,7 +428,7 @@ function GlobalStats({ players, games, phases }) {
                     TS: ts, 
                     ORtg: ortg, 
                     DRtg: drtg, 
-                    netRtg: (parseFloat(ortg) - parseFloat(drtg)).toFixed(1),
+                    netRtg: netRtg,
                     PIE: avgPIE
                 } 
             };
