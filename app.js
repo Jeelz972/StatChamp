@@ -237,12 +237,14 @@ function GlobalStats({ players, games, phases }) {
     // Calcul des stats agrégées avec logs pour graphiques
     const aggregated = useMemo(() => {
         const stats = {};
-        players.forEach(p => { stats[p.id] = { info: p, gamesPlayed: 0, total: { pts: 0, reb: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, tov: 0, min: 0, eff: 0, fgm: 0, fga: 0, threePM: 0, threePA: 0, ftm: 0, fta: 0, pf: 0, plusMinus: 0, oppFga: 0, oppOreb: 0, oppTo: 0, oppFta: 0, pointsAllowed: 0, pie: 0 }, logs: [], records: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, eff: 0 } }; });
+        players.forEach(p => { stats[p.id] = { info: p, gamesPlayed: 0, total: { pts: 0, reb: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, tov: 0, min: 0, eff: 0, fgm: 0, fga: 0, threePM: 0, threePA: 0, ftm: 0, fta: 0, pf: 0, plusMinus: 0, pie: 0 }, totalMinPlayed: 0, weightedORtg: 0, weightedDRtg: 0, logs: [], records: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, eff: 0 } }; });
 
         filteredGames.forEach(g => {
-            // Calculer les totaux du match pour le PIE
+            // Calculer les totaux du match pour le PIE et les ratings équipe
             let gamePTS = 0, gameFGM = 0, gameFTM = 0, gameFGA = 0, gameFTA = 0;
             let gameDRB = 0, gameORB = 0, gameAST = 0, gameSTL = 0, gameBLK = 0, gamePF = 0, gameTO = 0;
+            let teamFGA = 0, teamFTA = 0, teamORB = 0, teamTO = 0, teamPTS = 0;
+            let totalMinutes = 0;
             
             // Stats équipe
             Object.values(g.playerStats).forEach(s => {
@@ -258,19 +260,26 @@ function GlobalStats({ players, games, phases }) {
                 gameBLK += s.blk || 0;
                 gamePF += s.pf || 0;
                 gameTO += s.tov || 0;
+                
+                teamFGA += (s.fga || 0) + (s.threePA || 0);
+                teamFTA += s.fta || 0;
+                teamORB += s.oreb || 0;
+                teamTO += s.tov || 0;
+                teamPTS += s.pts || 0;
+                totalMinutes += s.minutes || 0;
             });
             
-            // Ajouter stats adversaire
+            // Ajouter stats adversaire pour PIE
             const opp = g.opponentStats || {};
-            gamePTS += g.awayScore || 0;
-            gameFGM += opp.fgm || Math.round((g.awayScore || 0) / 2.2); // Estimation
+            const oppPTS = g.awayScore || 0;
+            gamePTS += oppPTS;
+            gameFGM += opp.fgm || Math.round(oppPTS / 2.2);
             gameFTM += opp.ftm || 0;
-            gameFGA += opp.fga || Math.round((g.awayScore || 0) / 1.1);
+            gameFGA += opp.fga || Math.round(oppPTS / 1.1);
             gameFTA += opp.fta || 0;
             gameDRB += opp.reb ? Math.round(opp.reb * 0.7) : 0;
             gameORB += opp.oreb || 0;
             gameAST += opp.ast || 0;
-            gameSTL += opp.stl || 0;
             gameBLK += opp.blk || 0;
             gamePF += opp.fouls || 0;
             gameTO += opp.tov || 0;
@@ -278,43 +287,39 @@ function GlobalStats({ players, games, phases }) {
             // Dénominateur PIE du match
             const gamePIEDenom = gamePTS + gameFGM + gameFTM - gameFGA - gameFTA + gameDRB + (0.5 * gameORB) + gameAST + gameSTL + (0.5 * gameBLK) - gamePF - gameTO;
             
-            // Possessions totales équipe pour DRtg
-            let teamFGA = 0, teamFTA = 0, teamORB = 0, teamTO = 0;
-            Object.values(g.playerStats).forEach(s => {
-                teamFGA += (s.fga || 0) + (s.threePA || 0);
-                teamFTA += s.fta || 0;
-                teamORB += s.oreb || 0;
-                teamTO += s.tov || 0;
-            });
+            // Possessions équipe pour ce match: FGA + 0.44 * FTA - ORB + TO
             const teamPoss = teamFGA + 0.44 * teamFTA - teamORB + teamTO;
-            const teamDRtg = teamPoss > 0 ? ((g.awayScore || 0) / teamPoss) * 100 : 100;
+            
+            // Ratings équipe pour ce match
+            const teamORtg = teamPoss > 0 ? (teamPTS / teamPoss) * 100 : 100;
+            const teamDRtg = teamPoss > 0 ? (oppPTS / teamPoss) * 100 : 100;
 
             Object.entries(g.playerStats).forEach(([pid, s]) => {
                 const id = parseInt(pid);
                 if ((s.minutes || 0) > 0 && stats[id]) {
                     const t = stats[id].total;
+                    const playerMin = s.minutes || 0;
+                    
                     stats[id].gamesPlayed += 1;
+                    stats[id].totalMinPlayed += playerMin;
+                    
+                    // Pondérer les ratings par les minutes jouées
+                    stats[id].weightedORtg += teamORtg * playerMin;
+                    stats[id].weightedDRtg += teamDRtg * playerMin;
+                    
                     t.pts += (s.pts || 0); t.reb += (s.reb || 0); t.oreb += (s.oreb || 0); t.dreb += (s.dreb || 0);
-                    t.ast += (s.ast || 0); t.stl += (s.stl || 0); t.blk += (s.blk || 0); t.tov += (s.tov || 0); t.min += (s.minutes || 0);
+                    t.ast += (s.ast || 0); t.stl += (s.stl || 0); t.blk += (s.blk || 0); t.tov += (s.tov || 0); t.min += playerMin;
                     t.fgm += (s.fgm || 0); t.fga += (s.fga || 0); t.threePM += (s.threePM || 0); t.threePA += (s.threePA || 0);
                     t.ftm += (s.ftm || 0); t.fta += (s.fta || 0); t.pf += (s.pf || 0); t.plusMinus += (s.plusMinus || 0);
                     
-                    // Possessions individuelles: FGA + 0.44 * FTA - ORB + TO
                     const playerFGA = (s.fga || 0) + (s.threePA || 0);
-                    const playerPoss = playerFGA + 0.44 * (s.fta || 0) - (s.oreb || 0) + (s.tov || 0);
-                    
-                    // Points concédés estimés selon le temps de jeu
-                    const minRatio = (s.minutes || 0) / 40; // 40 min = match complet
-                    const playerPtsAllowed = (g.awayScore || 0) * minRatio;
-                    t.pointsAllowed += playerPtsAllowed;
-                    
-                    const missedFG = playerFGA - ((s.fgm || 0) + (s.threePM || 0));
+                    const playerFGM = (s.fgm || 0) + (s.threePM || 0);
+                    const missedFG = playerFGA - playerFGM;
                     const missedFT = (s.fta || 0) - (s.ftm || 0);
                     const evalStat = (s.pts + s.reb + s.ast + s.stl + s.blk) - (missedFG + missedFT + s.tov);
                     t.eff += evalStat;
 
                     // PIE du match pour ce joueur
-                    const playerFGM = (s.fgm || 0) + (s.threePM || 0);
                     const playerPIENum = (s.pts || 0) + playerFGM + (s.ftm || 0) - playerFGA - (s.fta || 0) + (s.dreb || 0) + (0.5 * (s.oreb || 0)) + (s.ast || 0) + (s.stl || 0) + (0.5 * (s.blk || 0)) - (s.pf || 0) - (s.tov || 0);
                     const playerPIE = gamePIEDenom !== 0 ? (playerPIENum / gamePIEDenom) * 100 : 0;
                     t.pie += playerPIE;
@@ -327,14 +332,9 @@ function GlobalStats({ players, games, phases }) {
                     if (s.blk > stats[id].records.blk) stats[id].records.blk = s.blk;
                     if (evalStat > stats[id].records.eff) stats[id].records.eff = evalStat;
 
-                    // Calcul eFG% et TS% pour ce match
+                    // Stats du match pour les logs
                     const gameEFG = playerFGA > 0 ? ((playerFGM + 0.5 * (s.threePM || 0)) / playerFGA) * 100 : 0;
                     const gameTS = (playerFGA + 0.44 * (s.fta || 0)) > 0 ? ((s.pts || 0) / (2 * (playerFGA + 0.44 * (s.fta || 0)))) * 100 : 0;
-                    
-                    // ORtg et DRtg du match
-                    const gameORtg = playerPoss > 0 ? ((s.pts || 0) / playerPoss) * 100 : 0;
-                    // DRtg individuel basé sur le DRtg équipe ajusté
-                    const gameDRtg = teamDRtg;
 
                     stats[id].logs.push({ 
                         date: g.date, 
@@ -346,8 +346,8 @@ function GlobalStats({ players, games, phases }) {
                         eff: evalStat, 
                         eFG: gameEFG.toFixed(1), 
                         TS: gameTS.toFixed(1), 
-                        ORtg: gameORtg.toFixed(1),
-                        DRtg: gameDRtg.toFixed(1),
+                        ORtg: teamORtg.toFixed(1),
+                        DRtg: teamDRtg.toFixed(1),
                         PIE: playerPIE.toFixed(1),
                         min: s.minutes 
                     });
@@ -357,7 +357,6 @@ function GlobalStats({ players, games, phases }) {
 
         return Object.values(stats).map(p => {
             p.logs.sort((a, b) => {
-                // Parser les dates françaises pour le tri
                 const parseFrenchDate = (dateStr) => {
                     const months = { 'janv': 0, 'jan': 0, 'févr': 1, 'fév': 1, 'fevr': 1, 'mars': 2, 'avr': 3, 'mai': 4, 'juin': 5, 'juil': 6, 'août': 7, 'aout': 7, 'sept': 8, 'oct': 9, 'nov': 10, 'déc': 11, 'dec': 11 };
                     const match = dateStr.match(/(\d{1,2})\s+([a-zéûô]+)\.?\s+(\d{4})/i);
@@ -372,6 +371,7 @@ function GlobalStats({ players, games, phases }) {
             
             const gp = p.gamesPlayed || 1;
             const t = p.total;
+            const totalMin = p.totalMinPlayed || 1;
             
             // FGA total inclut les 3PA
             const totalFGA = t.fga + t.threePA;
@@ -385,19 +385,12 @@ function GlobalStats({ players, games, phases }) {
             const eFG = totalFGA > 0 ? (((totalFGM + 0.5 * t.threePM) / totalFGA) * 100).toFixed(1) : "0.0";
             const ts = (totalFGA + 0.44 * t.fta) > 0 ? ((t.pts / (2 * (totalFGA + 0.44 * t.fta))) * 100).toFixed(1) : "0.0";
             
-            // Possessions totales = FGA + 0.44 * FTA - ORB + TO (sur toute la saison)
-            const totalPoss = totalFGA + 0.44 * t.fta - t.oreb + t.tov;
-            
-            // ORtg calculé sur les totaux (pas une moyenne des ORtg par match)
-            const ortg = totalPoss > 0 ? ((t.pts / totalPoss) * 100).toFixed(1) : "0.0";
-            
-            // DRtg calculé sur les totaux
-            const drtg = totalPoss > 0 ? ((t.pointsAllowed / totalPoss) * 100).toFixed(1) : "100.0";
-            
-            // Net Rating = ORtg - DRtg (calculé sur les valeurs, pas moyenné)
+            // Ratings = moyenne pondérée par les minutes jouées
+            const ortg = (p.weightedORtg / totalMin).toFixed(1);
+            const drtg = (p.weightedDRtg / totalMin).toFixed(1);
             const netRtg = (parseFloat(ortg) - parseFloat(drtg)).toFixed(1);
             
-            // PIE moyen (celui-ci peut être moyenné car c'est un pourcentage relatif par match)
+            // PIE moyen
             const avgPIE = (t.pie / gp).toFixed(1);
             
             return { 
