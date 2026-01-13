@@ -869,90 +869,98 @@ function ImportReviewModal({ importData, currentPlayers, phases, onConfirm, onCa
 }
 
 // --- COMPOSANT DÉTAILS DU MATCH (Classique & Avancé) ---
-// REMPLACE la fonction GameDetailsModal dans ton app.js
-// IMPORTANT: Assure-toi d'avoir ajouté les fonctions de calcul (artifact précédent) avant cette fonction
-
 function GameDetailsModal({ game, isOpen, onClose, players }) {
     if (!game) return null;
 
-    const [viewMode, setViewMode] = useState('classic');
+    const [viewMode, setViewMode] = useState('classic'); // 'classic' | 'advanced'
 
+    // Calculs des stats avancées pour ce match spécifique
     const statsData = useMemo(() => {
         const pStats = game.playerStats || {};
         const opp = game.opponentStats || {};
+        const teamScore = game.homeScore || 0;
         const oppScore = game.awayScore || 0;
 
-        // Agrégation des stats équipe
-        const teamStats = aggregateTeamStats(pStats);
-        
-        // Préparation des stats adversaire
-        const oppStatsPrepped = prepareOpponentStats(opp, oppScore);
+        // 1. Totaux Équipe (Somme des joueurs)
+        let tFGM = 0, tFGA = 0, tFTM = 0, tFTA = 0;
+        let tORB = 0, tTOV = 0, tPTS = 0;
+        // Pour PIE
+        let tDRB = 0, tAST = 0, tSTL = 0, tBLK = 0, tPF = 0;
 
-        // Calcul des possessions et ratings équipe
-        const Team_Poss = teamStats.fga + 0.4 * teamStats.fta - 1.07 * (teamStats.oreb / (teamStats.oreb + oppStatsPrepped.dreb + 0.001)) * (teamStats.fga - teamStats.fgm) + teamStats.tov;
-        const teamORtg = Team_Poss > 0 ? (teamStats.pts / Team_Poss) * 100 : 0;
-        const teamDRtg = Team_Poss > 0 ? (oppScore / Team_Poss) * 100 : 0;
-        const teamNetRtg = teamORtg - teamDRtg;
+        Object.values(pStats).forEach(s => {
+            tFGM += (s.fgm || 0) + (s.threePM || 0);
+            tFGA += (s.fga || 0) + (s.threePA || 0);
+            tFTM += (s.ftm || 0);
+            tFTA += (s.fta || 0);
+            tORB += (s.oreb || 0);
+            tTOV += (s.tov || 0);
+            tPTS += (s.pts || 0);
+            tDRB += (s.dreb || 0);
+            tAST += (s.ast || 0);
+            tSTL += (s.stl || 0);
+            tBLK += (s.blk || 0);
+            tPF += (s.pf || 0);
+        });
 
-        // PIE dénominateur
-        const tFGM = teamStats.fgm, tFGA = teamStats.fga, tFTM = teamStats.ftm, tFTA = teamStats.fta;
-        const tORB = teamStats.oreb, tDRB = teamStats.dreb, tAST = teamStats.ast;
-        const tSTL = teamStats.stl, tBLK = teamStats.blk, tPF = teamStats.pf, tTOV = teamStats.tov;
-        const tPTS = teamStats.pts;
-
-        const oppFGM = oppStatsPrepped.fgm, oppFGA = oppStatsPrepped.fga;
-        const oppFTM = oppStatsPrepped.ftm, oppFTA = oppStatsPrepped.fta;
-        const oppORB = oppStatsPrepped.oreb, oppDRB = oppStatsPrepped.dreb;
-        const oppAST = oppStatsPrepped.ast, oppBLK = oppStatsPrepped.blk || 0;
-        const oppPF = oppStatsPrepped.fouls || 0, oppTOV = oppStatsPrepped.tov;
+        // 2. Totaux Adversaire (pour PIE et Ratings)
         const oppPTS = oppScore;
+        const oppFGM = opp.fgm || Math.round(oppPTS / 2.2);
+        const oppFTM = opp.ftm || 0;
+        const oppFGA = opp.fga || Math.round(oppPTS / 1.1);
+        const oppFTA = opp.fta || 0;
+        const oppDRB = opp.reb ? Math.round(opp.reb * 0.7) : 0;
+        const oppORB = opp.oreb || 0;
+        const oppAST = opp.ast || 0;
+        const oppSTL = 0;
+        const oppBLK = opp.blk || 0;
+        const oppPF = opp.fouls || 0;
+        const oppTOV = opp.tov || 0;
+
+        // 3. Formules d'équipe
+        const teamPoss = tFGA + 0.44 * tFTA - tORB + tTOV;
+        const teamORtg = teamPoss > 0 ? (tPTS / teamPoss) * 100 : 0;
+        const teamDRtg = teamPoss > 0 ? (oppPTS / teamPoss) * 100 : 0;
+        const teamNetRtg = teamORtg - teamDRtg;
 
         const gamePIEDenom = (tPTS + oppPTS) + (tFGM + oppFGM) + (tFTM + oppFTM) 
                            - (tFGA + oppFGA) - (tFTA + oppFTA) + (tDRB + oppDRB) 
-                           + (0.5 * (tORB + oppORB)) + (tAST + oppAST) + tSTL 
+                           + (0.5 * (tORB + oppORB)) + (tAST + oppAST) + (tSTL + oppSTL) 
                            + (0.5 * (tBLK + oppBLK)) - (tPF + oppPF) - (tTOV + oppTOV);
 
-        // Enrichissement des stats joueurs avec RATINGS AVANCÉS
-        const enrichedPlayers = Object.entries(pStats).map(([pid, s]) => {
-            const player = players.find(p => p.id === parseInt(pid));
-            const name = player ? player.name : `Joueur #${pid}`;
-            
-            const fga = (s.fga || 0) + (s.threePA || 0);
-            const fgm = (s.fgm || 0) + (s.threePM || 0);
-            const fta = s.fta || 0;
-            const ftm = s.ftm || 0;
-            const pts = s.pts || 0;
+        // 4. Enrichissement des stats joueurs + FILTRE 0 MINUTES
+        const enrichedPlayers = Object.entries(pStats)
+            .map(([pid, s]) => {
+                const player = players.find(p => p.id === parseInt(pid));
+                const name = player ? player.name : `Joueur #${pid}`;
+                
+                // Basic
+                const fga = (s.fga || 0) + (s.threePA || 0);
+                const fgm = (s.fgm || 0) + (s.threePM || 0);
+                const fta = s.fta || 0;
+                const ftm = s.ftm || 0;
+                const pts = s.pts || 0;
 
-            // eFG% et TS%
-            const eFG = fga > 0 ? ((fgm + 0.5 * (s.threePM || 0)) / fga) * 100 : 0;
-            const ts = (fga + 0.44 * fta) > 0 ? (pts / (2 * (fga + 0.44 * fta))) * 100 : 0;
-            
-            // PIE individuel
-            const playerPIENum = pts + fgm + ftm - fga - fta + (s.dreb || 0) + (0.5 * (s.oreb || 0)) 
-                               + (s.ast || 0) + (s.stl || 0) + (0.5 * (s.blk || 0)) - (s.pf || 0) - (s.tov || 0);
-            const pie = gamePIEDenom !== 0 ? (playerPIENum / gamePIEDenom) * 100 : 0;
+                // Advanced
+                const eFG = fga > 0 ? ((fgm + 0.5 * (s.threePM || 0)) / fga) * 100 : 0;
+                const ts = (fga + 0.44 * fta) > 0 ? (pts / (2 * (fga + 0.44 * fta))) * 100 : 0;
+                
+                const playerPIENum = pts + fgm + ftm - fga - fta + (s.dreb || 0) + (0.5 * (s.oreb || 0)) 
+                                   + (s.ast || 0) + (s.stl || 0) + (0.5 * (s.blk || 0)) - (s.pf || 0) - (s.tov || 0);
+                const pie = gamePIEDenom !== 0 ? (playerPIENum / gamePIEDenom) * 100 : 0;
 
-            // === RATINGS AVANCÉS (Basketball-Reference) ===
-            const ratings = calculateIndividualRatings(s, teamStats, oppStatsPrepped);
-
-            return {
-                id: pid, name, ...s, fga, fgm,
-                eFG: eFG.toFixed(1),
-                TS: ts.toFixed(1),
-                PIE: pie.toFixed(1),
-                ORtg: ratings.ORtg.toFixed(1),
-                DRtg: ratings.DRtg.toFixed(1),
-                netRtg: ratings.netRtg.toFixed(1)
-            };
-        });
+                return {
+                    id: pid, name, ...s,
+                    fga, fgm,
+                    eFG: eFG.toFixed(1),
+                    TS: ts.toFixed(1),
+                    PIE: pie.toFixed(1)
+                };
+            })
+            .filter(p => p.minutes > 0); // <--- Modification ici : on garde uniquement ceux qui ont joué
 
         return { 
-            team: { 
-                poss: Team_Poss.toFixed(1), 
-                ORtg: teamORtg.toFixed(1), 
-                DRtg: teamDRtg.toFixed(1), 
-                Net: teamNetRtg.toFixed(1) 
-            },
+            team: { poss: teamPoss.toFixed(1), ORtg: teamORtg.toFixed(1), DRtg: teamDRtg.toFixed(1), Net: teamNetRtg.toFixed(1) },
+            oppStats: opp,
             players: enrichedPlayers
         };
     }, [game, players]);
@@ -960,6 +968,7 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={`Détails: vs ${game.opponent}`} size="max-w-5xl">
             <div className="space-y-6">
+                {/* Header Score & Team Stats */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="md:col-span-2 bg-slate-900 p-4 rounded-lg flex justify-between items-center border border-slate-700 relative overflow-hidden">
                         <div className="text-center z-10">
@@ -988,14 +997,21 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
                     </div>
                 </div>
 
+                {/* Contrôles & Tableau */}
                 <div>
                     <div className="flex justify-between items-center mb-3">
                         <h4 className="text-orange-400 font-bold text-sm uppercase flex items-center gap-2">
-                            <Icon path={Icons.Users} /> Stats Joueurs
+                            <Icon path={Icons.Users} /> Stats Joueurs ({statsData.players.length})
                         </h4>
                         <div className="flex bg-slate-800 rounded p-1 border border-slate-700">
-                            <button onClick={() => setViewMode('classic')} className={`px-3 py-1 text-xs rounded transition-all ${viewMode === 'classic' ? 'bg-slate-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>Classique</button>
-                            <button onClick={() => setViewMode('advanced')} className={`px-3 py-1 text-xs rounded transition-all ${viewMode === 'advanced' ? 'bg-slate-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>Avancé</button>
+                            <button 
+                                onClick={() => setViewMode('classic')}
+                                className={`px-3 py-1 text-xs rounded transition-all ${viewMode === 'classic' ? 'bg-slate-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                            >Classique</button>
+                            <button 
+                                onClick={() => setViewMode('advanced')}
+                                className={`px-3 py-1 text-xs rounded transition-all ${viewMode === 'advanced' ? 'bg-slate-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                            >Avancé</button>
                         </div>
                     </div>
 
@@ -1021,12 +1037,13 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
                                         </>
                                     ) : (
                                         <>
+                                            <th className="p-3 text-center text-orange-400">PTS</th>
                                             <th className="p-3 text-center text-blue-300">eFG%</th>
-                                            <th className="p-3 text-center text-blue-300">TS%</th>
-                                            <th className="p-3 text-center text-purple-400">ORtg</th>
-                                            <th className="p-3 text-center text-red-400">DRtg</th>
-                                            <th className="p-3 text-center text-yellow-400">Net</th>
+                                            <th className="p-3 text-center text-purple-300">TS%</th>
                                             <th className="p-3 text-center text-cyan-400">PIE</th>
+                                            <th className="p-3 text-center">AST</th>
+                                            <th className="p-3 text-center text-red-400">BP</th>
+                                            <th className="p-3 text-center text-yellow-400">+/-</th>
                                         </>
                                     )}
                                 </tr>
@@ -1052,16 +1069,22 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
                                             </>
                                         ) : (
                                             <>
+                                                <td className="p-3 text-center font-bold text-white">{p.pts}</td>
                                                 <td className="p-3 text-center text-blue-300 font-mono">{p.eFG}%</td>
-                                                <td className="p-3 text-center text-blue-300 font-mono">{p.TS}%</td>
-                                                <td className="p-3 text-center text-purple-400 font-mono">{p.ORtg}</td>
-                                                <td className="p-3 text-center text-red-400 font-mono">{p.DRtg}</td>
-                                                <td className={`p-3 text-center font-bold font-mono ${parseFloat(p.netRtg) >= 0 ? 'text-green-400' : 'text-red-400'}`}>{p.netRtg}</td>
+                                                <td className="p-3 text-center text-purple-300 font-mono">{p.TS}%</td>
                                                 <td className="p-3 text-center text-cyan-400 font-bold font-mono">{p.PIE}%</td>
+                                                <td className="p-3 text-center">{p.ast}</td>
+                                                <td className="p-3 text-center text-red-400">{p.tov}</td>
+                                                <td className={`p-3 text-center font-bold ${p.plusMinus >= 0 ? 'text-green-400' : 'text-red-400'}`}>{p.plusMinus > 0 ? '+' : ''}{p.plusMinus}</td>
                                             </>
                                         )}
                                     </tr>
                                 ))}
+                                {statsData.players.length === 0 && (
+                                    <tr>
+                                        <td colSpan="12" className="p-4 text-center text-slate-500 italic">Aucun joueur avec du temps de jeu enregistré.</td>
+                                    </tr>
+                                )}
                             </tbody>
                         </table>
                     </div>
