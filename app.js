@@ -91,17 +91,18 @@ const Icons = {
 
 // --- UI COMPONENTS ---
 const Card = ({ children, className = "" }) => <div className={`bg-slate-800 rounded-lg border border-slate-700 shadow-lg overflow-hidden ${className}`}>{children}</div>;
+
 const Button = ({ onClick, children, variant = "primary", className = "", size = "md", disabled = false }) => {
     const base = "font-semibold rounded transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer no-print";
     const variants = { primary: "bg-coach-accent hover:bg-orange-600 text-white shadow-md", secondary: "bg-slate-700 hover:bg-slate-600 text-slate-200", danger: "bg-red-600 hover:bg-red-700 text-white", success: "bg-green-600 hover:bg-green-700 text-white", ghost: "bg-transparent hover:bg-slate-700 text-slate-400" };
     const sizes = { sm: "px-2 py-1 text-xs", md: "px-4 py-2 text-sm", lg: "px-6 py-3 text-lg" };
     return <button onClick={onClick} disabled={disabled} className={`${base} ${variants[variant]} ${sizes[size]} ${className} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>{children}</button>;
 };
-const  = ({ isOpen, onClose, title, children, size = "max-w-6xl" }) => {
+
+const Modal = ({ isOpen, onClose, title, children, size = "max-w-6xl" }) => {
     if (!isOpen) return null;
     return <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 no-print"><div className={`bg-slate-800 rounded-xl border border-slate-600 w-full ${size} shadow-2xl max-h-[90vh] flex flex-col`}><div className="flex justify-between items-center p-4 border-b border-slate-700 shrink-0"><h3 className="text-xl font-bold text-white flex items-center gap-2">{title}</h3><button onClick={onClose} className="text-slate-400 hover:text-white text-2xl">&times;</button></div><div className="p-4 overflow-y-auto flex-1">{children}</div></div></div>;
 };
-
 // --- PARSE HTML ---
 const parseHTMLStats = (html) => {
     const parser = new DOMParser();
