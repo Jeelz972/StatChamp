@@ -1062,16 +1062,18 @@ function App() {
             try {
                 if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
                 const database = firebase.firestore();
-                setDb(database); setIsCloudEnabled(true);
-                window.db = database; window.isCloudEnabled = true;
-                console.log("Firebase connecté !");
+                console.log("Firebase database créée:", database);
+                setDb(database); 
+                setIsCloudEnabled(true);
+                window.db = database; 
+                window.isCloudEnabled = true;
+                console.log("✅ Firebase connecté !");
 
                 const unsubP = database.collection("team_data").doc("roster").onSnapshot((doc) => {
                     console.log("Firebase roster:", doc.exists ? doc.data() : "n'existe pas");
                     if (doc.exists && doc.data().list) { 
                         setPlayers(doc.data().list); 
                     } else {
-                        // Charger depuis localStorage si pas de données Firebase
                         const localPlayers = JSON.parse(localStorage.getItem('basket_players')) || defaultPlayers;
                         setPlayers(localPlayers);
                     }
@@ -1109,12 +1111,14 @@ function App() {
 
                 return () => { unsubP(); unsubG(); unsubPh(); };
             } catch (e) { 
-                console.error("Erreur connexion Firebase:", e); 
+                console.error("❌ Erreur connexion Firebase:", e); 
                 setIsCloudEnabled(false); 
                 setPlayers(JSON.parse(localStorage.getItem('basket_players')) || defaultPlayers);
                 setGames(JSON.parse(localStorage.getItem('basket_games')) || []);
                 setIsDataLoaded(true); 
             }
+        } else {
+            console.warn("Firebase non configuré:", { firebaseConfig: !!firebaseConfig, firebase: !!window.firebase });
         }
     }, [firebaseConfig]);
 
@@ -1130,13 +1134,22 @@ function App() {
         const newGame = { ...gameState, id: gameId, date: activeGame?.date || new Date().toLocaleDateString() };
         const newGamesList = games.some(g => g.id === gameId) ? games.map(g => g.id === gameId ? newGame : g) : [newGame, ...games];
         setGames(newGamesList);
-        if (isCloudEnabled && !isPlayerMode) saveDataToCloud(db, "games", newGamesList);
+        
+        const firebaseDb = window.db || db;
+        const cloudEnabled = window.isCloudEnabled || isCloudEnabled;
+        if (cloudEnabled && firebaseDb && !isPlayerMode) {
+            saveDataToCloud(firebaseDb, "games", newGamesList);
+        }
         setActiveGame(null); setView('history');
     };
 
     const handleUpdatePhases = (newPhases) => {
         setPhases(newPhases);
-        if (isCloudEnabled && !isPlayerMode) saveDataToCloud(db, "phases", newPhases);
+        const firebaseDb = window.db || db;
+        const cloudEnabled = window.isCloudEnabled || isCloudEnabled;
+        if (cloudEnabled && firebaseDb && !isPlayerMode) {
+            saveDataToCloud(firebaseDb, "phases", newPhases);
+        }
     };
 
     const handleFileImport = (e) => {
@@ -1147,19 +1160,43 @@ function App() {
     };
 
     const confirmImport = (newGame, updatedPlayers) => {
+        console.log("=== IMPORT ===");
+        console.log("isCloudEnabled:", isCloudEnabled);
+        console.log("window.isCloudEnabled:", window.isCloudEnabled);
+        console.log("isPlayerMode:", isPlayerMode);
+        console.log("db:", db);
+        console.log("window.db:", window.db);
+        console.log("newGame:", newGame);
+        console.log("updatedPlayers:", updatedPlayers);
+        
         setPlayers(updatedPlayers);
         const newGamesList = [newGame, ...games];
         setGames(newGamesList);
-        if (isCloudEnabled && !isPlayerMode) {
-            saveDataToCloud(db, "roster", updatedPlayers);
-            saveDataToCloud(db, "games", newGamesList);
+        
+        // Utiliser window.db pour être sûr d'avoir la bonne référence
+        const firebaseDb = window.db || db;
+        const cloudEnabled = window.isCloudEnabled || isCloudEnabled;
+        
+        if (cloudEnabled && firebaseDb && !isPlayerMode) {
+            console.log("✅ Envoi vers Firebase...");
+            saveDataToCloud(firebaseDb, "roster", updatedPlayers);
+            saveDataToCloud(firebaseDb, "games", newGamesList);
+        } else {
+            console.warn("❌ Firebase non actif:", { cloudEnabled, firebaseDb: !!firebaseDb, isPlayerMode });
         }
-        setImportData(null); alert("Importé et synchronisé !"); setView('history');
+        
+        setImportData(null); 
+        alert("Importé !"); 
+        setView('history');
     };
 
     const handleSettingsUpdate = (newPlayers) => {
         setPlayers(newPlayers);
-        if (isCloudEnabled && !isPlayerMode) saveDataToCloud(db, "roster", newPlayers);
+        const firebaseDb = window.db || db;
+        const cloudEnabled = window.isCloudEnabled || isCloudEnabled;
+        if (cloudEnabled && firebaseDb && !isPlayerMode) {
+            saveDataToCloud(firebaseDb, "roster", newPlayers);
+        }
     };
 
     // Player Mode View
