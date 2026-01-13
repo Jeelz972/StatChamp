@@ -957,99 +957,236 @@ function ImportReviewModal({ importData, currentPlayers, phases, onConfirm, onCa
     );
 }
 
-// --- COMPOSANT DÉTAILS DU MATCH ---
+// --- COMPOSANT DÉTAILS DU MATCH (Classique & Avancé) ---
 function GameDetailsModal({ game, isOpen, onClose, players }) {
     if (!game) return null;
 
-    // Récupération des stats
-    const pStats = game.playerStats || {};
-    const oppStats = game.opponentStats || {};
+    const [viewMode, setViewMode] = useState('classic'); // 'classic' | 'advanced'
 
-    // Helper pour trouver le nom d'un joueur
-    const getPlayerName = (id) => {
-        const p = players.find(pl => pl.id === parseInt(id));
-        return p ? p.name : `Joueur #${id}`;
-    };
+    // Calculs des stats avancées pour ce match spécifique
+    const statsData = useMemo(() => {
+        const pStats = game.playerStats || {};
+        const opp = game.opponentStats || {};
+        const teamScore = game.homeScore || 0;
+        const oppScore = game.awayScore || 0;
+
+        // 1. Totaux Équipe (Somme des joueurs)
+        let tFGM = 0, tFGA = 0, t3PM = 0, t3PA = 0, tFTM = 0, tFTA = 0;
+        let tORB = 0, tTOV = 0, tPTS = 0;
+        // Pour PIE
+        let tDRB = 0, tAST = 0, tSTL = 0, tBLK = 0, tPF = 0;
+
+        Object.values(pStats).forEach(s => {
+            tFGM += (s.fgm || 0) + (s.threePM || 0);
+            tFGA += (s.fga || 0) + (s.threePA || 0);
+            t3PM += (s.threePM || 0);
+            t3PA += (s.threePA || 0);
+            tFTM += (s.ftm || 0);
+            tFTA += (s.fta || 0);
+            tORB += (s.oreb || 0);
+            tTOV += (s.tov || 0);
+            tPTS += (s.pts || 0);
+            tDRB += (s.dreb || 0);
+            tAST += (s.ast || 0);
+            tSTL += (s.stl || 0);
+            tBLK += (s.blk || 0);
+            tPF += (s.pf || 0);
+        });
+
+        // 2. Totaux Adversaire (pour PIE et Ratings)
+        // Fallback si opponentStats est vide (comme dans GlobalStats)
+        const oppPTS = oppScore;
+        const oppFGM = opp.fgm || Math.round(oppPTS / 2.2);
+        const oppFTM = opp.ftm || 0;
+        const oppFGA = opp.fga || Math.round(oppPTS / 1.1);
+        const oppFTA = opp.fta || 0;
+        const oppDRB = opp.reb ? Math.round(opp.reb * 0.7) : 0;
+        const oppORB = opp.oreb || 0;
+        const oppAST = opp.ast || 0;
+        const oppSTL = 0; // Souvent non tracké
+        const oppBLK = opp.blk || 0;
+        const oppPF = opp.fouls || 0;
+        const oppTOV = opp.tov || 0;
+
+        // 3. Formules d'équipe
+        // Possessions = FGA + 0.44 * FTA - ORB + TO
+        const teamPoss = tFGA + 0.44 * tFTA - tORB + tTOV;
+        const teamORtg = teamPoss > 0 ? (tPTS / teamPoss) * 100 : 0;
+        const teamDRtg = teamPoss > 0 ? (oppPTS / teamPoss) * 100 : 0;
+        const teamNetRtg = teamORtg - teamDRtg;
+
+        // Dénominateur PIE du match (Team + Opp)
+        const gamePIEDenom = (tPTS + oppPTS) + (tFGM + oppFGM) + (tFTM + oppFTM) 
+                           - (tFGA + oppFGA) - (tFTA + oppFTA) + (tDRB + oppDRB) 
+                           + (0.5 * (tORB + oppORB)) + (tAST + oppAST) + (tSTL + oppSTL) 
+                           + (0.5 * (tBLK + oppBLK)) - (tPF + oppPF) - (tTOV + oppTOV);
+
+        // 4. Enrichissement des stats joueurs
+        const enrichedPlayers = Object.entries(pStats).map(([pid, s]) => {
+            const player = players.find(p => p.id === parseInt(pid));
+            const name = player ? player.name : `Joueur #${pid}`;
+            
+            // Basic
+            const fga = (s.fga || 0) + (s.threePA || 0);
+            const fgm = (s.fgm || 0) + (s.threePM || 0);
+            const fta = s.fta || 0;
+            const ftm = s.ftm || 0;
+            const pts = s.pts || 0;
+
+            // Advanced
+            // eFG% = (FGM + 0.5 * 3PM) / FGA
+            const eFG = fga > 0 ? ((fgm + 0.5 * (s.threePM || 0)) / fga) * 100 : 0;
+            // TS% = PTS / (2 * (FGA + 0.44 * FTA))
+            const ts = (fga + 0.44 * fta) > 0 ? (pts / (2 * (fga + 0.44 * fta))) * 100 : 0;
+            
+            // PIE Player
+            const playerPIENum = pts + fgm + ftm - fga - fta + (s.dreb || 0) + (0.5 * (s.oreb || 0)) 
+                               + (s.ast || 0) + (s.stl || 0) + (0.5 * (s.blk || 0)) - (s.pf || 0) - (s.tov || 0);
+            const pie = gamePIEDenom !== 0 ? (playerPIENum / gamePIEDenom) * 100 : 0;
+
+            return {
+                id: pid, name, ...s,
+                fga, fgm,
+                eFG: eFG.toFixed(1),
+                TS: ts.toFixed(1),
+                PIE: pie.toFixed(1)
+            };
+        });
+
+        return { 
+            team: { poss: teamPoss.toFixed(1), ORtg: teamORtg.toFixed(1), DRtg: teamDRtg.toFixed(1), Net: teamNetRtg.toFixed(1) },
+            oppStats: opp,
+            players: enrichedPlayers
+        };
+    }, [game, players]);
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={`Détails: vs ${game.opponent}`} size="max-w-4xl">
+        <Modal isOpen={isOpen} onClose={onClose} title={`Détails: vs ${game.opponent}`} size="max-w-5xl">
             <div className="space-y-6">
-                {/* Score Header */}
-                <div className="bg-slate-900 p-4 rounded-lg flex justify-between items-center border border-slate-700">
-                    <div className="text-center">
-                        <div className="text-xs text-slate-400 uppercase">Nous</div>
-                        <div className="text-3xl font-bold text-green-400">{game.homeScore}</div>
+                {/* Header Score & Team Stats */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="md:col-span-2 bg-slate-900 p-4 rounded-lg flex justify-between items-center border border-slate-700 relative overflow-hidden">
+                        <div className="text-center z-10">
+                            <div className="text-xs text-slate-400 uppercase">Nous</div>
+                            <div className="text-4xl font-bold text-green-400">{game.homeScore}</div>
+                        </div>
+                        <div className="flex flex-col items-center z-10">
+                            <span className="text-xl font-bold text-white uppercase tracking-wider">{game.opponent}</span>
+                            <span className="text-xs text-slate-500 mt-1">{game.date}</span>
+                        </div>
+                        <div className="text-center z-10">
+                            <div className="text-xs text-slate-400 uppercase">Eux</div>
+                            <div className="text-4xl font-bold text-red-400">{game.awayScore}</div>
+                        </div>
+                        {/* Background Decor */}
+                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-500 via-transparent to-red-500"></div>
                     </div>
-                    <div className="flex flex-col items-center">
-                        <span className="text-sm font-bold text-white uppercase">{game.opponent}</span>
-                        <span className="text-xs text-slate-500">{game.date}</span>
-                    </div>
-                    <div className="text-center">
-                        <div className="text-xs text-slate-400 uppercase">Eux</div>
-                        <div className="text-3xl font-bold text-red-400">{game.awayScore}</div>
+                    
+                    {/* Carte Stats Avancées Équipe */}
+                    <div className="bg-slate-800 p-4 rounded-lg border border-slate-600 flex flex-col justify-center">
+                        <div className="text-xs text-slate-400 uppercase mb-2 text-center border-b border-slate-700 pb-1">Performance Équipe</div>
+                        <div className="grid grid-cols-2 gap-y-2 gap-x-4">
+                            <div className="flex justify-between"><span className="text-slate-400 text-xs">Poss:</span> <span className="text-white font-mono">{statsData.team.poss}</span></div>
+                            <div className="flex justify-between"><span className="text-slate-400 text-xs">NetRtg:</span> <span className={`${parseFloat(statsData.team.Net) >= 0 ? 'text-green-400' : 'text-red-400'} font-bold text-xs`}>{statsData.team.Net}</span></div>
+                            <div className="flex justify-between"><span className="text-purple-400 text-xs">ORtg:</span> <span className="text-white font-mono">{statsData.team.ORtg}</span></div>
+                            <div className="flex justify-between"><span className="text-red-400 text-xs">DRtg:</span> <span className="text-white font-mono">{statsData.team.DRtg}</span></div>
+                        </div>
                     </div>
                 </div>
 
-                {/* Tableau Stats Joueurs */}
+                {/* Contrôles & Tableau */}
                 <div>
-                    <h4 className="text-orange-400 font-bold mb-2 text-sm uppercase">Statistiques Joueurs</h4>
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left text-xs text-slate-300">
-                            <thead className="bg-slate-700 text-white">
+                    <div className="flex justify-between items-center mb-3">
+                        <h4 className="text-orange-400 font-bold text-sm uppercase flex items-center gap-2">
+                            <Icon path={Icons.Users} /> Stats Joueurs
+                        </h4>
+                        <div className="flex bg-slate-800 rounded p-1 border border-slate-700">
+                            <button 
+                                onClick={() => setViewMode('classic')}
+                                className={`px-3 py-1 text-xs rounded transition-all ${viewMode === 'classic' ? 'bg-slate-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                            >Classique</button>
+                            <button 
+                                onClick={() => setViewMode('advanced')}
+                                className={`px-3 py-1 text-xs rounded transition-all ${viewMode === 'advanced' ? 'bg-slate-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                            >Avancé</button>
+                        </div>
+                    </div>
+
+                    <div className="overflow-x-auto bg-slate-900 rounded-lg border border-slate-700">
+                        <table className="w-full text-left text-xs text-slate-300 whitespace-nowrap">
+                            <thead className="bg-slate-800 text-white uppercase font-semibold">
                                 <tr>
-                                    <th className="p-2">Joueur</th>
-                                    <th className="p-2">MIN</th>
-                                    <th className="p-2 font-bold text-orange-300">PTS</th>
-                                    <th className="p-2">REB</th>
-                                    <th className="p-2">AST</th>
-                                    <th className="p-2">INT</th>
-                                    <th className="p-2">CTR</th>
-                                    <th className="p-2">BP</th>
-                                    <th className="p-2">FTE</th>
-                                    <th className="p-2">+/-</th>
+                                    <th className="p-3 sticky left-0 bg-slate-800 z-10 border-r border-slate-700">Joueur</th>
+                                    <th className="p-3 text-center">MIN</th>
+                                    {viewMode === 'classic' ? (
+                                        <>
+                                            <th className="p-3 text-center text-orange-400">PTS</th>
+                                            <th className="p-3 text-center">TIR</th>
+                                            <th className="p-3 text-center">3P</th>
+                                            <th className="p-3 text-center">LF</th>
+                                            <th className="p-3 text-center">REB</th>
+                                            <th className="p-3 text-center">AST</th>
+                                            <th className="p-3 text-center">INT</th>
+                                            <th className="p-3 text-center">CTR</th>
+                                            <th className="p-3 text-center">BP</th>
+                                            <th className="p-3 text-center">FTE</th>
+                                            <th className="p-3 text-center">+/-</th>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <th className="p-3 text-center text-orange-400">PTS</th>
+                                            <th className="p-3 text-center text-blue-300">eFG%</th>
+                                            <th className="p-3 text-center text-purple-300">TS%</th>
+                                            <th className="p-3 text-center text-cyan-400">PIE</th>
+                                            <th className="p-3 text-center">AST</th>
+                                            <th className="p-3 text-center">BP</th>
+                                            <th className="p-3 text-center text-yellow-400">+/-</th>
+                                        </>
+                                    )}
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-700">
-                                {Object.entries(pStats).map(([pid, s]) => (
-                                    <tr key={pid} className="hover:bg-slate-700/50">
-                                        <td className="p-2 font-bold text-white">{getPlayerName(pid)}</td>
-                                        <td className="p-2">{s.minutes}'</td>
-                                        <td className="p-2 font-bold text-orange-400">{s.pts}</td>
-                                        <td className="p-2 text-blue-300">{s.reb} <span className="text-[10px] text-slate-500">({s.oreb}/{s.dreb})</span></td>
-                                        <td className="p-2">{s.ast}</td>
-                                        <td className="p-2">{s.stl}</td>
-                                        <td className="p-2">{s.blk}</td>
-                                        <td className="p-2 text-red-300">{s.tov}</td>
-                                        <td className="p-2">{s.pf}</td>
-                                        <td className={`p-2 font-bold ${s.plusMinus >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                            {s.plusMinus > 0 ? '+' : ''}{s.plusMinus}
-                                        </td>
+                            <tbody className="divide-y divide-slate-800">
+                                {statsData.players.map(p => (
+                                    <tr key={p.id} className="hover:bg-slate-800/50 transition-colors">
+                                        <td className="p-3 font-bold text-white sticky left-0 bg-slate-900 z-10 border-r border-slate-800">{p.name}</td>
+                                        <td className="p-3 text-center text-slate-400">{p.minutes}</td>
+                                        {viewMode === 'classic' ? (
+                                            <>
+                                                <td className="p-3 text-center font-bold text-orange-400">{p.pts}</td>
+                                                <td className="p-3 text-center">{p.fgm}-{p.fga}</td>
+                                                <td className="p-3 text-center text-slate-400">{p.threePM}-{p.threePA}</td>
+                                                <td className="p-3 text-center text-slate-400">{p.ftm}-{p.fta}</td>
+                                                <td className="p-3 text-center font-bold">{p.reb} <span className="text-[10px] font-normal text-slate-500">({p.oreb}/{p.dreb})</span></td>
+                                                <td className="p-3 text-center">{p.ast}</td>
+                                                <td className="p-3 text-center">{p.stl}</td>
+                                                <td className="p-3 text-center">{p.blk}</td>
+                                                <td className="p-3 text-center text-red-400">{p.tov}</td>
+                                                <td className="p-3 text-center text-red-400">{p.pf}</td>
+                                                <td className={`p-3 text-center font-bold ${p.plusMinus >= 0 ? 'text-green-400' : 'text-red-400'}`}>{p.plusMinus > 0 ? '+' : ''}{p.plusMinus}</td>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <td className="p-3 text-center font-bold text-white">{p.pts}</td>
+                                                <td className="p-3 text-center text-blue-300 font-mono">{p.eFG}%</td>
+                                                <td className="p-3 text-center text-purple-300 font-mono">{p.TS}%</td>
+                                                <td className="p-3 text-center text-cyan-400 font-bold font-mono">{p.PIE}%</td>
+                                                <td className="p-3 text-center">{p.ast}</td>
+                                                <td className="p-3 text-center text-red-400">{p.tov}</td>
+                                                <td className={`p-3 text-center font-bold ${p.plusMinus >= 0 ? 'text-green-400' : 'text-red-400'}`}>{p.plusMinus > 0 ? '+' : ''}{p.plusMinus}</td>
+                                            </>
+                                        )}
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
                     </div>
                 </div>
-
-                {/* Stats Adversaire (Globales) */}
-                <div className="bg-slate-800/50 p-3 rounded border border-slate-700">
-                    <h4 className="text-slate-400 font-bold mb-2 text-xs uppercase">Stats Adversaire (Estimées)</h4>
-                    <div className="grid grid-cols-4 gap-4 text-center text-sm">
-                        <div><span className="block text-xs text-slate-500">FG</span> {oppStats.fgm}-{oppStats.fga}</div>
-                        <div><span className="block text-xs text-slate-500">LF</span> {oppStats.ftm}-{oppStats.fta}</div>
-                        <div><span className="block text-xs text-slate-500">REB</span> {oppStats.reb}</div>
-                        <div><span className="block text-xs text-slate-500">Fautes</span> {oppStats.fouls}</div>
-                    </div>
-                </div>
             </div>
         </Modal>
     );
 }
-
-// --- HISTORY ---
 // --- HISTORY ---
 function History({ games, players, setGames, phases, onEditGame, onImportClick, onMultiImport }) {
-    // 1. Nouvel état pour gérer le match sélectionné
     const [selectedGame, setSelectedGame] = useState(null);
 
     return (
@@ -1062,11 +1199,11 @@ function History({ games, players, setGames, phases, onEditGame, onImportClick, 
             {games.length === 0 && <div className="text-center text-slate-500 py-10">Aucun match enregistré</div>}
             
             {games.map(g => (
-                <Card key={g.id} className="p-0 overflow-hidden hover:border-orange-500/50 transition-colors">
+                <Card key={g.id} className="p-0 overflow-hidden group hover:border-orange-500/50 transition-colors">
                     <div className="flex justify-between items-stretch">
-                        {/* 2. Zone cliquable pour voir les détails */}
+                        {/* Zone Cliquable pour ouvrir les détails */}
                         <div 
-                            className="flex-1 p-4 cursor-pointer hover:bg-slate-700/30 transition-colors"
+                            className="flex-1 p-4 cursor-pointer group-hover:bg-slate-800/80 transition-colors"
                             onClick={() => setSelectedGame(g)}
                         >
                             <div className="flex items-center gap-2 text-sm text-slate-400">
@@ -1077,13 +1214,12 @@ function History({ games, players, setGames, phases, onEditGame, onImportClick, 
                                 <span className="text-green-400">{g.homeScore}</span> - <span className="text-red-400">{g.awayScore}</span> 
                                 <span className="text-slate-300 ml-2 text-base font-normal">vs {g.opponent}</span>
                             </div>
-                            <div className="text-xs text-slate-500 mt-2 flex gap-4">
-                                <span><Icon path={Icons.Users} className="inline w-3 h-3 mr-1"/>{Object.keys(g.playerStats || {}).length} joueurs</span>
-                                <span className="text-blue-400 hover:underline">Voir les stats &rarr;</span>
+                            <div className="text-xs text-orange-500/0 group-hover:text-orange-500 transition-all mt-2 flex items-center gap-1">
+                                <Icon path={Icons.Eye} className="w-3 h-3"/> Voir stats complètes &rarr;
                             </div>
                         </div>
 
-                        {/* Boutons d'action (ne déclenchent pas le détail du match) */}
+                        {/* Boutons d'action */}
                         <div className="flex flex-col justify-center gap-2 p-2 bg-slate-900/50 border-l border-slate-700">
                             <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); onEditGame(g); }}>
                                 <Icon path={Icons.Edit} />
@@ -1103,7 +1239,7 @@ function History({ games, players, setGames, phases, onEditGame, onImportClick, 
                 </Card>
             ))}
 
-            {/* 3. Intégration de la Modale de détails */}
+            {/* Intégration de la Modale Détails */}
             <GameDetailsModal 
                 game={selectedGame} 
                 isOpen={!!selectedGame} 
