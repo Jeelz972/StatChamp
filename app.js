@@ -10,7 +10,254 @@ const PRECONFIGURED_FIREBASE = {
     messagingSenderId: "862850988986",
     appId: "1:862850988986:web:47a2b48477015506f6fb83"
 };
+// ===========================================
+// FONCTIONS DE CALCUL DES RATINGS AVANCÉS
+// Basées sur les formules Basketball-Reference
+// À AJOUTER AU DÉBUT de ton app.js (après les imports)
+// ===========================================
 
+/**
+ * Calcule les ratings individuels avancés pour un match
+ * @param {Object} playerStats - Stats du joueur pour ce match
+ * @param {Object} teamStats - Stats totales de l'équipe
+ * @param {Object} oppStats - Stats de l'adversaire
+ * @returns {Object} { ORtg, DRtg, netRtg }
+ */
+const calculateIndividualRatings = (playerStats, teamStats, oppStats) => {
+    // Extraction des stats joueur
+    const s = playerStats;
+    const FGM = (s.fgm || 0) + (s.threePM || 0);
+    const FGA = (s.fga || 0) + (s.threePA || 0);
+    const FTM = s.ftm || 0;
+    const FTA = s.fta || 0;
+    const ORB = s.oreb || 0;
+    const DRB = s.dreb || 0;
+    const AST = s.ast || 0;
+    const STL = s.stl || 0;
+    const BLK = s.blk || 0;
+    const TOV = s.tov || 0;
+    const PF = s.pf || 0;
+    const PTS = s.pts || 0;
+    const MP = s.minutes || 1;
+    const threePM = s.threePM || 0;
+
+    // Stats équipe
+    const Team_FGM = teamStats.fgm || 1;
+    const Team_FGA = teamStats.fga || 1;
+    const Team_FTM = teamStats.ftm || 0;
+    const Team_FTA = teamStats.fta || 1;
+    const Team_ORB = teamStats.oreb || 0;
+    const Team_DRB = teamStats.dreb || 0;
+    const Team_AST = teamStats.ast || 0;
+    const Team_STL = teamStats.stl || 0;
+    const Team_BLK = teamStats.blk || 0;
+    const Team_PTS = teamStats.pts || 1;
+    const Team_TOV = teamStats.tov || 0;
+    const Team_PF = teamStats.pf || 1;
+    const Team_MP = teamStats.minutes || 200; // ~5 joueurs * 40 min
+    const Team_3PM = teamStats.threePM || 0;
+
+    // Stats adversaire
+    const Opp_FGM = oppStats.fgm || Math.round((oppStats.pts || 0) / 2.2);
+    const Opp_FGA = oppStats.fga || Math.round((oppStats.pts || 0) / 1.1);
+    const Opp_FTM = oppStats.ftm || 0;
+    const Opp_FTA = oppStats.fta || 1;
+    const Opp_ORB = oppStats.oreb || 0;
+    const Opp_DRB = oppStats.dreb || Math.round((oppStats.reb || 0) * 0.7);
+    const Opp_TOV = oppStats.tov || 0;
+    const Opp_PTS = oppStats.pts || 0;
+    const Opp_MP = Team_MP; // Même durée de match
+
+    // ========================================
+    // OFFENSIVE RATING (ORtg)
+    // ========================================
+
+    // Team_ORB% = Team_ORB / (Team_ORB + Opp_DRB)
+    const Team_ORB_Pct = (Team_ORB + Opp_DRB) > 0 ? Team_ORB / (Team_ORB + Opp_DRB) : 0;
+
+    // Team Possessions
+    const Team_Poss = Team_FGA + 0.4 * Team_FTA - 1.07 * (Team_ORB / (Team_ORB + Opp_DRB + 0.001)) * (Team_FGA - Team_FGM) + Team_TOV;
+
+    // Team Scoring Possessions (approximation)
+    const Team_FT_Part = (1 - Math.pow(1 - (Team_FTM / (Team_FTA || 1)), 2)) * 0.4 * Team_FTA;
+    const Team_Scoring_Poss = Team_FGM + Team_FT_Part;
+
+    // Team ORB Weight
+    const Team_ORB_Weight = ((1 - Team_ORB_Pct) * Team_Scoring_Poss) / (((1 - Team_ORB_Pct) * Team_Scoring_Poss) + Team_ORB_Pct * (Team_FGA - Team_FGM) + 0.001);
+
+    // Team Play% (approximation simplifiée)
+    const Team_Play_Pct = Team_Scoring_Poss / (Team_Poss || 1);
+
+    // qAST - facteur d'assistance
+    const MP_Pct = MP / (Team_MP / 5 || 1);
+    let qAST = 0;
+    if (FGM > 0 && Team_FGM > FGM) {
+        const qAST_Part1 = MP_Pct * (1.14 * ((Team_AST - AST) / (Team_FGM || 1)));
+        const qAST_Part2_Num = ((Team_AST / (Team_MP || 1)) * MP * 5 - AST);
+        const qAST_Part2_Denom = ((Team_FGM / (Team_MP || 1)) * MP * 5 - FGM) || 1;
+        const qAST_Part2 = (qAST_Part2_Num / qAST_Part2_Denom) * (1 - MP_Pct);
+        qAST = qAST_Part1 + qAST_Part2;
+    }
+    qAST = Math.max(0, Math.min(qAST, 1)); // Clamp entre 0 et 1
+
+    // FG_Part
+    const PTS_minus_FTM = PTS - FTM;
+    const FG_Part = FGA > 0 ? FGM * (1 - 0.5 * ((PTS_minus_FTM) / (2 * FGA || 1)) * qAST) : 0;
+
+    // AST_Part
+    const Team_PTS_minus_FTM = Team_PTS - Team_FTM;
+    const AST_Part = (Team_FGA - FGA) > 0 ? 0.5 * (((Team_PTS_minus_FTM) - (PTS_minus_FTM)) / (2 * (Team_FGA - FGA) || 1)) * AST : 0;
+
+    // FT_Part
+    const FT_Part = FTA > 0 ? (1 - Math.pow(1 - (FTM / FTA), 2)) * 0.4 * FTA : 0;
+
+    // ORB_Part
+    const ORB_Part = ORB * Team_ORB_Weight * Team_Play_Pct;
+
+    // ScPoss (Scoring Possessions)
+    const ScPoss_Factor = Team_Scoring_Poss > 0 ? (1 - (Team_ORB / (Team_Scoring_Poss || 1)) * Team_ORB_Weight * Team_Play_Pct) : 1;
+    const ScPoss = (FG_Part + AST_Part + FT_Part) * ScPoss_Factor + ORB_Part;
+
+    // FGxPoss (Missed FG Possessions)
+    const FGxPoss = (FGA - FGM) * (1 - 1.07 * Team_ORB_Pct);
+
+    // FTxPoss (Missed FT Possessions)
+    const FTxPoss = FTA > 0 ? Math.pow(1 - (FTM / FTA), 2) * 0.4 * FTA : 0;
+
+    // TotPoss (Total Possessions utilisées)
+    const TotPoss = ScPoss + FGxPoss + FTxPoss + TOV;
+
+    // PProd_FG_Part
+    const PProd_FG_Part = FGA > 0 ? 2 * (FGM + 0.5 * threePM) * (1 - 0.5 * ((PTS_minus_FTM) / (2 * FGA || 1)) * qAST) : 0;
+
+    // PProd_AST_Part
+    let PProd_AST_Part = 0;
+    if ((Team_FGM - FGM) > 0 && (Team_FGA - FGA) > 0) {
+        const assist_factor = 2 * ((Team_FGM - FGM + 0.5 * (Team_3PM - threePM)) / (Team_FGM - FGM || 1));
+        PProd_AST_Part = assist_factor * 0.5 * (((Team_PTS_minus_FTM) - (PTS_minus_FTM)) / (2 * (Team_FGA - FGA) || 1)) * AST;
+    }
+
+    // PProd_ORB_Part
+    const Team_FT_Scoring = Team_FTA > 0 ? (1 - Math.pow(1 - (Team_FTM / Team_FTA), 2)) * 0.4 * Team_FTA : 0;
+    const Team_Pts_Per_Score = (Team_FGM + Team_FT_Scoring) > 0 ? Team_PTS / (Team_FGM + Team_FT_Scoring) : 2;
+    const PProd_ORB_Part = ORB * Team_ORB_Weight * Team_Play_Pct * Team_Pts_Per_Score;
+
+    // PProd (Points Produced)
+    const PProd = (PProd_FG_Part + PProd_AST_Part + FTM) * ScPoss_Factor + PProd_ORB_Part;
+
+    // ORtg final
+    const ORtg = TotPoss > 0 ? 100 * (PProd / TotPoss) : 0;
+
+    // ========================================
+    // DEFENSIVE RATING (DRtg)
+    // ========================================
+
+    // DOR% (Defensive Opponent Rebounding %)
+    const DOR_Pct = (Opp_ORB + Team_DRB) > 0 ? Opp_ORB / (Opp_ORB + Team_DRB) : 0;
+
+    // DFG% (Opponent FG%)
+    const DFG_Pct = Opp_FGA > 0 ? Opp_FGM / Opp_FGA : 0.45;
+
+    // FMwt (Floor Percentage Weight)
+    const FMwt_Num = DFG_Pct * (1 - DOR_Pct);
+    const FMwt_Denom = DFG_Pct * (1 - DOR_Pct) + (1 - DFG_Pct) * DOR_Pct;
+    const FMwt = FMwt_Denom > 0 ? FMwt_Num / FMwt_Denom : 0.5;
+
+    // Stops1
+    const Stops1 = STL + BLK * FMwt * (1 - 1.07 * DOR_Pct) + DRB * (1 - FMwt);
+
+    // Stops2
+    const Opp_Missed_FG = Opp_FGA - Opp_FGM;
+    const Stops2_Part1 = Team_MP > 0 ? ((Opp_Missed_FG - Team_BLK) / Team_MP) * FMwt * (1 - 1.07 * DOR_Pct) : 0;
+    const Stops2_Part2 = Team_MP > 0 ? ((Opp_TOV - Team_STL) / Team_MP) : 0;
+    const Stops2_Part3 = Team_PF > 0 && Opp_FTA > 0 ? (PF / Team_PF) * 0.4 * Opp_FTA * Math.pow(1 - (Opp_FTM / Opp_FTA), 2) : 0;
+    const Stops2 = (Stops2_Part1 + Stops2_Part2) * MP + Stops2_Part3;
+
+    // Total Stops
+    const Stops = Stops1 + Stops2;
+
+    // Stop%
+    const Stop_Pct = (Team_Poss * MP) > 0 ? (Stops * Opp_MP) / (Team_Poss * MP) : 0;
+
+    // Team DRtg
+    const Team_DRtg = Team_Poss > 0 ? 100 * (Opp_PTS / Team_Poss) : 100;
+
+    // D_Pts_per_ScPoss (Points par possession scoring adverse)
+    const Opp_FT_Scoring = Opp_FTA > 0 ? (1 - Math.pow(1 - (Opp_FTM / Opp_FTA), 2)) * Opp_FTA * 0.4 : 0;
+    const Opp_Scoring_Poss = Opp_FGM + Opp_FT_Scoring;
+    const D_Pts_per_ScPoss = Opp_Scoring_Poss > 0 ? Opp_PTS / Opp_Scoring_Poss : 2;
+
+    // DRtg final
+    const DRtg = Team_DRtg + 0.2 * (100 * D_Pts_per_ScPoss * (1 - Stop_Pct) - Team_DRtg);
+
+    // Net Rating
+    const netRtg = ORtg - DRtg;
+
+    return {
+        ORtg: isFinite(ORtg) ? ORtg : 0,
+        DRtg: isFinite(DRtg) ? DRtg : 100,
+        netRtg: isFinite(netRtg) ? netRtg : 0,
+        // Debug values (optionnel)
+        debug: {
+            TotPoss: TotPoss.toFixed(2),
+            PProd: PProd.toFixed(2),
+            Stops: Stops.toFixed(2),
+            Stop_Pct: (Stop_Pct * 100).toFixed(1) + '%'
+        }
+    };
+};
+
+/**
+ * Agrège les stats d'équipe à partir des stats joueurs
+ */
+const aggregateTeamStats = (playerStats) => {
+    const team = {
+        fgm: 0, fga: 0, ftm: 0, fta: 0, oreb: 0, dreb: 0,
+        ast: 0, stl: 0, blk: 0, tov: 0, pf: 0, pts: 0,
+        minutes: 0, threePM: 0
+    };
+    
+    Object.values(playerStats).forEach(s => {
+        team.fgm += (s.fgm || 0) + (s.threePM || 0);
+        team.fga += (s.fga || 0) + (s.threePA || 0);
+        team.ftm += (s.ftm || 0);
+        team.fta += (s.fta || 0);
+        team.oreb += (s.oreb || 0);
+        team.dreb += (s.dreb || 0);
+        team.ast += (s.ast || 0);
+        team.stl += (s.stl || 0);
+        team.blk += (s.blk || 0);
+        team.tov += (s.tov || 0);
+        team.pf += (s.pf || 0);
+        team.pts += (s.pts || 0);
+        team.minutes += (s.minutes || 0);
+        team.threePM += (s.threePM || 0);
+    });
+    
+    return team;
+};
+
+/**
+ * Prépare les stats adversaire avec fallbacks
+ */
+const prepareOpponentStats = (oppStats, awayScore) => {
+    const pts = awayScore || oppStats.pts || 0;
+    return {
+        pts: pts,
+        fgm: oppStats.fgm || Math.round(pts / 2.2),
+        fga: oppStats.fga || Math.round(pts / 1.1),
+        ftm: oppStats.ftm || 0,
+        fta: oppStats.fta || Math.max(1, Math.round(pts * 0.2)),
+        oreb: oppStats.oreb || 0,
+        dreb: oppStats.reb ? Math.round(oppStats.reb * 0.7) : Math.round(pts * 0.3),
+        reb: oppStats.reb || Math.round(pts * 0.4),
+        ast: oppStats.ast || Math.round(pts * 0.15),
+        tov: oppStats.tov || Math.round(pts * 0.1),
+        stl: 0,
+        blk: oppStats.blk || 0,
+        fouls: oppStats.fouls || 0
+    };
+};
 // ==========================================
 const { useState, useEffect, useMemo } = React;
 const { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Legend, AreaChart, Area } = window.Recharts || {};
@@ -221,8 +468,9 @@ function LiveTracker({ players, onSaveGame, initialGame, phases, selectedPhase }
     );
 }
 
-// --- GLOBAL STATS avec améliorations ---
-// REMPLACE la fonction GlobalStats existante dans ton app.js
+// --- GLOBAL STATS avec Ratings Avancés (Basketball-Reference) ---
+// REMPLACE la fonction GlobalStats dans ton app.js
+// IMPORTANT: Assure-toi d'avoir ajouté les fonctions de calcul avant cette fonction
 
 function GlobalStats({ players, games, phases }) {
     const [selectedPlayer, setSelectedPlayer] = useState(null);
@@ -236,7 +484,6 @@ function GlobalStats({ players, games, phases }) {
 
     const filteredGames = useMemo(() => phaseFilter === 'all' ? games : games.filter(g => g.phase === phaseFilter), [games, phaseFilter]);
 
-    // Calcul des stats agrégées avec logs pour graphiques
     const aggregated = useMemo(() => {
         const stats = {};
         players.forEach(p => { 
@@ -245,89 +492,44 @@ function GlobalStats({ players, games, phases }) {
                 gamesPlayed: 0, 
                 total: { 
                     pts: 0, reb: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, tov: 0, min: 0, eff: 0, 
-                    fgm: 0, fga: 0, threePM: 0, threePA: 0, ftm: 0, fta: 0, pf: 0, plusMinus: 0, pie: 0,
-                    // Nouveaux accumulateurs pour ratings individuels
-                    pointsProduits: 0,
-                    possUtilisees: 0,
-                    stopsEstimes: 0
+                    fgm: 0, fga: 0, threePM: 0, threePA: 0, ftm: 0, fta: 0, pf: 0, plusMinus: 0, pie: 0
                 }, 
-                totalMinPlayed: 0, 
-                // On garde ces accumulateurs pour les logs par match
-                weightedORtg: 0, 
-                weightedDRtg: 0,
-                totalTeamDRtg: 0,
+                // Accumulateurs pour moyennes pondérées des ratings
+                totalORtg: 0,
+                totalDRtg: 0,
+                totalMinPlayed: 0,
                 logs: [], 
                 records: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, eff: 0 } 
             }; 
         });
 
         filteredGames.forEach(g => {
-            // Calculer les totaux du match pour le PIE et les ratings équipe
-            let gamePTS = 0, gameFGM = 0, gameFTM = 0, gameFGA = 0, gameFTA = 0;
-            let gameDRB = 0, gameORB = 0, gameAST = 0, gameSTL = 0, gameBLK = 0, gamePF = 0, gameTO = 0;
-            let teamFGA = 0, teamFTA = 0, teamORB = 0, teamTO = 0, teamPTS = 0;
-            let teamDRB = 0, teamSTL = 0, teamBLK = 0;
-            let totalMinutes = 0;
-            
-            // Stats équipe
-            Object.values(g.playerStats).forEach(s => {
-                gamePTS += s.pts || 0;
-                gameFGM += (s.fgm || 0) + (s.threePM || 0);
-                gameFTM += s.ftm || 0;
-                gameFGA += (s.fga || 0) + (s.threePA || 0);
-                gameFTA += s.fta || 0;
-                gameDRB += s.dreb || 0;
-                gameORB += s.oreb || 0;
-                gameAST += s.ast || 0;
-                gameSTL += s.stl || 0;
-                gameBLK += s.blk || 0;
-                gamePF += s.pf || 0;
-                gameTO += s.tov || 0;
-                
-                teamFGA += (s.fga || 0) + (s.threePA || 0);
-                teamFTA += s.fta || 0;
-                teamORB += s.oreb || 0;
-                teamTO += s.tov || 0;
-                teamPTS += s.pts || 0;
-                teamDRB += s.dreb || 0;
-                teamSTL += s.stl || 0;
-                teamBLK += s.blk || 0;
-                totalMinutes += s.minutes || 0;
-            });
-            
-            // Ajouter stats adversaire pour PIE
-            const opp = g.opponentStats || {};
+            // Agrégation des stats équipe pour ce match
+            const teamStats = aggregateTeamStats(g.playerStats);
+            const oppStatsPrepped = prepareOpponentStats(g.opponentStats || {}, g.awayScore);
+
+            // Stats pour PIE
+            const tFGM = teamStats.fgm, tFGA = teamStats.fga, tFTM = teamStats.ftm, tFTA = teamStats.fta;
+            const tORB = teamStats.oreb, tDRB = teamStats.dreb, tAST = teamStats.ast;
+            const tSTL = teamStats.stl, tBLK = teamStats.blk, tPF = teamStats.pf, tTOV = teamStats.tov;
+            const tPTS = teamStats.pts;
+
+            const oppFGM = oppStatsPrepped.fgm, oppFGA = oppStatsPrepped.fga;
+            const oppFTM = oppStatsPrepped.ftm, oppFTA = oppStatsPrepped.fta;
+            const oppORB = oppStatsPrepped.oreb, oppDRB = oppStatsPrepped.dreb;
+            const oppAST = oppStatsPrepped.ast, oppBLK = oppStatsPrepped.blk || 0;
+            const oppPF = oppStatsPrepped.fouls || 0, oppTOV = oppStatsPrepped.tov;
             const oppPTS = g.awayScore || 0;
-            gamePTS += oppPTS;
-            gameFGM += opp.fgm || Math.round(oppPTS / 2.2);
-            gameFTM += opp.ftm || 0;
-            gameFGA += opp.fga || Math.round(oppPTS / 1.1);
-            gameFTA += opp.fta || 0;
-            gameDRB += opp.reb ? Math.round(opp.reb * 0.7) : 0;
-            gameORB += opp.oreb || 0;
-            gameAST += opp.ast || 0;
-            gameBLK += opp.blk || 0;
-            gamePF += opp.fouls || 0;
-            gameTO += opp.tov || 0;
 
-            // Stats adversaire pour DRtg individuel
-            const oppFGA = opp.fga || Math.round(oppPTS / 1.1);
-            const oppFGM = opp.fgm || Math.round(oppPTS / 2.2);
-            const oppMissedFG = oppFGA - oppFGM;
-            
-            // Dénominateur PIE du match
-            const gamePIEDenom = gamePTS + gameFGM + gameFTM - gameFGA - gameFTA + gameDRB + (0.5 * gameORB) + gameAST + gameSTL + (0.5 * gameBLK) - gamePF - gameTO;
-            
-            // Possessions équipe pour ce match: FGA + 0.44 * FTA - ORB + TO
-            const teamPoss = teamFGA + 0.44 * teamFTA - teamORB + teamTO;
-            
-            // Ratings équipe pour ce match
-            const teamORtg = teamPoss > 0 ? (teamPTS / teamPoss) * 100 : 100;
-            const teamDRtg = teamPoss > 0 ? (oppPTS / teamPoss) * 100 : 100;
+            const gamePIEDenom = (tPTS + oppPTS) + (tFGM + oppFGM) + (tFTM + oppFTM) 
+                               - (tFGA + oppFGA) - (tFTA + oppFTA) + (tDRB + oppDRB) 
+                               + (0.5 * (tORB + oppORB)) + (tAST + oppAST) + tSTL 
+                               + (0.5 * (tBLK + oppBLK)) - (tPF + oppPF) - (tTOV + oppTOV);
 
-            // Nombre de joueurs pour moyenne de stops
-            const numPlayers = Object.keys(g.playerStats).length || 1;
-            const avgStopsPerPlayer = (teamSTL + 0.5 * teamBLK + oppMissedFG) / numPlayers;
+            // Team ratings pour ce match
+            const Team_Poss = tFGA + 0.4 * tFTA - 1.07 * (tORB / (tORB + oppDRB + 0.001)) * (tFGA - tFGM) + tTOV;
+            const teamORtg = Team_Poss > 0 ? (tPTS / Team_Poss) * 100 : 100;
+            const teamDRtg = Team_Poss > 0 ? (oppPTS / Team_Poss) * 100 : 100;
 
             Object.entries(g.playerStats).forEach(([pid, s]) => {
                 const id = parseInt(pid);
@@ -337,45 +539,29 @@ function GlobalStats({ players, games, phases }) {
                     
                     stats[id].gamesPlayed += 1;
                     stats[id].totalMinPlayed += playerMin;
-                    
-                    // Pondérer les ratings par les minutes jouées (pour les logs)
-                    stats[id].weightedORtg += teamORtg * playerMin;
-                    stats[id].weightedDRtg += teamDRtg * playerMin;
-                    
+
+                    // Accumulation des stats de base
                     t.pts += (s.pts || 0); t.reb += (s.reb || 0); t.oreb += (s.oreb || 0); t.dreb += (s.dreb || 0);
                     t.ast += (s.ast || 0); t.stl += (s.stl || 0); t.blk += (s.blk || 0); t.tov += (s.tov || 0); t.min += playerMin;
                     t.fgm += (s.fgm || 0); t.fga += (s.fga || 0); t.threePM += (s.threePM || 0); t.threePA += (s.threePA || 0);
                     t.ftm += (s.ftm || 0); t.fta += (s.fta || 0); t.pf += (s.pf || 0); t.plusMinus += (s.plusMinus || 0);
 
-                    // === ACCUMULATEURS POUR RATINGS INDIVIDUELS ===
+                    // Calcul des ratings individuels pour ce match
+                    const ratings = calculateIndividualRatings(s, teamStats, oppStatsPrepped);
+                    
+                    // Pondération par minutes jouées
+                    stats[id].totalORtg += ratings.ORtg * playerMin;
+                    stats[id].totalDRtg += ratings.DRtg * playerMin;
+
+                    // Évaluation
                     const playerFGA = (s.fga || 0) + (s.threePA || 0);
-                    const playerFTA = s.fta || 0;
-                    const playerTOV = s.tov || 0;
-                    const playerAST = s.ast || 0;
-                    const playerPTS = s.pts || 0;
-                    const playerSTL = s.stl || 0;
-                    const playerBLK = s.blk || 0;
-                    const playerDREB = s.dreb || 0;
-
-                    // ORtg: Points Produits et Possessions Utilisées
-                    t.pointsProduits += playerPTS + (playerAST * 2.5);
-                    t.possUtilisees += playerFGA + 0.44 * playerFTA + playerTOV;
-
-                    // DRtg: Stops estimés
-                    const drebShare = teamDRB > 0 ? playerDREB / teamDRB : 0;
-                    const playerStops = playerSTL + (0.5 * playerBLK) + (drebShare * oppMissedFG);
-                    t.stopsEstimes += playerStops;
-                    
-                    // Accumuler le DRtg équipe et la moyenne de stops pour calcul final
-                    stats[id].totalTeamDRtg += teamDRtg;
-                    
                     const playerFGM = (s.fgm || 0) + (s.threePM || 0);
                     const missedFG = playerFGA - playerFGM;
                     const missedFT = (s.fta || 0) - (s.ftm || 0);
                     const evalStat = (s.pts + s.reb + s.ast + s.stl + s.blk) - (missedFG + missedFT + s.tov);
                     t.eff += evalStat;
 
-                    // PIE du match pour ce joueur
+                    // PIE
                     const playerPIENum = (s.pts || 0) + playerFGM + (s.ftm || 0) - playerFGA - (s.fta || 0) + (s.dreb || 0) + (0.5 * (s.oreb || 0)) + (s.ast || 0) + (s.stl || 0) + (0.5 * (s.blk || 0)) - (s.pf || 0) - (s.tov || 0);
                     const playerPIE = gamePIEDenom !== 0 ? (playerPIENum / gamePIEDenom) * 100 : 0;
                     t.pie += playerPIE;
@@ -388,18 +574,9 @@ function GlobalStats({ players, games, phases }) {
                     if (s.blk > stats[id].records.blk) stats[id].records.blk = s.blk;
                     if (evalStat > stats[id].records.eff) stats[id].records.eff = evalStat;
 
-                    // Stats du match pour les logs - RATINGS INDIVIDUELS PAR MATCH
+                    // Stats du match pour les logs
                     const gameEFG = playerFGA > 0 ? ((playerFGM + 0.5 * (s.threePM || 0)) / playerFGA) * 100 : 0;
                     const gameTS = (playerFGA + 0.44 * (s.fta || 0)) > 0 ? ((s.pts || 0) / (2 * (playerFGA + 0.44 * (s.fta || 0)))) * 100 : 0;
-
-                    // ORtg individuel du match
-                    const matchPointsProduits = playerPTS + (playerAST * 2.5);
-                    const matchPossUtilisees = playerFGA + 0.44 * playerFTA + playerTOV;
-                    const matchORtg = matchPossUtilisees > 0 ? (matchPointsProduits / matchPossUtilisees) * 100 : 0;
-
-                    // DRtg individuel du match
-                    const stopsDiff = playerStops - avgStopsPerPlayer;
-                    const matchDRtg = teamDRtg - (stopsDiff * 2);
 
                     stats[id].logs.push({ 
                         date: g.date, 
@@ -411,8 +588,8 @@ function GlobalStats({ players, games, phases }) {
                         eff: evalStat, 
                         eFG: gameEFG.toFixed(1), 
                         TS: gameTS.toFixed(1), 
-                        ORtg: matchORtg.toFixed(1),
-                        DRtg: matchDRtg.toFixed(1),
+                        ORtg: ratings.ORtg.toFixed(1),
+                        DRtg: ratings.DRtg.toFixed(1),
                         PIE: playerPIE.toFixed(1),
                         min: s.minutes 
                     });
@@ -438,7 +615,6 @@ function GlobalStats({ players, games, phases }) {
             const t = p.total;
             const totalMin = p.totalMinPlayed || 1;
             
-            // FGA total inclut les 3PA
             const totalFGA = t.fga + t.threePA;
             const totalFGM = t.fgm + t.threePM;
             
@@ -446,25 +622,14 @@ function GlobalStats({ players, games, phases }) {
             const threePct = t.threePA > 0 ? ((t.threePM / t.threePA) * 100).toFixed(1) : "0.0";
             const ftPct = t.fta > 0 ? ((t.ftm / t.fta) * 100).toFixed(1) : "0.0";
             
-            // eFG% et TS% calculés sur les totaux
             const eFG = totalFGA > 0 ? (((totalFGM + 0.5 * t.threePM) / totalFGA) * 100).toFixed(1) : "0.0";
             const ts = (totalFGA + 0.44 * t.fta) > 0 ? ((t.pts / (2 * (totalFGA + 0.44 * t.fta))) * 100).toFixed(1) : "0.0";
             
-            // === RATINGS INDIVIDUELS MOYENS ===
-            // ORtg individuel = Points Produits totaux / Possessions Utilisées totales × 100
-            const ortg = t.possUtilisees > 0 ? ((t.pointsProduits / t.possUtilisees) * 100).toFixed(1) : "0.0";
-            
-            // DRtg individuel = DRtg équipe moyen ajusté par les stops
-            const avgTeamDRtg = p.totalTeamDRtg / gp;
-            const avgStopsPerGame = t.stopsEstimes / gp;
-            // On compare aux stops moyens attendus (environ 2-3 par match pour un joueur moyen)
-            const expectedStopsPerGame = 2.5;
-            const stopsDiffAvg = avgStopsPerGame - expectedStopsPerGame;
-            const drtg = (avgTeamDRtg - (stopsDiffAvg * 2)).toFixed(1);
-            
+            // Ratings individuels moyens pondérés par les minutes
+            const ortg = (p.totalORtg / totalMin).toFixed(1);
+            const drtg = (p.totalDRtg / totalMin).toFixed(1);
             const netRtg = (parseFloat(ortg) - parseFloat(drtg)).toFixed(1);
             
-            // PIE moyen
             const avgPIE = (t.pie / gp).toFixed(1);
             
             return { 
@@ -502,124 +667,36 @@ function GlobalStats({ players, games, phases }) {
         }).filter(p => p.gamesPlayed > 0);
     }, [players, filteredGames]);
 
-    // Team Trends Data avec logs
     const teamTrendsData = useMemo(() => {
         const parseFrenchDate = (dateStr) => {
-            const months = {
-                'janv': 0, 'jan': 0, 'janvier': 0,
-                'févr': 1, 'fév': 1, 'fevr': 1, 'fev': 1, 'février': 1, 'fevrier': 1,
-                'mars': 2, 'mar': 2,
-                'avr': 3, 'avril': 3,
-                'mai': 4,
-                'juin': 5, 'jun': 5,
-                'juil': 6, 'jul': 6, 'juillet': 6,
-                'août': 7, 'aout': 7, 'aoû': 7,
-                'sept': 8, 'sep': 8, 'septembre': 8,
-                'oct': 9, 'octobre': 9,
-                'nov': 10, 'novembre': 10,
-                'déc': 11, 'dec': 11, 'décembre': 11, 'decembre': 11
-            };
-            
+            const months = { 'janv': 0, 'jan': 0, 'janvier': 0, 'févr': 1, 'fév': 1, 'fevr': 1, 'fev': 1, 'février': 1, 'fevrier': 1, 'mars': 2, 'mar': 2, 'avr': 3, 'avril': 3, 'mai': 4, 'juin': 5, 'jun': 5, 'juil': 6, 'jul': 6, 'juillet': 6, 'août': 7, 'aout': 7, 'aoû': 7, 'sept': 8, 'sep': 8, 'septembre': 8, 'oct': 9, 'octobre': 9, 'nov': 10, 'novembre': 10, 'déc': 11, 'dec': 11, 'décembre': 11, 'decembre': 11 };
             const match = dateStr.match(/(\d{1,2})\s+([a-zéûô]+)\.?\s+(\d{4})/i);
-            if (match) {
-                const day = parseInt(match[1]);
-                const monthStr = match[2].toLowerCase().replace('.', '');
-                const year = parseInt(match[3]);
-                const month = months[monthStr];
-                if (month !== undefined) {
-                    return new Date(year, month, day);
-                }
-            }
-            
+            if (match) { const month = months[match[2].toLowerCase().replace('.', '')]; if (month !== undefined) return new Date(match[3], month, match[1]); }
             const slashMatch = dateStr.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-            if (slashMatch) {
-                return new Date(slashMatch[3], slashMatch[2] - 1, slashMatch[1]);
-            }
-            
+            if (slashMatch) return new Date(slashMatch[3], slashMatch[2] - 1, slashMatch[1]);
             return new Date(dateStr);
         };
         
-        const data = filteredGames.map((g, index) => {
-            let totalPts = 0, totalFGA = 0, totalFTA = 0, totalTOV = 0, totalORB = 0;
-            
-            Object.values(g.playerStats).forEach(s => { 
-                totalPts += s.pts || 0; 
-                totalFGA += (s.fga || 0) + (s.threePA || 0);
-                totalFTA += s.fta || 0;
-                totalTOV += s.tov || 0;
-                totalORB += s.oreb || 0;
-            });
-            
-            const totalPoss = totalFGA + 0.44 * totalFTA - totalORB + totalTOV;
-            const totalPtsAllowed = g.awayScore || 0;
-            
-            const ortg = totalPoss > 0 ? (totalPts / totalPoss) * 100 : 0;
-            const drtg = totalPoss > 0 ? (totalPtsAllowed / totalPoss) * 100 : 100;
-            
-            const dateObj = parseFrenchDate(g.date);
-            
-            return { 
-                date: g.date, 
-                dateTimestamp: dateObj.getTime(),
-                opponent: g.opponent, 
-                ORtg: parseFloat(ortg.toFixed(1)), 
-                DRtg: parseFloat(drtg.toFixed(1)), 
-                NetRtg: parseFloat((ortg - drtg).toFixed(1)), 
-                score: g.homeScore, 
-                conceded: g.awayScore 
-            };
-        });
-        
-        return data.sort((a, b) => a.dateTimestamp - b.dateTimestamp);
+        return filteredGames.map(g => {
+            const teamStats = aggregateTeamStats(g.playerStats);
+            const oppStats = prepareOpponentStats(g.opponentStats || {}, g.awayScore);
+            const Team_Poss = teamStats.fga + 0.4 * teamStats.fta - 1.07 * (teamStats.oreb / (teamStats.oreb + oppStats.dreb + 0.001)) * (teamStats.fga - teamStats.fgm) + teamStats.tov;
+            const ortg = Team_Poss > 0 ? (teamStats.pts / Team_Poss) * 100 : 0;
+            const drtg = Team_Poss > 0 ? ((g.awayScore || 0) / Team_Poss) * 100 : 100;
+            return { date: g.date, dateTimestamp: parseFrenchDate(g.date).getTime(), opponent: g.opponent, ORtg: parseFloat(ortg.toFixed(1)), DRtg: parseFloat(drtg.toFixed(1)), NetRtg: parseFloat((ortg - drtg).toFixed(1)), score: g.homeScore, conceded: g.awayScore };
+        }).sort((a, b) => a.dateTimestamp - b.dateTimestamp);
     }, [filteredGames]);
 
-    // Heatmap Data
     const heatmapData = useMemo(() => {
-        const categories = [
-            { key: 'pts', label: 'PTS' },
-            { key: 'reb', label: 'REB' },
-            { key: 'ast', label: 'AST' },
-            { key: 'stl', label: 'INT' },
-            { key: 'blk', label: 'CTR' },
-            { key: 'tov', label: 'BP', inverse: true },
-            { key: 'fgPct', label: 'FG%' },
-            { key: 'threePct', label: '3P%' },
-            { key: 'ftPct', label: 'LF%' },
-            { key: 'eFG', label: 'eFG%' },
-            { key: 'TS', label: 'TS%' },
-            { key: 'plusMinus', label: '+/-' },
-            { key: 'eff', label: 'ÉVAL' },
-            { key: 'ORtg', label: 'ORtg' },
-            { key: 'DRtg', label: 'DRtg', inverse: true },
-            { key: 'netRtg', label: 'NetRtg' },
-            { key: 'PIE', label: 'PIE' }
-        ];
-        const maxValues = {};
-        const minValues = {};
-        categories.forEach(cat => {
-            const values = aggregated.map(p => parseFloat(p.avg[cat.key]) || 0);
-            maxValues[cat.key] = Math.max(...values, 1);
-            minValues[cat.key] = Math.min(...values, 0);
-        });
+        const categories = [{ key: 'pts', label: 'PTS' }, { key: 'reb', label: 'REB' }, { key: 'ast', label: 'AST' }, { key: 'stl', label: 'INT' }, { key: 'blk', label: 'CTR' }, { key: 'tov', label: 'BP', inverse: true }, { key: 'fgPct', label: 'FG%' }, { key: 'threePct', label: '3P%' }, { key: 'ftPct', label: 'LF%' }, { key: 'eFG', label: 'eFG%' }, { key: 'TS', label: 'TS%' }, { key: 'plusMinus', label: '+/-' }, { key: 'eff', label: 'ÉVAL' }, { key: 'ORtg', label: 'ORtg' }, { key: 'DRtg', label: 'DRtg', inverse: true }, { key: 'netRtg', label: 'NetRtg' }, { key: 'PIE', label: 'PIE' }];
+        const maxValues = {}, minValues = {};
+        categories.forEach(cat => { const values = aggregated.map(p => parseFloat(p.avg[cat.key]) || 0); maxValues[cat.key] = Math.max(...values, 1); minValues[cat.key] = Math.min(...values, 0); });
         return { categories, maxValues, minValues, players: aggregated };
     }, [aggregated]);
 
-    // Radar data pour comparaison
     const getRadarData = (p1, p2) => {
         if (!p1 || !p2) return [];
-        const categories = [
-            { key: 'pts', label: 'Points' },
-            { key: 'reb', label: 'Rebonds' },
-            { key: 'ast', label: 'Passes' },
-            { key: 'stl', label: 'Interceptions' },
-            { key: 'eFG', label: 'eFG%' },
-            { key: 'PIE', label: 'PIE' }
-        ];
-        return categories.map(c => ({
-            category: c.label,
-            [p1.info.name]: parseFloat(p1.avg[c.key]) || 0,
-            [p2.info.name]: parseFloat(p2.avg[c.key]) || 0
-        }));
+        return [{ key: 'pts', label: 'Points' }, { key: 'reb', label: 'Rebonds' }, { key: 'ast', label: 'Passes' }, { key: 'stl', label: 'Interceptions' }, { key: 'eFG', label: 'eFG%' }, { key: 'PIE', label: 'PIE' }].map(c => ({ category: c.label, [p1.info.name]: parseFloat(p1.avg[c.key]) || 0, [p2.info.name]: parseFloat(p2.avg[c.key]) || 0 }));
     };
 
     return (
@@ -663,11 +740,9 @@ function GlobalStats({ players, games, phases }) {
                 </div>
             </Card>
 
-            {/* Modal Joueur avec Records et Graphiques */}
             <Modal isOpen={!!selectedPlayer} onClose={() => setSelectedPlayer(null)} title={<><Icon path={Icons.Trophy} className="text-yellow-400" /> {selectedPlayer?.info.name}</>}>
                 {selectedPlayer && (
                     <div className="space-y-6">
-                        {/* Stats moyennes */}
                         <div className="grid grid-cols-5 gap-2 bg-slate-900 p-4 rounded-lg">
                             <div className="text-center"><div className="text-xs text-slate-500">Points</div><div className="text-2xl font-bold text-white">{selectedPlayer.avg.pts}</div></div>
                             <div className="text-center"><div className="text-xs text-slate-500">Rebonds</div><div className="text-2xl font-bold text-white">{selectedPlayer.avg.reb}</div></div>
@@ -675,8 +750,6 @@ function GlobalStats({ players, games, phases }) {
                             <div className="text-center"><div className="text-xs text-slate-500">Éval</div><div className="text-2xl font-bold text-green-400">{selectedPlayer.avg.eff}</div></div>
                             <div className="text-center"><div className="text-xs text-slate-500">PIE</div><div className="text-2xl font-bold text-cyan-400">{selectedPlayer.avg.PIE}%</div></div>
                         </div>
-
-                        {/* Records de la saison */}
                         <div className="bg-gradient-to-r from-yellow-900/30 to-orange-900/30 p-4 rounded-lg border border-yellow-600/50">
                             <h4 className="text-yellow-400 font-bold mb-3 flex items-center gap-2"><Icon path={Icons.Trophy} /> Records de la Saison</h4>
                             <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
@@ -688,224 +761,44 @@ function GlobalStats({ players, games, phases }) {
                                 <div className="text-center bg-slate-800/50 p-2 rounded"><div className="text-2xl font-bold text-yellow-400">{selectedPlayer.records.eff}</div><div className="text-xs text-slate-400">Éval</div></div>
                             </div>
                         </div>
-
-                        {/* Graphique d'évolution */}
-                        <div>
-                            <h4 className="text-xs text-slate-400 mb-2 uppercase">Évolution sur la saison</h4>
-                            <div className="h-64 w-full">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <LineChart data={selectedPlayer.logs}>
-                                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                                        <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} />
-                                        <YAxis stroke="#94a3b8" fontSize={10} />
-                                        <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }} />
-                                        <Legend />
-                                        <Line type="monotone" dataKey="pts" name="Points" stroke="#f97316" strokeWidth={2} dot={{ r: 4 }} />
-                                        <Line type="monotone" dataKey="eff" name="Éval" stroke="#22c55e" strokeWidth={2} dot={{ r: 4 }} />
-                                    </LineChart>
-                                </ResponsiveContainer>
-                            </div>
-                        </div>
-
-                        {/* Graphique eFG% et TS% */}
-                        <div>
-                            <h4 className="text-xs text-slate-400 mb-2 uppercase">Efficacité au tir</h4>
-                            <div className="h-48 w-full">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <AreaChart data={selectedPlayer.logs}>
-                                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                                        <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} />
-                                        <YAxis stroke="#94a3b8" fontSize={10} domain={[0, 100]} />
-                                        <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }} />
-                                        <Legend />
-                                        <Area type="monotone" dataKey="eFG" name="eFG%" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.3} />
-                                        <Area type="monotone" dataKey="TS" name="TS%" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.3} />
-                                    </AreaChart>
-                                </ResponsiveContainer>
-                            </div>
-                        </div>
-
-                        {/* Historique */}
-                        <div>
-                            <h4 className="text-xs text-slate-400 mb-2 uppercase">Historique détaillé</h4>
-                            <div className="overflow-x-auto max-h-48">
-                                <table className="w-full text-left text-xs text-slate-300">
-                                    <thead className="bg-slate-700 text-white sticky top-0"><tr><th className="p-2">Date</th><th className="p-2">Adv</th><th className="p-2">MIN</th><th className="p-2">PTS</th><th className="p-2">REB</th><th className="p-2">AST</th><th className="p-2">eFG%</th><th className="p-2">ORtg</th><th className="p-2">DRtg</th><th className="p-2">PIE</th><th className="p-2">ÉVAL</th></tr></thead>
-                                    <tbody className="divide-y divide-slate-700">{selectedPlayer.logs.map((log, i) => (<tr key={i} className={log.pts === selectedPlayer.records.pts ? 'bg-yellow-900/20' : ''}><td className="p-2">{log.date}</td><td className="p-2 font-bold">{log.opponent}</td><td className="p-2">{log.min}</td><td className="p-2 font-bold text-white">{log.pts}{log.pts === selectedPlayer.records.pts && <span className="ml-1 text-yellow-400">🏆</span>}</td><td className="p-2">{log.reb}</td><td className="p-2">{log.ast}</td><td className="p-2">{log.eFG}%</td><td className="p-2 text-purple-400">{log.ORtg}</td><td className="p-2 text-red-400">{log.DRtg}</td><td className="p-2 text-cyan-400">{log.PIE}%</td><td className="p-2">{log.eff}</td></tr>))}</tbody>
-                                </table>
-                            </div>
-                        </div>
+                        <div><h4 className="text-xs text-slate-400 mb-2 uppercase">Évolution sur la saison</h4><div className="h-64 w-full"><ResponsiveContainer width="100%" height="100%"><LineChart data={selectedPlayer.logs}><CartesianGrid strokeDasharray="3 3" stroke="#334155" /><XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} /><YAxis stroke="#94a3b8" fontSize={10} /><Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }} /><Legend /><Line type="monotone" dataKey="pts" name="Points" stroke="#f97316" strokeWidth={2} dot={{ r: 4 }} /><Line type="monotone" dataKey="eff" name="Éval" stroke="#22c55e" strokeWidth={2} dot={{ r: 4 }} /></LineChart></ResponsiveContainer></div></div>
+                        <div><h4 className="text-xs text-slate-400 mb-2 uppercase">Efficacité au tir</h4><div className="h-48 w-full"><ResponsiveContainer width="100%" height="100%"><AreaChart data={selectedPlayer.logs}><CartesianGrid strokeDasharray="3 3" stroke="#334155" /><XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} /><YAxis stroke="#94a3b8" fontSize={10} domain={[0, 100]} /><Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }} /><Legend /><Area type="monotone" dataKey="eFG" name="eFG%" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.3} /><Area type="monotone" dataKey="TS" name="TS%" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.3} /></AreaChart></ResponsiveContainer></div></div>
+                        <div><h4 className="text-xs text-slate-400 mb-2 uppercase">Historique détaillé</h4><div className="overflow-x-auto max-h-48"><table className="w-full text-left text-xs text-slate-300"><thead className="bg-slate-700 text-white sticky top-0"><tr><th className="p-2">Date</th><th className="p-2">Adv</th><th className="p-2">MIN</th><th className="p-2">PTS</th><th className="p-2">REB</th><th className="p-2">AST</th><th className="p-2">eFG%</th><th className="p-2">ORtg</th><th className="p-2">DRtg</th><th className="p-2">PIE</th><th className="p-2">ÉVAL</th></tr></thead><tbody className="divide-y divide-slate-700">{selectedPlayer.logs.map((log, i) => (<tr key={i} className={log.pts === selectedPlayer.records.pts ? 'bg-yellow-900/20' : ''}><td className="p-2">{log.date}</td><td className="p-2 font-bold">{log.opponent}</td><td className="p-2">{log.min}</td><td className="p-2 font-bold text-white">{log.pts}{log.pts === selectedPlayer.records.pts && <span className="ml-1 text-yellow-400">🏆</span>}</td><td className="p-2">{log.reb}</td><td className="p-2">{log.ast}</td><td className="p-2">{log.eFG}%</td><td className="p-2 text-purple-400">{log.ORtg}</td><td className="p-2 text-red-400">{log.DRtg}</td><td className="p-2 text-cyan-400">{log.PIE}%</td><td className="p-2">{log.eff}</td></tr>))}</tbody></table></div></div>
                     </div>
                 )}
             </Modal>
 
-            {/* Modal Comparaison */}
             <Modal isOpen={showComparison} onClose={() => setShowComparison(false)} title={<><Icon path={Icons.Users} /> Comparaison Joueurs</>}>
                 <div className="space-y-6">
                     <div className="grid grid-cols-2 gap-4">
-                        <select value={comparePlayer1?.info.id || ''} onChange={(e) => setComparePlayer1(aggregated.find(p => p.info.id === parseInt(e.target.value)))} className="bg-slate-700 text-white p-3 rounded border border-slate-600">
-                            <option value="">Joueur 1</option>
-                            {aggregated.map(p => <option key={p.info.id} value={p.info.id}>{p.info.name}</option>)}
-                        </select>
-                        <select value={comparePlayer2?.info.id || ''} onChange={(e) => setComparePlayer2(aggregated.find(p => p.info.id === parseInt(e.target.value)))} className="bg-slate-700 text-white p-3 rounded border border-slate-600">
-                            <option value="">Joueur 2</option>
-                            {aggregated.map(p => <option key={p.info.id} value={p.info.id}>{p.info.name}</option>)}
-                        </select>
+                        <select value={comparePlayer1?.info.id || ''} onChange={(e) => setComparePlayer1(aggregated.find(p => p.info.id === parseInt(e.target.value)))} className="bg-slate-700 text-white p-3 rounded border border-slate-600"><option value="">Joueur 1</option>{aggregated.map(p => <option key={p.info.id} value={p.info.id}>{p.info.name}</option>)}</select>
+                        <select value={comparePlayer2?.info.id || ''} onChange={(e) => setComparePlayer2(aggregated.find(p => p.info.id === parseInt(e.target.value)))} className="bg-slate-700 text-white p-3 rounded border border-slate-600"><option value="">Joueur 2</option>{aggregated.map(p => <option key={p.info.id} value={p.info.id}>{p.info.name}</option>)}</select>
                     </div>
-                    {comparePlayer1 && comparePlayer2 && (
-                        <>
-                            <div className="h-80">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <RadarChart data={getRadarData(comparePlayer1, comparePlayer2)}>
-                                        <PolarGrid stroke="#334155" />
-                                        <PolarAngleAxis dataKey="category" stroke="#94a3b8" fontSize={12} />
-                                        <PolarRadiusAxis stroke="#94a3b8" fontSize={10} />
-                                        <Radar name={comparePlayer1.info.name} dataKey={comparePlayer1.info.name} stroke="#f97316" fill="#f97316" fillOpacity={0.3} />
-                                        <Radar name={comparePlayer2.info.name} dataKey={comparePlayer2.info.name} stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.3} />
-                                        <Legend />
-                                        <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none' }} />
-                                    </RadarChart>
-                                </ResponsiveContainer>
-                            </div>
-                            <div className="grid grid-cols-3 gap-4">
-                                {['pts', 'reb', 'ast', 'stl', 'eFG', 'ORtg', 'DRtg', 'PIE', 'eff'].map(stat => (
-                                    <div key={stat} className="bg-slate-900 p-3 rounded text-center">
-                                        <div className="text-xs text-slate-400 uppercase mb-2">{stat}</div>
-                                        <div className="flex justify-between items-center">
-                                            <span className={`font-bold ${parseFloat(comparePlayer1.avg[stat]) > parseFloat(comparePlayer2.avg[stat]) ? 'text-orange-400' : 'text-slate-400'}`}>{comparePlayer1.avg[stat]}</span>
-                                            <span className="text-slate-600">vs</span>
-                                            <span className={`font-bold ${parseFloat(comparePlayer2.avg[stat]) > parseFloat(comparePlayer1.avg[stat]) ? 'text-blue-400' : 'text-slate-400'}`}>{comparePlayer2.avg[stat]}</span>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </>
-                    )}
+                    {comparePlayer1 && comparePlayer2 && (<><div className="h-80"><ResponsiveContainer width="100%" height="100%"><RadarChart data={getRadarData(comparePlayer1, comparePlayer2)}><PolarGrid stroke="#334155" /><PolarAngleAxis dataKey="category" stroke="#94a3b8" fontSize={12} /><PolarRadiusAxis stroke="#94a3b8" fontSize={10} /><Radar name={comparePlayer1.info.name} dataKey={comparePlayer1.info.name} stroke="#f97316" fill="#f97316" fillOpacity={0.3} /><Radar name={comparePlayer2.info.name} dataKey={comparePlayer2.info.name} stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.3} /><Legend /><Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none' }} /></RadarChart></ResponsiveContainer></div><div className="grid grid-cols-3 gap-4">{['pts', 'reb', 'ast', 'stl', 'eFG', 'ORtg', 'DRtg', 'PIE', 'eff'].map(stat => (<div key={stat} className="bg-slate-900 p-3 rounded text-center"><div className="text-xs text-slate-400 uppercase mb-2">{stat}</div><div className="flex justify-between items-center"><span className={`font-bold ${parseFloat(comparePlayer1.avg[stat]) > parseFloat(comparePlayer2.avg[stat]) ? 'text-orange-400' : 'text-slate-400'}`}>{comparePlayer1.avg[stat]}</span><span className="text-slate-600">vs</span><span className={`font-bold ${parseFloat(comparePlayer2.avg[stat]) > parseFloat(comparePlayer1.avg[stat]) ? 'text-blue-400' : 'text-slate-400'}`}>{comparePlayer2.avg[stat]}</span></div></div>))}</div></>)}
                 </div>
             </Modal>
 
-            {/* Modal Tendances Équipe */}
             <Modal isOpen={showTeamTrends} onClose={() => setShowTeamTrends(false)} title={<><Icon path={Icons.TrendingUp} /> Tendances Équipe</>}>
                 <div className="space-y-6">
                     <div className="bg-slate-900 p-4 rounded-lg border border-slate-700">
-                        <h4 className="text-orange-400 font-bold mb-3 flex items-center gap-2"><Icon path={Icons.Info} /> Formules implémentées</h4>
+                        <h4 className="text-orange-400 font-bold mb-3 flex items-center gap-2"><Icon path={Icons.Info} /> Formules Basketball-Reference</h4>
                         <div className="text-xs font-mono text-slate-300 space-y-2">
-                            <div className="bg-slate-800 p-2 rounded">
-                                <span className="text-purple-400">ORtg individuel</span> = (Points Produits / Possessions Utilisées) × 100
-                            </div>
-                            <div className="bg-slate-800 p-2 rounded text-xs">
-                                Points Produits = PTS + (AST × 2.5) | Poss. Utilisées = FGA + 0.44×FTA + TO
-                            </div>
-                            <div className="bg-slate-800 p-2 rounded">
-                                <span className="text-red-400">DRtg individuel</span> = DRtg équipe - (Stops au-dessus moyenne × 2)
-                            </div>
-                            <div className="bg-slate-800 p-2 rounded text-xs">
-                                Stops = STL + 0.5×BLK + (DRB_joueur/DRB_équipe) × Tirs ratés adverses
-                            </div>
-                            <div className="bg-slate-800 p-2 rounded">
-                                <span className="text-cyan-400">PIE</span> = Impact joueur / Impact total match × 100
-                            </div>
+                            <div className="bg-slate-800 p-2 rounded"><span className="text-purple-400">ORtg</span> = 100 × (Points Produits / Possessions Utilisées)</div>
+                            <div className="bg-slate-800 p-2 rounded text-[10px]">PProd = FG_Part + AST_Part + ORB_Part + FT | TotPoss = ScPoss + FGxPoss + FTxPoss + TO</div>
+                            <div className="bg-slate-800 p-2 rounded"><span className="text-red-400">DRtg</span> = Team_DRtg + 0.2 × (100 × D_Pts_per_ScPoss × (1 - Stop%) - Team_DRtg)</div>
+                            <div className="bg-slate-800 p-2 rounded text-[10px]">Stops = STL + BLK×FMwt×(1-1.07×DOR%) + DRB×(1-FMwt) + ...</div>
                         </div>
                     </div>
-
-                    <div className="h-72">
-                        <h4 className="text-xs text-slate-400 mb-2 uppercase">Offensive & Defensive Rating Équipe</h4>
-                        <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={teamTrendsData}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                                <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} />
-                                <YAxis stroke="#94a3b8" fontSize={10} domain={[60, 140]} />
-                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none' }} />
-                                <Legend />
-                                <Line type="monotone" dataKey="ORtg" name="Off Rating" stroke="#22c55e" strokeWidth={2} />
-                                <Line type="monotone" dataKey="DRtg" name="Def Rating" stroke="#ef4444" strokeWidth={2} />
-                            </LineChart>
-                        </ResponsiveContainer>
-                    </div>
-                    <div className="h-64">
-                        <h4 className="text-xs text-slate-400 mb-2 uppercase">Net Rating par match</h4>
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={teamTrendsData}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                                <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} />
-                                <YAxis stroke="#94a3b8" fontSize={10} />
-                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none' }} />
-                                <Bar dataKey="NetRtg" name="Net Rating">
-                                    {teamTrendsData.map((entry, index) => (
-                                        <rect key={index} fill={entry.NetRtg >= 0 ? '#22c55e' : '#ef4444'} />
-                                    ))}
-                                </Bar>
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </div>
-                    <div className="h-64">
-                        <h4 className="text-xs text-slate-400 mb-2 uppercase">Points marqués vs encaissés</h4>
-                        <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={teamTrendsData}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                                <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} />
-                                <YAxis stroke="#94a3b8" fontSize={10} />
-                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none' }} />
-                                <Legend />
-                                <Area type="monotone" dataKey="score" name="Marqués" stroke="#22c55e" fill="#22c55e" fillOpacity={0.3} />
-                                <Area type="monotone" dataKey="conceded" name="Encaissés" stroke="#ef4444" fill="#ef4444" fillOpacity={0.3} />
-                            </AreaChart>
-                        </ResponsiveContainer>
-                    </div>
+                    <div className="h-72"><h4 className="text-xs text-slate-400 mb-2 uppercase">Offensive & Defensive Rating Équipe</h4><ResponsiveContainer width="100%" height="100%"><LineChart data={teamTrendsData}><CartesianGrid strokeDasharray="3 3" stroke="#334155" /><XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} /><YAxis stroke="#94a3b8" fontSize={10} domain={[60, 140]} /><Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none' }} /><Legend /><Line type="monotone" dataKey="ORtg" name="Off Rating" stroke="#22c55e" strokeWidth={2} /><Line type="monotone" dataKey="DRtg" name="Def Rating" stroke="#ef4444" strokeWidth={2} /></LineChart></ResponsiveContainer></div>
+                    <div className="h-64"><h4 className="text-xs text-slate-400 mb-2 uppercase">Net Rating par match</h4><ResponsiveContainer width="100%" height="100%"><BarChart data={teamTrendsData}><CartesianGrid strokeDasharray="3 3" stroke="#334155" /><XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} /><YAxis stroke="#94a3b8" fontSize={10} /><Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none' }} /><Bar dataKey="NetRtg" name="Net Rating">{teamTrendsData.map((entry, index) => (<rect key={index} fill={entry.NetRtg >= 0 ? '#22c55e' : '#ef4444'} />))}</Bar></BarChart></ResponsiveContainer></div>
+                    <div className="h-64"><h4 className="text-xs text-slate-400 mb-2 uppercase">Points marqués vs encaissés</h4><ResponsiveContainer width="100%" height="100%"><AreaChart data={teamTrendsData}><CartesianGrid strokeDasharray="3 3" stroke="#334155" /><XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} /><YAxis stroke="#94a3b8" fontSize={10} /><Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none' }} /><Legend /><Area type="monotone" dataKey="score" name="Marqués" stroke="#22c55e" fill="#22c55e" fillOpacity={0.3} /><Area type="monotone" dataKey="conceded" name="Encaissés" stroke="#ef4444" fill="#ef4444" fillOpacity={0.3} /></AreaChart></ResponsiveContainer></div>
                 </div>
             </Modal>
 
-            {/* Modal Heatmap */}
             <Modal isOpen={showHeatmap} onClose={() => setShowHeatmap(false)} title={<><Icon path={Icons.Target} /> Heatmap Performance</>}>
                 <div className="space-y-4">
-                    <div className="text-xs text-slate-400 bg-slate-900 p-3 rounded">
-                        <p>🟠 Plus c'est orange, meilleure est la performance</p>
-                        <p>🔵 Pour BP et DRtg, plus c'est bleu = meilleur (valeurs basses préférées)</p>
-                    </div>
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead>
-                                <tr className="text-slate-400 text-xs uppercase">
-                                    <th className="p-2 text-left sticky left-0 bg-slate-800">Joueur</th>
-                                    {heatmapData.categories.map(cat => (
-                                        <th key={cat.key} className={`p-2 text-center ${cat.inverse ? 'text-blue-400' : ''}`}>
-                                            {cat.label}
-                                        </th>
-                                    ))}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {heatmapData.players.map(p => (
-                                    <tr key={p.info.id} className="border-t border-slate-700">
-                                        <td className="p-2 font-bold text-white sticky left-0 bg-slate-800">{p.info.name}</td>
-                                        {heatmapData.categories.map(cat => {
-                                            const val = parseFloat(p.avg[cat.key]) || 0;
-                                            const max = heatmapData.maxValues[cat.key];
-                                            const min = heatmapData.minValues[cat.key];
-                                            const range = max - min || 1;
-                                            
-                                            let intensity;
-                                            let bgColor;
-                                            
-                                            if (cat.inverse) {
-                                                intensity = 1 - ((val - min) / range);
-                                                bgColor = `rgba(59, 130, 246, ${intensity * 0.8})`;
-                                            } else {
-                                                intensity = (val - min) / range;
-                                                bgColor = `rgba(249, 115, 22, ${intensity * 0.8})`;
-                                            }
-                                            
-                                            return (
-                                                <td key={cat.key} className="p-2 text-center font-bold text-white" style={{ backgroundColor: bgColor }}>
-                                                    {p.avg[cat.key]}
-                                                </td>
-                                            );
-                                        })}
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
+                    <div className="text-xs text-slate-400 bg-slate-900 p-3 rounded"><p>🟠 Plus c'est orange, meilleure est la performance</p><p>🔵 Pour BP et DRtg, plus c'est bleu = meilleur (valeurs basses préférées)</p></div>
+                    <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-slate-400 text-xs uppercase"><th className="p-2 text-left sticky left-0 bg-slate-800">Joueur</th>{heatmapData.categories.map(cat => (<th key={cat.key} className={`p-2 text-center ${cat.inverse ? 'text-blue-400' : ''}`}>{cat.label}</th>))}</tr></thead><tbody>{heatmapData.players.map(p => (<tr key={p.info.id} className="border-t border-slate-700"><td className="p-2 font-bold text-white sticky left-0 bg-slate-800">{p.info.name}</td>{heatmapData.categories.map(cat => { const val = parseFloat(p.avg[cat.key]) || 0; const max = heatmapData.maxValues[cat.key]; const min = heatmapData.minValues[cat.key]; const range = max - min || 1; let intensity, bgColor; if (cat.inverse) { intensity = 1 - ((val - min) / range); bgColor = `rgba(59, 130, 246, ${intensity * 0.8})`; } else { intensity = (val - min) / range; bgColor = `rgba(249, 115, 22, ${intensity * 0.8})`; } return (<td key={cat.key} className="p-2 text-center font-bold text-white" style={{ backgroundColor: bgColor }}>{p.avg[cat.key]}</td>); })}</tr>))}</tbody></table></div>
                 </div>
             </Modal>
         </div>
@@ -976,7 +869,9 @@ function ImportReviewModal({ importData, currentPlayers, phases, onConfirm, onCa
 }
 
 // --- COMPOSANT DÉTAILS DU MATCH (Classique & Avancé) ---
-// CHERCHE cette fonction dans ton app.js (vers ligne 460) et REMPLACE-LA entièrement
+// REMPLACE la fonction GameDetailsModal dans ton app.js
+// IMPORTANT: Assure-toi d'avoir ajouté les fonctions de calcul (artifact précédent) avant cette fonction
+
 function GameDetailsModal({ game, isOpen, onClose, players }) {
     if (!game) return null;
 
@@ -987,52 +882,37 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
         const opp = game.opponentStats || {};
         const oppScore = game.awayScore || 0;
 
-        // Totaux équipe pour calculs
-        let tFGM = 0, tFGA = 0, tFTM = 0, tFTA = 0, tORB = 0, tTOV = 0, tPTS = 0;
-        let tDRB = 0, tAST = 0, tSTL = 0, tBLK = 0, tPF = 0;
+        // Agrégation des stats équipe
+        const teamStats = aggregateTeamStats(pStats);
+        
+        // Préparation des stats adversaire
+        const oppStatsPrepped = prepareOpponentStats(opp, oppScore);
 
-        Object.values(pStats).forEach(s => {
-            tFGM += (s.fgm || 0) + (s.threePM || 0);
-            tFGA += (s.fga || 0) + (s.threePA || 0);
-            tFTM += (s.ftm || 0);
-            tFTA += (s.fta || 0);
-            tORB += (s.oreb || 0);
-            tTOV += (s.tov || 0);
-            tPTS += (s.pts || 0);
-            tDRB += (s.dreb || 0);
-            tAST += (s.ast || 0);
-            tSTL += (s.stl || 0);
-            tBLK += (s.blk || 0);
-            tPF += (s.pf || 0);
-        });
-
-        // Stats adversaire
-        const oppPTS = oppScore;
-        const oppFGM = opp.fgm || Math.round(oppPTS / 2.2);
-        const oppFTM = opp.ftm || 0;
-        const oppFGA = opp.fga || Math.round(oppPTS / 1.1);
-        const oppFTA = opp.fta || 0;
-        const oppDRB = opp.reb ? Math.round(opp.reb * 0.7) : 0;
-        const oppORB = opp.oreb || 0;
-        const oppAST = opp.ast || 0;
-        const oppBLK = opp.blk || 0;
-        const oppPF = opp.fouls || 0;
-        const oppTOV = opp.tov || 0;
-        const oppMissedFG = oppFGA - oppFGM;
-
-        // Possessions et ratings équipe
-        const teamPoss = tFGA + 0.44 * tFTA - tORB + tTOV;
-        const teamORtg = teamPoss > 0 ? (tPTS / teamPoss) * 100 : 0;
-        const teamDRtg = teamPoss > 0 ? (oppPTS / teamPoss) * 100 : 0;
+        // Calcul des possessions et ratings équipe
+        const Team_Poss = teamStats.fga + 0.4 * teamStats.fta - 1.07 * (teamStats.oreb / (teamStats.oreb + oppStatsPrepped.dreb + 0.001)) * (teamStats.fga - teamStats.fgm) + teamStats.tov;
+        const teamORtg = Team_Poss > 0 ? (teamStats.pts / Team_Poss) * 100 : 0;
+        const teamDRtg = Team_Poss > 0 ? (oppScore / Team_Poss) * 100 : 0;
         const teamNetRtg = teamORtg - teamDRtg;
 
         // PIE dénominateur
+        const tFGM = teamStats.fgm, tFGA = teamStats.fga, tFTM = teamStats.ftm, tFTA = teamStats.fta;
+        const tORB = teamStats.oreb, tDRB = teamStats.dreb, tAST = teamStats.ast;
+        const tSTL = teamStats.stl, tBLK = teamStats.blk, tPF = teamStats.pf, tTOV = teamStats.tov;
+        const tPTS = teamStats.pts;
+
+        const oppFGM = oppStatsPrepped.fgm, oppFGA = oppStatsPrepped.fga;
+        const oppFTM = oppStatsPrepped.ftm, oppFTA = oppStatsPrepped.fta;
+        const oppORB = oppStatsPrepped.oreb, oppDRB = oppStatsPrepped.dreb;
+        const oppAST = oppStatsPrepped.ast, oppBLK = oppStatsPrepped.blk || 0;
+        const oppPF = oppStatsPrepped.fouls || 0, oppTOV = oppStatsPrepped.tov;
+        const oppPTS = oppScore;
+
         const gamePIEDenom = (tPTS + oppPTS) + (tFGM + oppFGM) + (tFTM + oppFTM) 
                            - (tFGA + oppFGA) - (tFTA + oppFTA) + (tDRB + oppDRB) 
                            + (0.5 * (tORB + oppORB)) + (tAST + oppAST) + tSTL 
                            + (0.5 * (tBLK + oppBLK)) - (tPF + oppPF) - (tTOV + oppTOV);
 
-        // Enrichissement des stats joueurs avec RATINGS INDIVIDUELS
+        // Enrichissement des stats joueurs avec RATINGS AVANCÉS
         const enrichedPlayers = Object.entries(pStats).map(([pid, s]) => {
             const player = players.find(p => p.id === parseInt(pid));
             const name = player ? player.name : `Joueur #${pid}`;
@@ -1042,55 +922,37 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
             const fta = s.fta || 0;
             const ftm = s.ftm || 0;
             const pts = s.pts || 0;
-            const ast = s.ast || 0;
-            const tov = s.tov || 0;
-            const stl = s.stl || 0;
-            const blk = s.blk || 0;
-            const dreb = s.dreb || 0;
 
             // eFG% et TS%
             const eFG = fga > 0 ? ((fgm + 0.5 * (s.threePM || 0)) / fga) * 100 : 0;
             const ts = (fga + 0.44 * fta) > 0 ? (pts / (2 * (fga + 0.44 * fta))) * 100 : 0;
             
             // PIE individuel
-            const playerPIENum = pts + fgm + ftm - fga - fta + dreb + (0.5 * (s.oreb || 0)) 
-                               + ast + stl + (0.5 * blk) - (s.pf || 0) - tov;
+            const playerPIENum = pts + fgm + ftm - fga - fta + (s.dreb || 0) + (0.5 * (s.oreb || 0)) 
+                               + (s.ast || 0) + (s.stl || 0) + (0.5 * (s.blk || 0)) - (s.pf || 0) - (s.tov || 0);
             const pie = gamePIEDenom !== 0 ? (playerPIENum / gamePIEDenom) * 100 : 0;
 
-            // === RATINGS INDIVIDUELS ===
-            
-            // ORtg individuel : Points Produits / Possessions Utilisées × 100
-            // Points Produits = PTS + (AST × 2.5) - estimation des points générés par assists
-            const pointsProduits = pts + (ast * 2.5);
-            // Possessions Utilisées = FGA + 0.44 × FTA + TOV
-            const possUtilisees = fga + 0.44 * fta + tov;
-            const playerORtg = possUtilisees > 0 ? (pointsProduits / possUtilisees) * 100 : 0;
-
-            // DRtg individuel : Basé sur contribution défensive
-            // Stops estimés = STL + 0.5×BLK + (DRB/TeamDRB) × OppMissedFG
-            const drebShare = tDRB > 0 ? dreb / tDRB : 0;
-            const stopsEstimes = stl + (0.5 * blk) + (drebShare * oppMissedFG);
-            // DRtg ajusté : on part du DRtg équipe et on ajuste selon les stops
-            const avgStopsPerPlayer = (tSTL + 0.5 * tBLK + oppMissedFG) / Object.keys(pStats).length;
-            const stopsDiff = stopsEstimes - avgStopsPerPlayer;
-            // Bonus/malus basé sur les stops (chaque stop au-dessus de la moyenne réduit le DRtg)
-            const playerDRtg = teamDRtg - (stopsDiff * 2);
-
-            const playerNetRtg = playerORtg - playerDRtg;
+            // === RATINGS AVANCÉS (Basketball-Reference) ===
+            const ratings = calculateIndividualRatings(s, teamStats, oppStatsPrepped);
 
             return {
                 id: pid, name, ...s, fga, fgm,
                 eFG: eFG.toFixed(1),
                 TS: ts.toFixed(1),
                 PIE: pie.toFixed(1),
-                ORtg: playerORtg.toFixed(1),
-                DRtg: playerDRtg.toFixed(1),
-                netRtg: playerNetRtg.toFixed(1)
+                ORtg: ratings.ORtg.toFixed(1),
+                DRtg: ratings.DRtg.toFixed(1),
+                netRtg: ratings.netRtg.toFixed(1)
             };
         });
 
         return { 
-            team: { poss: teamPoss.toFixed(1), ORtg: teamORtg.toFixed(1), DRtg: teamDRtg.toFixed(1), Net: teamNetRtg.toFixed(1) },
+            team: { 
+                poss: Team_Poss.toFixed(1), 
+                ORtg: teamORtg.toFixed(1), 
+                DRtg: teamDRtg.toFixed(1), 
+                Net: teamNetRtg.toFixed(1) 
+            },
             players: enrichedPlayers
         };
     }, [game, players]);
@@ -1208,7 +1070,6 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
         </Modal>
     );
 }
-
 // --- HISTORY ---
 function History({ games, players, setGames, phases, onEditGame, onImportClick, onMultiImport }) {
     const [selectedGame, setSelectedGame] = useState(null);
