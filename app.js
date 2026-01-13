@@ -222,6 +222,8 @@ function LiveTracker({ players, onSaveGame, initialGame, phases, selectedPhase }
 }
 
 // --- GLOBAL STATS avec améliorations ---
+// REMPLACE la fonction GlobalStats existante dans ton app.js
+
 function GlobalStats({ players, games, phases }) {
     const [selectedPlayer, setSelectedPlayer] = useState(null);
     const [viewMode, setViewMode] = useState('classic');
@@ -237,13 +239,34 @@ function GlobalStats({ players, games, phases }) {
     // Calcul des stats agrégées avec logs pour graphiques
     const aggregated = useMemo(() => {
         const stats = {};
-        players.forEach(p => { stats[p.id] = { info: p, gamesPlayed: 0, total: { pts: 0, reb: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, tov: 0, min: 0, eff: 0, fgm: 0, fga: 0, threePM: 0, threePA: 0, ftm: 0, fta: 0, pf: 0, plusMinus: 0, pie: 0 }, totalMinPlayed: 0, weightedORtg: 0, weightedDRtg: 0, logs: [], records: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, eff: 0 } }; });
+        players.forEach(p => { 
+            stats[p.id] = { 
+                info: p, 
+                gamesPlayed: 0, 
+                total: { 
+                    pts: 0, reb: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, tov: 0, min: 0, eff: 0, 
+                    fgm: 0, fga: 0, threePM: 0, threePA: 0, ftm: 0, fta: 0, pf: 0, plusMinus: 0, pie: 0,
+                    // Nouveaux accumulateurs pour ratings individuels
+                    pointsProduits: 0,
+                    possUtilisees: 0,
+                    stopsEstimes: 0
+                }, 
+                totalMinPlayed: 0, 
+                // On garde ces accumulateurs pour les logs par match
+                weightedORtg: 0, 
+                weightedDRtg: 0,
+                totalTeamDRtg: 0,
+                logs: [], 
+                records: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, eff: 0 } 
+            }; 
+        });
 
         filteredGames.forEach(g => {
             // Calculer les totaux du match pour le PIE et les ratings équipe
             let gamePTS = 0, gameFGM = 0, gameFTM = 0, gameFGA = 0, gameFTA = 0;
             let gameDRB = 0, gameORB = 0, gameAST = 0, gameSTL = 0, gameBLK = 0, gamePF = 0, gameTO = 0;
             let teamFGA = 0, teamFTA = 0, teamORB = 0, teamTO = 0, teamPTS = 0;
+            let teamDRB = 0, teamSTL = 0, teamBLK = 0;
             let totalMinutes = 0;
             
             // Stats équipe
@@ -266,6 +289,9 @@ function GlobalStats({ players, games, phases }) {
                 teamORB += s.oreb || 0;
                 teamTO += s.tov || 0;
                 teamPTS += s.pts || 0;
+                teamDRB += s.dreb || 0;
+                teamSTL += s.stl || 0;
+                teamBLK += s.blk || 0;
                 totalMinutes += s.minutes || 0;
             });
             
@@ -283,6 +309,11 @@ function GlobalStats({ players, games, phases }) {
             gameBLK += opp.blk || 0;
             gamePF += opp.fouls || 0;
             gameTO += opp.tov || 0;
+
+            // Stats adversaire pour DRtg individuel
+            const oppFGA = opp.fga || Math.round(oppPTS / 1.1);
+            const oppFGM = opp.fgm || Math.round(oppPTS / 2.2);
+            const oppMissedFG = oppFGA - oppFGM;
             
             // Dénominateur PIE du match
             const gamePIEDenom = gamePTS + gameFGM + gameFTM - gameFGA - gameFTA + gameDRB + (0.5 * gameORB) + gameAST + gameSTL + (0.5 * gameBLK) - gamePF - gameTO;
@@ -294,6 +325,10 @@ function GlobalStats({ players, games, phases }) {
             const teamORtg = teamPoss > 0 ? (teamPTS / teamPoss) * 100 : 100;
             const teamDRtg = teamPoss > 0 ? (oppPTS / teamPoss) * 100 : 100;
 
+            // Nombre de joueurs pour moyenne de stops
+            const numPlayers = Object.keys(g.playerStats).length || 1;
+            const avgStopsPerPlayer = (teamSTL + 0.5 * teamBLK + oppMissedFG) / numPlayers;
+
             Object.entries(g.playerStats).forEach(([pid, s]) => {
                 const id = parseInt(pid);
                 if ((s.minutes || 0) > 0 && stats[id]) {
@@ -303,7 +338,7 @@ function GlobalStats({ players, games, phases }) {
                     stats[id].gamesPlayed += 1;
                     stats[id].totalMinPlayed += playerMin;
                     
-                    // Pondérer les ratings par les minutes jouées
+                    // Pondérer les ratings par les minutes jouées (pour les logs)
                     stats[id].weightedORtg += teamORtg * playerMin;
                     stats[id].weightedDRtg += teamDRtg * playerMin;
                     
@@ -311,8 +346,29 @@ function GlobalStats({ players, games, phases }) {
                     t.ast += (s.ast || 0); t.stl += (s.stl || 0); t.blk += (s.blk || 0); t.tov += (s.tov || 0); t.min += playerMin;
                     t.fgm += (s.fgm || 0); t.fga += (s.fga || 0); t.threePM += (s.threePM || 0); t.threePA += (s.threePA || 0);
                     t.ftm += (s.ftm || 0); t.fta += (s.fta || 0); t.pf += (s.pf || 0); t.plusMinus += (s.plusMinus || 0);
-                    
+
+                    // === ACCUMULATEURS POUR RATINGS INDIVIDUELS ===
                     const playerFGA = (s.fga || 0) + (s.threePA || 0);
+                    const playerFTA = s.fta || 0;
+                    const playerTOV = s.tov || 0;
+                    const playerAST = s.ast || 0;
+                    const playerPTS = s.pts || 0;
+                    const playerSTL = s.stl || 0;
+                    const playerBLK = s.blk || 0;
+                    const playerDREB = s.dreb || 0;
+
+                    // ORtg: Points Produits et Possessions Utilisées
+                    t.pointsProduits += playerPTS + (playerAST * 2.5);
+                    t.possUtilisees += playerFGA + 0.44 * playerFTA + playerTOV;
+
+                    // DRtg: Stops estimés
+                    const drebShare = teamDRB > 0 ? playerDREB / teamDRB : 0;
+                    const playerStops = playerSTL + (0.5 * playerBLK) + (drebShare * oppMissedFG);
+                    t.stopsEstimes += playerStops;
+                    
+                    // Accumuler le DRtg équipe et la moyenne de stops pour calcul final
+                    stats[id].totalTeamDRtg += teamDRtg;
+                    
                     const playerFGM = (s.fgm || 0) + (s.threePM || 0);
                     const missedFG = playerFGA - playerFGM;
                     const missedFT = (s.fta || 0) - (s.ftm || 0);
@@ -332,9 +388,18 @@ function GlobalStats({ players, games, phases }) {
                     if (s.blk > stats[id].records.blk) stats[id].records.blk = s.blk;
                     if (evalStat > stats[id].records.eff) stats[id].records.eff = evalStat;
 
-                    // Stats du match pour les logs
+                    // Stats du match pour les logs - RATINGS INDIVIDUELS PAR MATCH
                     const gameEFG = playerFGA > 0 ? ((playerFGM + 0.5 * (s.threePM || 0)) / playerFGA) * 100 : 0;
                     const gameTS = (playerFGA + 0.44 * (s.fta || 0)) > 0 ? ((s.pts || 0) / (2 * (playerFGA + 0.44 * (s.fta || 0)))) * 100 : 0;
+
+                    // ORtg individuel du match
+                    const matchPointsProduits = playerPTS + (playerAST * 2.5);
+                    const matchPossUtilisees = playerFGA + 0.44 * playerFTA + playerTOV;
+                    const matchORtg = matchPossUtilisees > 0 ? (matchPointsProduits / matchPossUtilisees) * 100 : 0;
+
+                    // DRtg individuel du match
+                    const stopsDiff = playerStops - avgStopsPerPlayer;
+                    const matchDRtg = teamDRtg - (stopsDiff * 2);
 
                     stats[id].logs.push({ 
                         date: g.date, 
@@ -346,8 +411,8 @@ function GlobalStats({ players, games, phases }) {
                         eff: evalStat, 
                         eFG: gameEFG.toFixed(1), 
                         TS: gameTS.toFixed(1), 
-                        ORtg: teamORtg.toFixed(1),
-                        DRtg: teamDRtg.toFixed(1),
+                        ORtg: matchORtg.toFixed(1),
+                        DRtg: matchDRtg.toFixed(1),
                         PIE: playerPIE.toFixed(1),
                         min: s.minutes 
                     });
@@ -385,9 +450,18 @@ function GlobalStats({ players, games, phases }) {
             const eFG = totalFGA > 0 ? (((totalFGM + 0.5 * t.threePM) / totalFGA) * 100).toFixed(1) : "0.0";
             const ts = (totalFGA + 0.44 * t.fta) > 0 ? ((t.pts / (2 * (totalFGA + 0.44 * t.fta))) * 100).toFixed(1) : "0.0";
             
-            // Ratings = moyenne pondérée par les minutes jouées
-            const ortg = (p.weightedORtg / totalMin).toFixed(1);
-            const drtg = (p.weightedDRtg / totalMin).toFixed(1);
+            // === RATINGS INDIVIDUELS MOYENS ===
+            // ORtg individuel = Points Produits totaux / Possessions Utilisées totales × 100
+            const ortg = t.possUtilisees > 0 ? ((t.pointsProduits / t.possUtilisees) * 100).toFixed(1) : "0.0";
+            
+            // DRtg individuel = DRtg équipe moyen ajusté par les stops
+            const avgTeamDRtg = p.totalTeamDRtg / gp;
+            const avgStopsPerGame = t.stopsEstimes / gp;
+            // On compare aux stops moyens attendus (environ 2-3 par match pour un joueur moyen)
+            const expectedStopsPerGame = 2.5;
+            const stopsDiffAvg = avgStopsPerGame - expectedStopsPerGame;
+            const drtg = (avgTeamDRtg - (stopsDiffAvg * 2)).toFixed(1);
+            
             const netRtg = (parseFloat(ortg) - parseFloat(drtg)).toFixed(1);
             
             // PIE moyen
@@ -430,10 +504,6 @@ function GlobalStats({ players, games, phases }) {
 
     // Team Trends Data avec logs
     const teamTrendsData = useMemo(() => {
-        console.log("=== TEAM TRENDS DEBUG ===");
-        console.log("Nombre de matchs filtrés:", filteredGames.length);
-        
-        // Fonction pour parser les dates françaises
         const parseFrenchDate = (dateStr) => {
             const months = {
                 'janv': 0, 'jan': 0, 'janvier': 0,
@@ -450,7 +520,6 @@ function GlobalStats({ players, games, phases }) {
                 'déc': 11, 'dec': 11, 'décembre': 11, 'decembre': 11
             };
             
-            // Format "16 nov. 2025" ou "16 novembre 2025"
             const match = dateStr.match(/(\d{1,2})\s+([a-zéûô]+)\.?\s+(\d{4})/i);
             if (match) {
                 const day = parseInt(match[1]);
@@ -462,13 +531,11 @@ function GlobalStats({ players, games, phases }) {
                 }
             }
             
-            // Format DD/MM/YYYY
             const slashMatch = dateStr.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
             if (slashMatch) {
                 return new Date(slashMatch[3], slashMatch[2] - 1, slashMatch[1]);
             }
             
-            // Fallback
             return new Date(dateStr);
         };
         
@@ -477,13 +544,12 @@ function GlobalStats({ players, games, phases }) {
             
             Object.values(g.playerStats).forEach(s => { 
                 totalPts += s.pts || 0; 
-                totalFGA += (s.fga || 0) + (s.threePA || 0); // FGA inclut les 3pts
+                totalFGA += (s.fga || 0) + (s.threePA || 0);
                 totalFTA += s.fta || 0;
                 totalTOV += s.tov || 0;
                 totalORB += s.oreb || 0;
             });
             
-            // Nouvelle formule: Possessions = FGA + 0.44 * FTA - ORB + TO
             const totalPoss = totalFGA + 0.44 * totalFTA - totalORB + totalTOV;
             const totalPtsAllowed = g.awayScore || 0;
             
@@ -491,17 +557,6 @@ function GlobalStats({ players, games, phases }) {
             const drtg = totalPoss > 0 ? (totalPtsAllowed / totalPoss) * 100 : 100;
             
             const dateObj = parseFrenchDate(g.date);
-            
-            console.log(`Match ${index + 1}:`, {
-                date: g.date,
-                parsedDate: dateObj.toLocaleDateString('fr-FR'),
-                timestamp: dateObj.getTime(),
-                opponent: g.opponent,
-                score: `${g.homeScore}-${g.awayScore}`,
-                possessions: totalPoss.toFixed(2),
-                ORtg: ortg.toFixed(1),
-                DRtg: drtg.toFixed(1)
-            });
             
             return { 
                 date: g.date, 
@@ -515,16 +570,10 @@ function GlobalStats({ players, games, phases }) {
             };
         });
         
-        // Tri par timestamp
-        const sorted = data.sort((a, b) => a.dateTimestamp - b.dateTimestamp);
-        
-        console.log("=== ORDRE APRÈS TRI ===");
-        sorted.forEach((d, i) => console.log(`${i + 1}. ${d.date} vs ${d.opponent} (timestamp: ${d.dateTimestamp})`));
-        
-        return sorted;
+        return data.sort((a, b) => a.dateTimestamp - b.dateTimestamp);
     }, [filteredGames]);
 
-    // Heatmap Data - Toutes les statistiques
+    // Heatmap Data
     const heatmapData = useMemo(() => {
         const categories = [
             { key: 'pts', label: 'PTS' },
@@ -738,58 +787,29 @@ function GlobalStats({ players, games, phases }) {
             {/* Modal Tendances Équipe */}
             <Modal isOpen={showTeamTrends} onClose={() => setShowTeamTrends(false)} title={<><Icon path={Icons.TrendingUp} /> Tendances Équipe</>}>
                 <div className="space-y-6">
-                    {/* Formules utilisées */}
                     <div className="bg-slate-900 p-4 rounded-lg border border-slate-700">
                         <h4 className="text-orange-400 font-bold mb-3 flex items-center gap-2"><Icon path={Icons.Info} /> Formules implémentées</h4>
                         <div className="text-xs font-mono text-slate-300 space-y-2">
                             <div className="bg-slate-800 p-2 rounded">
-                                <span className="text-purple-400">Possessions</span> = FGA + 0.44 × FTA - ORB + TO
+                                <span className="text-purple-400">ORtg individuel</span> = (Points Produits / Possessions Utilisées) × 100
+                            </div>
+                            <div className="bg-slate-800 p-2 rounded text-xs">
+                                Points Produits = PTS + (AST × 2.5) | Poss. Utilisées = FGA + 0.44×FTA + TO
                             </div>
                             <div className="bg-slate-800 p-2 rounded">
-                                <span className="text-green-400">Offensive Rating (ORtg)</span> = (Points Marqués / Possessions) × 100
+                                <span className="text-red-400">DRtg individuel</span> = DRtg équipe - (Stops au-dessus moyenne × 2)
+                            </div>
+                            <div className="bg-slate-800 p-2 rounded text-xs">
+                                Stops = STL + 0.5×BLK + (DRB_joueur/DRB_équipe) × Tirs ratés adverses
                             </div>
                             <div className="bg-slate-800 p-2 rounded">
-                                <span className="text-red-400">Defensive Rating (DRtg)</span> = (Points Encaissés / Possessions) × 100
+                                <span className="text-cyan-400">PIE</span> = Impact joueur / Impact total match × 100
                             </div>
-                            <div className="bg-slate-800 p-2 rounded">
-                                <span className="text-yellow-400">Net Rating</span> = ORtg - DRtg
-                            </div>
-                            <div className="bg-slate-800 p-2 rounded">
-                                <span className="text-blue-400">eFG%</span> = ((FGM + 0.5 × 3PM) / FGA) × 100
-                            </div>
-                            <div className="bg-slate-800 p-2 rounded">
-                                <span className="text-blue-400">TS%</span> = (PTS / (2 × (FGA + 0.44 × FTA))) × 100
-                            </div>
-                            <div className="bg-slate-800 p-2 rounded">
-                                <span className="text-cyan-400">PIE (Player Impact Estimate)</span> = <br/>
-                                <span className="text-xs ml-2">(PTS + FGM + FTM - FGA - FTA + DRB + 0.5×ORB + AST + STL + 0.5×BLK - PF - TO)</span><br/>
-                                <span className="text-xs ml-2">÷ (Totaux du match équipe + adversaire)</span>
-                            </div>
-                        </div>
-                        <p className="text-xs text-slate-500 mt-3">
-                            <strong>Note:</strong> Le DRtg individuel est basé sur le DRtg équipe pondéré par le temps de jeu.
-                            Le PIE mesure l'impact global d'un joueur sur le match (moyenne NBA ≈ 10%).
-                        </p>
-                    </div>
-
-                    {/* Debug info */}
-                    <div className="bg-slate-900 p-4 rounded-lg border border-yellow-600/50">
-                        <h4 className="text-yellow-400 font-bold mb-2">Debug Timeline</h4>
-                        <div className="text-xs text-slate-400 max-h-32 overflow-y-auto">
-                            {teamTrendsData.map((d, i) => (
-                                <div key={i} className="flex justify-between py-1 border-b border-slate-700">
-                                    <span>{i + 1}. {d.date}</span>
-                                    <span>vs {d.opponent}</span>
-                                    <span>{d.score}-{d.conceded}</span>
-                                    <span className="text-green-400">ORtg: {d.ORtg}</span>
-                                    <span className="text-red-400">DRtg: {d.DRtg}</span>
-                                </div>
-                            ))}
                         </div>
                     </div>
 
                     <div className="h-72">
-                        <h4 className="text-xs text-slate-400 mb-2 uppercase">Offensive & Defensive Rating</h4>
+                        <h4 className="text-xs text-slate-400 mb-2 uppercase">Offensive & Defensive Rating Équipe</h4>
                         <ResponsiveContainer width="100%" height="100%">
                             <LineChart data={teamTrendsData}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
@@ -868,12 +888,11 @@ function GlobalStats({ players, games, phases }) {
                                             let bgColor;
                                             
                                             if (cat.inverse) {
-                                                // Pour les stats inverses (BP, DRtg), moins c'est mieux
                                                 intensity = 1 - ((val - min) / range);
-                                                bgColor = `rgba(59, 130, 246, ${intensity * 0.8})`; // Bleu
+                                                bgColor = `rgba(59, 130, 246, ${intensity * 0.8})`;
                                             } else {
                                                 intensity = (val - min) / range;
-                                                bgColor = `rgba(249, 115, 22, ${intensity * 0.8})`; // Orange
+                                                bgColor = `rgba(249, 115, 22, ${intensity * 0.8})`;
                                             }
                                             
                                             return (
@@ -892,7 +911,6 @@ function GlobalStats({ players, games, phases }) {
         </div>
     );
 }
-
 // --- IMPORT MULTI-MATCHS ---
 function ImportReviewModal({ importData, currentPlayers, phases, onConfirm, onCancel }) {
     const [mapping, setMapping] = useState({});
