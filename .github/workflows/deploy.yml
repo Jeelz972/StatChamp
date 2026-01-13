@@ -20,8 +20,3 @@ jobs:
         username: ${{ secrets.FTP_USERNAME }}
         password: ${{ secrets.FTP_PASSWORD }}
         server-dir: /www/  # Dossier cible chez OVH (ne pas oublier le / à la fin)
-        exclude: |
-          **/.git*
-          **/.github*
-          README.md
-          backend/ # On exclut le backend Python car OVH Web ne le gère pas
