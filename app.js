@@ -969,6 +969,7 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
         const opp = game.opponentStats || {};
         const oppScore = game.awayScore || 0;
 
+        // Totaux équipe pour calculs
         let tFGM = 0, tFGA = 0, tFTM = 0, tFTA = 0, tORB = 0, tTOV = 0, tPTS = 0;
         let tDRB = 0, tAST = 0, tSTL = 0, tBLK = 0, tPF = 0;
 
@@ -987,6 +988,7 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
             tPF += (s.pf || 0);
         });
 
+        // Stats adversaire
         const oppPTS = oppScore;
         const oppFGM = opp.fgm || Math.round(oppPTS / 2.2);
         const oppFTM = opp.ftm || 0;
@@ -998,17 +1000,21 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
         const oppBLK = opp.blk || 0;
         const oppPF = opp.fouls || 0;
         const oppTOV = opp.tov || 0;
+        const oppMissedFG = oppFGA - oppFGM;
 
+        // Possessions et ratings équipe
         const teamPoss = tFGA + 0.44 * tFTA - tORB + tTOV;
         const teamORtg = teamPoss > 0 ? (tPTS / teamPoss) * 100 : 0;
         const teamDRtg = teamPoss > 0 ? (oppPTS / teamPoss) * 100 : 0;
         const teamNetRtg = teamORtg - teamDRtg;
 
+        // PIE dénominateur
         const gamePIEDenom = (tPTS + oppPTS) + (tFGM + oppFGM) + (tFTM + oppFTM) 
                            - (tFGA + oppFGA) - (tFTA + oppFTA) + (tDRB + oppDRB) 
                            + (0.5 * (tORB + oppORB)) + (tAST + oppAST) + tSTL 
                            + (0.5 * (tBLK + oppBLK)) - (tPF + oppPF) - (tTOV + oppTOV);
 
+        // Enrichissement des stats joueurs avec RATINGS INDIVIDUELS
         const enrichedPlayers = Object.entries(pStats).map(([pid, s]) => {
             const player = players.find(p => p.id === parseInt(pid));
             const name = player ? player.name : `Joueur #${pid}`;
@@ -1018,22 +1024,50 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
             const fta = s.fta || 0;
             const ftm = s.ftm || 0;
             const pts = s.pts || 0;
+            const ast = s.ast || 0;
+            const tov = s.tov || 0;
+            const stl = s.stl || 0;
+            const blk = s.blk || 0;
+            const dreb = s.dreb || 0;
 
+            // eFG% et TS%
             const eFG = fga > 0 ? ((fgm + 0.5 * (s.threePM || 0)) / fga) * 100 : 0;
             const ts = (fga + 0.44 * fta) > 0 ? (pts / (2 * (fga + 0.44 * fta))) * 100 : 0;
             
-            const playerPIENum = pts + fgm + ftm - fga - fta + (s.dreb || 0) + (0.5 * (s.oreb || 0)) 
-                               + (s.ast || 0) + (s.stl || 0) + (0.5 * (s.blk || 0)) - (s.pf || 0) - (s.tov || 0);
+            // PIE individuel
+            const playerPIENum = pts + fgm + ftm - fga - fta + dreb + (0.5 * (s.oreb || 0)) 
+                               + ast + stl + (0.5 * blk) - (s.pf || 0) - tov;
             const pie = gamePIEDenom !== 0 ? (playerPIENum / gamePIEDenom) * 100 : 0;
+
+            // === RATINGS INDIVIDUELS ===
+            
+            // ORtg individuel : Points Produits / Possessions Utilisées × 100
+            // Points Produits = PTS + (AST × 2.5) - estimation des points générés par assists
+            const pointsProduits = pts + (ast * 2.5);
+            // Possessions Utilisées = FGA + 0.44 × FTA + TOV
+            const possUtilisees = fga + 0.44 * fta + tov;
+            const playerORtg = possUtilisees > 0 ? (pointsProduits / possUtilisees) * 100 : 0;
+
+            // DRtg individuel : Basé sur contribution défensive
+            // Stops estimés = STL + 0.5×BLK + (DRB/TeamDRB) × OppMissedFG
+            const drebShare = tDRB > 0 ? dreb / tDRB : 0;
+            const stopsEstimes = stl + (0.5 * blk) + (drebShare * oppMissedFG);
+            // DRtg ajusté : on part du DRtg équipe et on ajuste selon les stops
+            const avgStopsPerPlayer = (tSTL + 0.5 * tBLK + oppMissedFG) / Object.keys(pStats).length;
+            const stopsDiff = stopsEstimes - avgStopsPerPlayer;
+            // Bonus/malus basé sur les stops (chaque stop au-dessus de la moyenne réduit le DRtg)
+            const playerDRtg = teamDRtg - (stopsDiff * 2);
+
+            const playerNetRtg = playerORtg - playerDRtg;
 
             return {
                 id: pid, name, ...s, fga, fgm,
                 eFG: eFG.toFixed(1),
                 TS: ts.toFixed(1),
                 PIE: pie.toFixed(1),
-                ORtg: teamORtg.toFixed(1),
-                DRtg: teamDRtg.toFixed(1),
-                netRtg: teamNetRtg.toFixed(1)
+                ORtg: playerORtg.toFixed(1),
+                DRtg: playerDRtg.toFixed(1),
+                netRtg: playerNetRtg.toFixed(1)
             };
         });
 
