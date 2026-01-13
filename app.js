@@ -91,18 +91,17 @@ const Icons = {
 
 // --- UI COMPONENTS ---
 const Card = ({ children, className = "" }) => <div className={`bg-slate-800 rounded-lg border border-slate-700 shadow-lg overflow-hidden ${className}`}>{children}</div>;
-
 const Button = ({ onClick, children, variant = "primary", className = "", size = "md", disabled = false }) => {
     const base = "font-semibold rounded transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer no-print";
     const variants = { primary: "bg-coach-accent hover:bg-orange-600 text-white shadow-md", secondary: "bg-slate-700 hover:bg-slate-600 text-slate-200", danger: "bg-red-600 hover:bg-red-700 text-white", success: "bg-green-600 hover:bg-green-700 text-white", ghost: "bg-transparent hover:bg-slate-700 text-slate-400" };
     const sizes = { sm: "px-2 py-1 text-xs", md: "px-4 py-2 text-sm", lg: "px-6 py-3 text-lg" };
     return <button onClick={onClick} disabled={disabled} className={`${base} ${variants[variant]} ${sizes[size]} ${className} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>{children}</button>;
 };
-
 const Modal = ({ isOpen, onClose, title, children, size = "max-w-6xl" }) => {
     if (!isOpen) return null;
     return <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 no-print"><div className={`bg-slate-800 rounded-xl border border-slate-600 w-full ${size} shadow-2xl max-h-[90vh] flex flex-col`}><div className="flex justify-between items-center p-4 border-b border-slate-700 shrink-0"><h3 className="text-xl font-bold text-white flex items-center gap-2">{title}</h3><button onClick={onClose} className="text-slate-400 hover:text-white text-2xl">&times;</button></div><div className="p-4 overflow-y-auto flex-1">{children}</div></div></div>;
 };
+
 // --- PARSE HTML ---
 const parseHTMLStats = (html) => {
     const parser = new DOMParser();
@@ -147,7 +146,7 @@ function LiveTracker({ players, onSaveGame, initialGame, phases, selectedPhase }
     const [onCourt, setOnCourt] = useState([]);
     const [accumulatedMinutes, setAccumulatedMinutes] = useState({});
     const [derived, setDerived] = useState(recalculateGameStats([], players));
-    const [, set] = useState({ type: null, data: null });
+    const [modal, setModal] = useState({ type: null, data: null });
 
     useEffect(() => { if (initialGame) setGameState(prev => ({ ...prev, ...initialGame })); }, [initialGame]);
     useEffect(() => { setDerived(recalculateGameStats(gameState.actions, players)); }, [gameState.actions, players]);
@@ -160,7 +159,7 @@ function LiveTracker({ players, onSaveGame, initialGame, phases, selectedPhase }
     const registerAction = (actionType, player, extraData = {}) => {
         const newAction = { id: generateId(), type: actionType, playerId: player === 'opponent' ? 'OPP' : player.id, playerName: player === 'opponent' ? 'Adversaire' : player.name, q: gameState.quarter, consequence: extraData.consequence, timestamp: new Date().toLocaleTimeString(), onCourt: [...onCourt] };
         setGameState(prev => ({ ...prev, actions: [...prev.actions, newAction] }));
-        set({ type: null, data: null });
+        setModal({ type: null, data: null });
     };
 
     const finalizeGame = () => {
@@ -195,14 +194,14 @@ function LiveTracker({ players, onSaveGame, initialGame, phases, selectedPhase }
                     return (
                         <div key={player.id} className={`relative p-3 rounded-xl border shadow-md transition-all ${isOnCourt ? 'bg-slate-800 border-orange-500 ring-1 ring-orange-500/50' : 'bg-slate-800/60 border-slate-700 opacity-80'}`}>
                             <div className="absolute top-2 right-2 z-20"><input type="checkbox" checked={isOnCourt} onChange={() => { if (onCourt.includes(player.id)) setOnCourt(p => p.filter(x => x !== player.id)); else if (onCourt.length < 5) setOnCourt(p => [...p, player.id]); }} className="w-5 h-5 accent-orange-500 cursor-pointer" /></div>
-                            <div onClick={() => set({ type: "ACTION_MENU", data: player })} className="cursor-pointer">
+                            <div onClick={() => setModal({ type: "ACTION_MENU", data: player })} className="cursor-pointer">
                                 <div className="flex justify-between pr-6"><span className={`font-bold truncate ${isOnCourt ? 'text-white' : 'text-slate-400'}`}>{player.name}</span><span className="text-xs text-slate-500">#{player.number}</span></div>
                                 <div className="text-xs mt-2 space-x-2 text-slate-300"><span>Pts: <b className="text-white">{pStats.pts}</b></span><span>+/-: <b className={pStats.plusMinus >= 0 ? "text-green-400" : "text-red-400"}>{pStats.plusMinus > 0 ? '+' : ''}{pStats.plusMinus}</b></span></div>
                             </div>
                         </div>
                     );
                 })}
-                <div onClick={() => set({ type: "ACTION_MENU", data: "opponent" })} className="bg-red-900/40 p-3 rounded-xl border border-red-700 shadow-md hover:border-red-500 cursor-pointer flex items-center justify-center"><span className="font-bold text-red-200">{gameState.opponent.toUpperCase()}</span></div>
+                <div onClick={() => setModal({ type: "ACTION_MENU", data: "opponent" })} className="bg-red-900/40 p-3 rounded-xl border border-red-700 shadow-md hover:border-red-500 cursor-pointer flex items-center justify-center"><span className="font-bold text-red-200">{gameState.opponent.toUpperCase()}</span></div>
             </div>
             <div className="fixed bottom-0 left-0 right-0 bg-slate-900 p-4 border-t border-slate-800 flex justify-end z-20 gap-2"><Button variant="secondary" onClick={() => setModal({ type: "STATS" })}><Icon path={Icons.Eye} /> Stats</Button><Button variant="success" onClick={finalizeGame}><Icon path={Icons.Check} /> Finir</Button></div>
             <Modal isOpen={modal.type === "ACTION_MENU"} onClose={() => setModal({ type: null })} title={modal.data?.name || "Adversaire"} size="max-w-md">
@@ -959,31 +958,23 @@ function ImportReviewModal({ importData, currentPlayers, phases, onConfirm, onCa
 }
 
 // --- COMPOSANT DÉTAILS DU MATCH (Classique & Avancé) ---
-// REMPLACE la fonction GameDetailsModal existante dans ton app.js
-
+// CHERCHE cette fonction dans ton app.js (vers ligne 460) et REMPLACE-LA entièrement
 function GameDetailsModal({ game, isOpen, onClose, players }) {
     if (!game) return null;
 
-    const [viewMode, setViewMode] = useState('classic'); // 'classic' | 'advanced'
+    const [viewMode, setViewMode] = useState('classic');
 
-    // Calculs des stats avancées pour ce match spécifique
     const statsData = useMemo(() => {
         const pStats = game.playerStats || {};
         const opp = game.opponentStats || {};
-        const teamScore = game.homeScore || 0;
         const oppScore = game.awayScore || 0;
 
-        // 1. Totaux Équipe (Somme des joueurs)
-        let tFGM = 0, tFGA = 0, t3PM = 0, t3PA = 0, tFTM = 0, tFTA = 0;
-        let tORB = 0, tTOV = 0, tPTS = 0;
-        // Pour PIE
+        let tFGM = 0, tFGA = 0, tFTM = 0, tFTA = 0, tORB = 0, tTOV = 0, tPTS = 0;
         let tDRB = 0, tAST = 0, tSTL = 0, tBLK = 0, tPF = 0;
 
         Object.values(pStats).forEach(s => {
             tFGM += (s.fgm || 0) + (s.threePM || 0);
             tFGA += (s.fga || 0) + (s.threePA || 0);
-            t3PM += (s.threePM || 0);
-            t3PA += (s.threePA || 0);
             tFTM += (s.ftm || 0);
             tFTA += (s.fta || 0);
             tORB += (s.oreb || 0);
@@ -996,7 +987,6 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
             tPF += (s.pf || 0);
         });
 
-        // 2. Totaux Adversaire (pour PIE et Ratings)
         const oppPTS = oppScore;
         const oppFGM = opp.fgm || Math.round(oppPTS / 2.2);
         const oppFTM = opp.ftm || 0;
@@ -1005,67 +995,50 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
         const oppDRB = opp.reb ? Math.round(opp.reb * 0.7) : 0;
         const oppORB = opp.oreb || 0;
         const oppAST = opp.ast || 0;
-        const oppSTL = 0;
         const oppBLK = opp.blk || 0;
         const oppPF = opp.fouls || 0;
         const oppTOV = opp.tov || 0;
 
-        // 3. Formules d'équipe
-        // Possessions = FGA + 0.44 * FTA - ORB + TO
         const teamPoss = tFGA + 0.44 * tFTA - tORB + tTOV;
         const teamORtg = teamPoss > 0 ? (tPTS / teamPoss) * 100 : 0;
         const teamDRtg = teamPoss > 0 ? (oppPTS / teamPoss) * 100 : 0;
         const teamNetRtg = teamORtg - teamDRtg;
 
-        // Dénominateur PIE du match (Team + Opp)
         const gamePIEDenom = (tPTS + oppPTS) + (tFGM + oppFGM) + (tFTM + oppFTM) 
                            - (tFGA + oppFGA) - (tFTA + oppFTA) + (tDRB + oppDRB) 
-                           + (0.5 * (tORB + oppORB)) + (tAST + oppAST) + (tSTL + oppSTL) 
+                           + (0.5 * (tORB + oppORB)) + (tAST + oppAST) + tSTL 
                            + (0.5 * (tBLK + oppBLK)) - (tPF + oppPF) - (tTOV + oppTOV);
 
-        // 4. Enrichissement des stats joueurs
         const enrichedPlayers = Object.entries(pStats).map(([pid, s]) => {
             const player = players.find(p => p.id === parseInt(pid));
             const name = player ? player.name : `Joueur #${pid}`;
             
-            // Basic
             const fga = (s.fga || 0) + (s.threePA || 0);
             const fgm = (s.fgm || 0) + (s.threePM || 0);
             const fta = s.fta || 0;
             const ftm = s.ftm || 0;
             const pts = s.pts || 0;
 
-            // Advanced - MÊMES FORMULES QUE GLOBALSTATS
-            // eFG% = (FGM + 0.5 * 3PM) / FGA
             const eFG = fga > 0 ? ((fgm + 0.5 * (s.threePM || 0)) / fga) * 100 : 0;
-            // TS% = PTS / (2 * (FGA + 0.44 * FTA))
             const ts = (fga + 0.44 * fta) > 0 ? (pts / (2 * (fga + 0.44 * fta))) * 100 : 0;
             
-            // PIE Player - MÊME FORMULE QUE GLOBALSTATS
             const playerPIENum = pts + fgm + ftm - fga - fta + (s.dreb || 0) + (0.5 * (s.oreb || 0)) 
                                + (s.ast || 0) + (s.stl || 0) + (0.5 * (s.blk || 0)) - (s.pf || 0) - (s.tov || 0);
             const pie = gamePIEDenom !== 0 ? (playerPIENum / gamePIEDenom) * 100 : 0;
 
-            // ORtg et DRtg : basés sur les ratings équipe (comme dans GlobalStats)
-            const playerORtg = teamORtg;
-            const playerDRtg = teamDRtg;
-            const playerNetRtg = playerORtg - playerDRtg;
-
             return {
-                id: pid, name, ...s,
-                fga, fgm,
+                id: pid, name, ...s, fga, fgm,
                 eFG: eFG.toFixed(1),
                 TS: ts.toFixed(1),
                 PIE: pie.toFixed(1),
-                ORtg: playerORtg.toFixed(1),
-                DRtg: playerDRtg.toFixed(1),
-                netRtg: playerNetRtg.toFixed(1)
+                ORtg: teamORtg.toFixed(1),
+                DRtg: teamDRtg.toFixed(1),
+                netRtg: teamNetRtg.toFixed(1)
             };
         });
 
         return { 
             team: { poss: teamPoss.toFixed(1), ORtg: teamORtg.toFixed(1), DRtg: teamDRtg.toFixed(1), Net: teamNetRtg.toFixed(1) },
-            oppStats: opp,
             players: enrichedPlayers
         };
     }, [game, players]);
@@ -1073,7 +1046,6 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={`Détails: vs ${game.opponent}`} size="max-w-5xl">
             <div className="space-y-6">
-                {/* Header Score & Team Stats */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="md:col-span-2 bg-slate-900 p-4 rounded-lg flex justify-between items-center border border-slate-700 relative overflow-hidden">
                         <div className="text-center z-10">
@@ -1091,7 +1063,6 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
                         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-500 via-transparent to-red-500"></div>
                     </div>
                     
-                    {/* Carte Stats Avancées Équipe */}
                     <div className="bg-slate-800 p-4 rounded-lg border border-slate-600 flex flex-col justify-center">
                         <div className="text-xs text-slate-400 uppercase mb-2 text-center border-b border-slate-700 pb-1">Performance Équipe</div>
                         <div className="grid grid-cols-2 gap-y-2 gap-x-4">
@@ -1103,21 +1074,14 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
                     </div>
                 </div>
 
-                {/* Contrôles & Tableau */}
                 <div>
                     <div className="flex justify-between items-center mb-3">
                         <h4 className="text-orange-400 font-bold text-sm uppercase flex items-center gap-2">
                             <Icon path={Icons.Users} /> Stats Joueurs
                         </h4>
                         <div className="flex bg-slate-800 rounded p-1 border border-slate-700">
-                            <button 
-                                onClick={() => setViewMode('classic')}
-                                className={`px-3 py-1 text-xs rounded transition-all ${viewMode === 'classic' ? 'bg-slate-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
-                            >Classique</button>
-                            <button 
-                                onClick={() => setViewMode('advanced')}
-                                className={`px-3 py-1 text-xs rounded transition-all ${viewMode === 'advanced' ? 'bg-slate-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
-                            >Avancé</button>
+                            <button onClick={() => setViewMode('classic')} className={`px-3 py-1 text-xs rounded transition-all ${viewMode === 'classic' ? 'bg-slate-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>Classique</button>
+                            <button onClick={() => setViewMode('advanced')} className={`px-3 py-1 text-xs rounded transition-all ${viewMode === 'advanced' ? 'bg-slate-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>Avancé</button>
                         </div>
                     </div>
 
@@ -1192,6 +1156,7 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
         </Modal>
     );
 }
+
 // --- HISTORY ---
 function History({ games, players, setGames, phases, onEditGame, onImportClick, onMultiImport }) {
     const [selectedGame, setSelectedGame] = useState(null);
