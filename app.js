@@ -412,42 +412,97 @@ function GlobalStats({ players, games, phases }) {
             const teamORtg = teamPoss > 0 ? (teamPTS / teamPoss) * 100 : 100;
             const teamDRtg = teamPoss > 0 ? (oppPTS / teamPoss) * 100 : 100;
 
-            Object.entries(g.playerStats || {}).forEach(([pid, s]) => {
-                const id = parseInt(pid);
-                if ((s.minutes || 0) > 0 && stats[id]) {
-                    const t = stats[id].total;
-                    const playerMin = s.minutes || 0;
-                    stats[id].gamesPlayed++; stats[id].totalMinPlayed += playerMin;
-                    stats[id].weightedORtg += teamORtg * playerMin;
-                    stats[id].weightedDRtg += teamDRtg * playerMin;
+        Object.entries(g.playerStats || {}).forEach(([pid, s]) => {
+    const id = parseInt(pid);
+    if ((s.minutes || 0) > 0 && stats[id]) {
+        const t = stats[id].total;
+        const playerMin = s.minutes || 0;
+        stats[id].gamesPlayed++; 
+        stats[id].totalMinPlayed += playerMin;
+        stats[id].weightedORtg += teamORtg * playerMin;
+        stats[id].weightedDRtg += teamDRtg * playerMin;
 
-                    t.pts += s.pts || 0; t.reb += s.reb || 0; t.oreb += s.oreb || 0; t.dreb += s.dreb || 0;
-                    t.ast += s.ast || 0; t.stl += s.stl || 0; t.blk += s.blk || 0; t.tov += s.tov || 0;
-                    t.min += playerMin; t.fgm += s.fgm || 0; t.fga += s.fga || 0;
-                    t.threePM += s.threePM || 0; t.threePA += s.threePA || 0;
-                    t.ftm += s.ftm || 0; t.fta += s.fta || 0; t.pf += s.pf || 0; t.plusMinus += s.plusMinus || 0;
+        t.pts += s.pts || 0; t.reb += s.reb || 0; t.oreb += s.oreb || 0; t.dreb += s.dreb || 0;
+        t.ast += s.ast || 0; t.stl += s.stl || 0; t.blk += s.blk || 0; t.tov += s.tov || 0;
+        t.min += playerMin; t.fgm += s.fgm || 0; t.fga += s.fga || 0;
+        t.threePM += s.threePM || 0; t.threePA += s.threePA || 0;
+        t.ftm += s.ftm || 0; t.fta += s.fta || 0; t.pf += s.pf || 0; t.plusMinus += s.plusMinus || 0;
 
-                    const playerFGA = (s.fga || 0) + (s.threePA || 0);
-                    const playerFGM = (s.fgm || 0) + (s.threePM || 0);
-                    const evalStat = (s.pts + s.reb + s.ast + s.stl + s.blk) - ((playerFGA - playerFGM) + ((s.fta || 0) - (s.ftm || 0)) + s.tov);
-                    t.eff += evalStat;
+        const playerFGA = (s.fga || 0) + (s.threePA || 0);
+        const playerFGM = (s.fgm || 0) + (s.threePM || 0);
+        const evalStat = (s.pts + s.reb + s.ast + s.stl + s.blk) - ((playerFGA - playerFGM) + ((s.fta || 0) - (s.ftm || 0)) + s.tov);
+        t.eff += evalStat;
 
-                    const playerPIENum = (s.pts || 0) + playerFGM + (s.ftm || 0) - playerFGA - (s.fta || 0) + (s.dreb || 0) + (0.5 * (s.oreb || 0)) + (s.ast || 0) + (s.stl || 0) + (0.5 * (s.blk || 0)) - (s.pf || 0) - (s.tov || 0);
-                    const playerPIE = gamePIEDenom !== 0 ? (playerPIENum / gamePIEDenom) * 100 : 0;
-                    t.pie += playerPIE;
+        const playerPIENum = (s.pts || 0) + playerFGM + (s.ftm || 0) - playerFGA - (s.fta || 0) + (s.dreb || 0) + (0.5 * (s.oreb || 0)) + (s.ast || 0) + (s.stl || 0) + (0.5 * (s.blk || 0)) - (s.pf || 0) - (s.tov || 0);
+        const playerPIE = gamePIEDenom !== 0 ? (playerPIENum / gamePIEDenom) * 100 : 0;
+        t.pie += playerPIE;
 
-                    if (s.pts > stats[id].records.pts) stats[id].records.pts = s.pts;
-                    if (s.reb > stats[id].records.reb) stats[id].records.reb = s.reb;
-                    if (s.ast > stats[id].records.ast) stats[id].records.ast = s.ast;
-                    if (s.stl > stats[id].records.stl) stats[id].records.stl = s.stl;
-                    if (s.blk > stats[id].records.blk) stats[id].records.blk = s.blk;
-                    if (evalStat > stats[id].records.eff) stats[id].records.eff = evalStat;
+        if (s.pts > stats[id].records.pts) stats[id].records.pts = s.pts;
+        if (s.reb > stats[id].records.reb) stats[id].records.reb = s.reb;
+        if (s.ast > stats[id].records.ast) stats[id].records.ast = s.ast;
+        if (s.stl > stats[id].records.stl) stats[id].records.stl = s.stl;
+        if (s.blk > stats[id].records.blk) stats[id].records.blk = s.blk;
+        if (evalStat > stats[id].records.eff) stats[id].records.eff = evalStat;
 
-                    const gameEFG = playerFGA > 0 ? ((playerFGM + 0.5 * (s.threePM || 0)) / playerFGA) * 100 : 0;
-                    const gameTS = (playerFGA + 0.44 * (s.fta || 0)) > 0 ? ((s.pts || 0) / (2 * (playerFGA + 0.44 * (s.fta || 0)))) * 100 : 0;
-                    stats[id].logs.push({ date: g.date, opponent: g.opponent, pts: s.pts, reb: s.reb, ast: s.ast, stl: s.stl, blk: s.blk, tov: s.tov, eff: evalStat, eFG: gameEFG.toFixed(1), TS: gameTS.toFixed(1), ORtg: teamORtg.toFixed(1), DRtg: teamDRtg.toFixed(1), PIE: playerPIE.toFixed(1), min: s.minutes });                }
-            });
+        const gameEFG = playerFGA > 0 ? ((playerFGM + 0.5 * (s.threePM || 0)) / playerFGA) * 100 : 0;
+        const gameTS = (playerFGA + 0.44 * (s.fta || 0)) > 0 ? ((s.pts || 0) / (2 * (playerFGA + 0.44 * (s.fta || 0)))) * 100 : 0;
+
+        // ✅ CALCUL DES RATINGS INDIVIDUELS PAR JOUEUR
+        const teamStatsForCalc = {
+            fgm: 0, fga: 0, ftm: 0, fta: 0, oreb: 0, dreb: 0,
+            ast: 0, stl: 0, blk: 0, tov: 0, pf: 0, pts: 0, minutes: 0, threePM: 0
+        };
+        Object.values(g.playerStats || {}).forEach(ps => {
+            teamStatsForCalc.fgm += (ps.fgm || 0) + (ps.threePM || 0);
+            teamStatsForCalc.fga += (ps.fga || 0) + (ps.threePA || 0);
+            teamStatsForCalc.ftm += ps.ftm || 0;
+            teamStatsForCalc.fta += ps.fta || 0;
+            teamStatsForCalc.oreb += ps.oreb || 0;
+            teamStatsForCalc.dreb += ps.dreb || 0;
+            teamStatsForCalc.ast += ps.ast || 0;
+            teamStatsForCalc.stl += ps.stl || 0;
+            teamStatsForCalc.blk += ps.blk || 0;
+            teamStatsForCalc.tov += ps.tov || 0;
+            teamStatsForCalc.pf += ps.pf || 0;
+            teamStatsForCalc.pts += ps.pts || 0;
+            teamStatsForCalc.minutes += ps.minutes || 0;
+            teamStatsForCalc.threePM += ps.threePM || 0;
         });
+
+        const oppStatsForCalc = {
+            pts: g.awayScore || 0,
+            fgm: opp.fgm || Math.round((g.awayScore || 0) / 2.2),
+            fga: opp.fga || Math.round((g.awayScore || 0) / 1.1),
+            ftm: opp.ftm || 0,
+            fta: opp.fta || Math.max(1, Math.round((g.awayScore || 0) * 0.2)),
+            oreb: opp.oreb || 0,
+            dreb: opp.reb ? Math.round(opp.reb * 0.7) : Math.round((g.awayScore || 0) * 0.3),
+            reb: opp.reb || Math.round((g.awayScore || 0) * 0.4),
+            tov: opp.tov || Math.round((g.awayScore || 0) * 0.1)
+        };
+
+        const avgMin = teamStatsForCalc.minutes / Math.max(1, Object.values(g.playerStats).filter(ps => (ps.minutes || 0) > 0).length);
+        const playerRatings = calculateIndividualRatings(s, teamStatsForCalc, oppStatsForCalc, avgMin, 1.5);
+
+        stats[id].logs.push({ 
+            date: g.date, 
+            opponent: g.opponent, 
+            pts: s.pts, 
+            reb: s.reb, 
+            ast: s.ast, 
+            stl: s.stl || 0, 
+            blk: s.blk || 0, 
+            tov: s.tov || 0, 
+            eff: evalStat, 
+            eFG: gameEFG.toFixed(1), 
+            TS: gameTS.toFixed(1), 
+            ORtg: playerRatings.ORtg.toFixed(1),  // ✅ Rating INDIVIDUEL
+            DRtg: playerRatings.DRtg.toFixed(1),  // ✅ Rating INDIVIDUEL
+            PIE: playerPIE.toFixed(1), 
+            min: s.minutes 
+        });
+    }
+});
 
         return Object.values(stats).map(p => {
             const gp = p.gamesPlayed || 1, t = p.total, totalMin = p.totalMinPlayed || 1;
