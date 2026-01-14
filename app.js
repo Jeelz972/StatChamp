@@ -445,8 +445,7 @@ function GlobalStats({ players, games, phases }) {
 
                     const gameEFG = playerFGA > 0 ? ((playerFGM + 0.5 * (s.threePM || 0)) / playerFGA) * 100 : 0;
                     const gameTS = (playerFGA + 0.44 * (s.fta || 0)) > 0 ? ((s.pts || 0) / (2 * (playerFGA + 0.44 * (s.fta || 0)))) * 100 : 0;
-                    stats[id].logs.push({ date: g.date, opponent: g.opponent, pts: s.pts, reb: s.reb, ast: s.ast, eff: evalStat, eFG: gameEFG.toFixed(1), TS: gameTS.toFixed(1), ORtg: teamORtg.toFixed(1), DRtg: teamDRtg.toFixed(1), PIE: playerPIE.toFixed(1), min: s.minutes });
-                }
+                    stats[id].logs.push({ date: g.date, opponent: g.opponent, pts: s.pts, reb: s.reb, ast: s.ast, stl: s.stl, blk: s.blk, tov: s.tov, eff: evalStat, eFG: gameEFG.toFixed(1), TS: gameTS.toFixed(1), ORtg: teamORtg.toFixed(1), DRtg: teamDRtg.toFixed(1), PIE: playerPIE.toFixed(1), min: s.minutes });                }
             });
         });
 
@@ -540,6 +539,7 @@ function GlobalStats({ players, games, phases }) {
             <Modal isOpen={!!selectedPlayer} onClose={() => setSelectedPlayer(null)} title={selectedPlayer ? `🏆 ${selectedPlayer.info.name}` : ""}>
                 {selectedPlayer && (
                     <div className="space-y-6">
+                        {/* Stats moyennes */}
                         <div className="grid grid-cols-5 gap-2 bg-slate-900 p-4 rounded-lg">
                             <div className="text-center"><div className="text-xs text-slate-500">Points</div><div className="text-2xl font-bold text-white">{selectedPlayer.avg.pts}</div></div>
                             <div className="text-center"><div className="text-xs text-slate-500">Rebonds</div><div className="text-2xl font-bold text-white">{selectedPlayer.avg.reb}</div></div>
@@ -547,6 +547,8 @@ function GlobalStats({ players, games, phases }) {
                             <div className="text-center"><div className="text-xs text-slate-500">Éval</div><div className="text-2xl font-bold text-green-400">{selectedPlayer.avg.eff}</div></div>
                             <div className="text-center"><div className="text-xs text-slate-500">PIE</div><div className="text-2xl font-bold text-cyan-400">{selectedPlayer.avg.PIE}%</div></div>
                         </div>
+            
+                        {/* Records et Efficacité */}
                         <div className="grid grid-cols-2 gap-4">
                             <div className="bg-slate-900 p-4 rounded-lg">
                                 <h4 className="text-sm font-bold text-orange-400 mb-3">Records Personnels</h4>
@@ -560,7 +562,7 @@ function GlobalStats({ players, games, phases }) {
                                 </div>
                             </div>
                             <div className="bg-slate-900 p-4 rounded-lg">
-                                <h4 className="text-sm font-bold text-blue-400 mb-3">Efficacité</h4>
+                                <h4 className="text-sm font-bold text-blue-400 mb-3">Efficacité Moyenne</h4>
                                 <div className="grid grid-cols-2 gap-2 text-center">
                                     <div><div className="text-xs text-slate-500">eFG%</div><div className="text-lg font-bold text-blue-300">{selectedPlayer.avg.eFG}%</div></div>
                                     <div><div className="text-xs text-slate-500">TS%</div><div className="text-lg font-bold text-blue-300">{selectedPlayer.avg.TS}%</div></div>
@@ -569,50 +571,101 @@ function GlobalStats({ players, games, phases }) {
                                 </div>
                             </div>
                         </div>
+            
+                        {/* Graphiques */}
                         {selectedPlayer.logs.length > 0 && (
-                            <div>
-                                <h4 className="text-sm font-bold text-orange-400 mb-2">Évolution Points / Évaluation</h4>
-                                <div className="h-48 bg-slate-900 rounded-lg p-2">
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <LineChart data={selectedPlayer.logs}>
-                                            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                                            <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} />
-                                            <YAxis stroke="#94a3b8" fontSize={10} />
-                                            <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none' }} />
-                                            <Legend />
-                                            <Line type="monotone" dataKey="pts" stroke="#f97316" strokeWidth={2} name="Points" dot={{ fill: '#f97316' }} />
-                                            <Line type="monotone" dataKey="eff" stroke="#22c55e" strokeWidth={2} name="Éval" dot={{ fill: '#22c55e' }} />
-                                        </LineChart>
-                                    </ResponsiveContainer>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="bg-slate-900 p-3 rounded-lg">
+                                    <h4 className="text-xs font-bold text-orange-400 mb-2">Points / Évaluation</h4>
+                                    <div style={{ width: '100%', height: '180px' }}>
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <LineChart data={[...selectedPlayer.logs].sort((a, b) => {
+                                                const parseDate = (d) => { const months = {'janv':0,'févr':1,'mars':2,'avr':3,'mai':4,'juin':5,'juil':6,'août':7,'sept':8,'oct':9,'nov':10,'déc':11}; const m = d.match(/(\d{1,2})\s+([a-zéûô]+)\.?\s+(\d{4})/i); return m ? new Date(m[3], months[m[2].toLowerCase().replace('.','')]||0, m[1]) : new Date(d); };
+                                                return parseDate(a.date) - parseDate(b.date);
+                                            })} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+                                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                                                <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={9} tick={{ fill: '#94a3b8' }} />
+                                                <YAxis stroke="#94a3b8" fontSize={9} tick={{ fill: '#94a3b8' }} />
+                                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', fontSize: '11px' }} />
+                                                <Legend wrapperStyle={{ fontSize: '10px' }} />
+                                                <Line type="monotone" dataKey="pts" stroke="#f97316" strokeWidth={2} name="PTS" dot={{ r: 3 }} />
+                                                <Line type="monotone" dataKey="eff" stroke="#22c55e" strokeWidth={2} name="ÉVAL" dot={{ r: 3 }} />
+                                            </LineChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+                                <div className="bg-slate-900 p-3 rounded-lg">
+                                    <h4 className="text-xs font-bold text-purple-400 mb-2">ORtg / DRtg</h4>
+                                    <div style={{ width: '100%', height: '180px' }}>
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <LineChart data={[...selectedPlayer.logs].sort((a, b) => {
+                                                const parseDate = (d) => { const months = {'janv':0,'févr':1,'mars':2,'avr':3,'mai':4,'juin':5,'juil':6,'août':7,'sept':8,'oct':9,'nov':10,'déc':11}; const m = d.match(/(\d{1,2})\s+([a-zéûô]+)\.?\s+(\d{4})/i); return m ? new Date(m[3], months[m[2].toLowerCase().replace('.','')]||0, m[1]) : new Date(d); };
+                                                return parseDate(a.date) - parseDate(b.date);
+                                            })} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+                                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                                                <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={9} tick={{ fill: '#94a3b8' }} />
+                                                <YAxis stroke="#94a3b8" fontSize={9} tick={{ fill: '#94a3b8' }} domain={['auto', 'auto']} />
+                                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', fontSize: '11px' }} />
+                                                <Legend wrapperStyle={{ fontSize: '10px' }} />
+                                                <Line type="monotone" dataKey="ORtg" stroke="#a855f7" strokeWidth={2} name="ORtg" dot={{ r: 3 }} />
+                                                <Line type="monotone" dataKey="DRtg" stroke="#ef4444" strokeWidth={2} name="DRtg" dot={{ r: 3 }} />
+                                            </LineChart>
+                                        </ResponsiveContainer>
+                                    </div>
                                 </div>
                             </div>
                         )}
-                        {selectedPlayer.logs.length > 0 && (
-                            <div>
-                                <h4 className="text-sm font-bold text-purple-400 mb-2">Évolution ORtg / DRtg</h4>
-                                <div className="h-48 bg-slate-900 rounded-lg p-2">
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <LineChart data={selectedPlayer.logs}>
-                                            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                                            <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} />
-                                            <YAxis stroke="#94a3b8" fontSize={10} domain={['auto', 'auto']} />
-                                            <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none' }} />
-                                            <Legend />
-                                            <Line type="monotone" dataKey="ORtg" stroke="#a855f7" strokeWidth={2} name="Off. Rating" />
-                                            <Line type="monotone" dataKey="DRtg" stroke="#ef4444" strokeWidth={2} name="Def. Rating" />
-                                        </LineChart>
-                                    </ResponsiveContainer>
-                                </div>
-                            </div>
-                        )}
+            
+                        {/* Tableau complet des stats par match */}
                         <div>
-                            <h4 className="text-sm font-bold text-slate-400 mb-2">Historique par Match</h4>
-                            <div className="overflow-x-auto bg-slate-900 rounded-lg">
-                                <table className="w-full text-xs text-slate-300">
-                                    <thead className="bg-slate-800"><tr><th className="p-2">Adversaire</th><th className="p-2">MIN</th><th className="p-2">PTS</th><th className="p-2">REB</th><th className="p-2">AST</th><th className="p-2">ÉVAL</th><th className="p-2">PIE</th></tr></thead>
+                            <h4 className="text-sm font-bold text-slate-400 mb-2">Statistiques Complètes par Match</h4>
+                            <div className="overflow-x-auto bg-slate-900 rounded-lg max-h-64">
+                                <table className="w-full text-xs text-slate-300 whitespace-nowrap">
+                                    <thead className="bg-slate-800 sticky top-0">
+                                        <tr>
+                                            <th className="p-2 text-left sticky left-0 bg-slate-800">Date</th>
+                                            <th className="p-2 text-left">Adversaire</th>
+                                            <th className="p-2 text-center">MIN</th>
+                                            <th className="p-2 text-center text-orange-400">PTS</th>
+                                            <th className="p-2 text-center">REB</th>
+                                            <th className="p-2 text-center">AST</th>
+                                            <th className="p-2 text-center">INT</th>
+                                            <th className="p-2 text-center">CTR</th>
+                                            <th className="p-2 text-center text-red-400">BP</th>
+                                            <th className="p-2 text-center">eFG%</th>
+                                            <th className="p-2 text-center">TS%</th>
+                                            <th className="p-2 text-center text-purple-400">ORtg</th>
+                                            <th className="p-2 text-center text-red-400">DRtg</th>
+                                            <th className="p-2 text-center text-green-400">ÉVAL</th>
+                                            <th className="p-2 text-center text-cyan-400">PIE</th>
+                                        </tr>
+                                    </thead>
                                     <tbody className="divide-y divide-slate-700">
-                                        {selectedPlayer.logs.map((log, i) => (
-                                            <tr key={i}><td className="p-2">{log.opponent}</td><td className="p-2">{log.min}</td><td className="p-2 font-bold text-orange-400">{log.pts}</td><td className="p-2">{log.reb}</td><td className="p-2">{log.ast}</td><td className="p-2 font-bold text-green-400">{log.eff}</td><td className="p-2 text-cyan-400">{log.PIE}%</td></tr>
+                                        {[...selectedPlayer.logs].sort((a, b) => {
+                                            const parseDate = (d) => { 
+                                                const months = {'janv':0,'févr':1,'mars':2,'avr':3,'mai':4,'juin':5,'juil':6,'août':7,'sept':8,'oct':9,'nov':10,'déc':11}; 
+                                                const m = d.match(/(\d{1,2})\s+([a-zéûô]+)\.?\s+(\d{4})/i); 
+                                                return m ? new Date(m[3], months[m[2].toLowerCase().replace('.','')]||0, m[1]) : new Date(d); 
+                                            };
+                                            return parseDate(a.date) - parseDate(b.date);
+                                        }).map((log, i) => (
+                                            <tr key={i} className="hover:bg-slate-800">
+                                                <td className="p-2 sticky left-0 bg-slate-900 text-slate-500">{log.date}</td>
+                                                <td className="p-2 font-bold">{log.opponent}</td>
+                                                <td className="p-2 text-center">{log.min}</td>
+                                                <td className="p-2 text-center font-bold text-orange-400">{log.pts}</td>
+                                                <td className="p-2 text-center">{log.reb}</td>
+                                                <td className="p-2 text-center">{log.ast}</td>
+                                                <td className="p-2 text-center">{log.stl || 0}</td>
+                                                <td className="p-2 text-center">{log.blk || 0}</td>
+                                                <td className="p-2 text-center text-red-400">{log.tov || 0}</td>
+                                                <td className="p-2 text-center">{log.eFG}%</td>
+                                                <td className="p-2 text-center">{log.TS}%</td>
+                                                <td className="p-2 text-center text-purple-400">{log.ORtg}</td>
+                                                <td className="p-2 text-center text-red-400">{log.DRtg}</td>
+                                                <td className="p-2 text-center font-bold text-green-400">{log.eff}</td>
+                                                <td className="p-2 text-center text-cyan-400">{log.PIE}%</td>
+                                            </tr>
                                         ))}
                                     </tbody>
                                 </table>
@@ -621,7 +674,6 @@ function GlobalStats({ players, games, phases }) {
                     </div>
                 )}
             </Modal>
-
             {/* MODAL COMPARAISON */}
             <Modal isOpen={showComparison} onClose={() => setShowComparison(false)} title="👥 Comparaison Joueurs">
                 <div className="space-y-6">
