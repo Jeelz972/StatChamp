@@ -231,16 +231,17 @@ const Button = ({ onClick, children, variant = "primary", className = "", size =
 };
 
 // ✅ MODAL CORRIGÉ
+// ✅ MODAL RESPONSIVE
 const Modal = ({ isOpen, onClose, title, children, size = "max-w-4xl" }) => {
     if (!isOpen) return null;
     return (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" style={{ zIndex: 99999 }}>
-            <div className={`bg-slate-800 rounded-xl border border-slate-600 w-full ${size} shadow-2xl max-h-[90vh] flex flex-col`}>
-                <div className="flex justify-between items-center p-4 border-b border-slate-700 shrink-0">
-                    <h3 className="text-xl font-bold text-white flex items-center gap-2">{title}</h3>
-                    <button onClick={onClose} className="text-slate-400 hover:text-white text-3xl leading-none cursor-pointer">&times;</button>
+        <div className="fixed inset-0 flex items-center justify-center bg-black/80 backdrop-blur-sm p-2 sm:p-4" style={{ zIndex: 99999 }}>
+            <div className={`bg-slate-800 rounded-xl border border-slate-600 w-full ${size} shadow-2xl max-h-[95vh] sm:max-h-[90vh] flex flex-col`}>
+                <div className="flex justify-between items-center p-3 sm:p-4 border-b border-slate-700 shrink-0">
+                    <h3 className="text-base sm:text-xl font-bold text-white flex items-center gap-2 truncate pr-2">{title}</h3>
+                    <button onClick={onClose} className="text-slate-400 hover:text-white text-2xl sm:text-3xl leading-none cursor-pointer shrink-0 w-8 h-8 flex items-center justify-center">&times;</button>
                 </div>
-                <div className="p-4 overflow-y-auto flex-1">{children}</div>
+                <div className="p-3 sm:p-4 overflow-y-auto flex-1 overscroll-contain">{children}</div>
             </div>
         </div>
     );
@@ -603,124 +604,127 @@ function GlobalStats({ players, games, phases }) {
             {/* MODAL DÉTAIL JOUEUR */}
             <Modal isOpen={!!selectedPlayer} onClose={() => setSelectedPlayer(null)} title={selectedPlayer ? `🏆 ${selectedPlayer.info.name}` : ""}>
                 {selectedPlayer && (
-                    <div className="space-y-6">
-                        {/* Stats moyennes */}
-                        <div className="grid grid-cols-5 gap-2 bg-slate-900 p-4 rounded-lg">
-                            <div className="text-center"><div className="text-xs text-slate-500">Points</div><div className="text-2xl font-bold text-white">{selectedPlayer.avg.pts}</div></div>
-                            <div className="text-center"><div className="text-xs text-slate-500">Rebonds</div><div className="text-2xl font-bold text-white">{selectedPlayer.avg.reb}</div></div>
-                            <div className="text-center"><div className="text-xs text-slate-500">Passes</div><div className="text-2xl font-bold text-white">{selectedPlayer.avg.ast}</div></div>
-                            <div className="text-center"><div className="text-xs text-slate-500">Éval</div><div className="text-2xl font-bold text-green-400">{selectedPlayer.avg.eff}</div></div>
-                            <div className="text-center"><div className="text-xs text-slate-500">PIE</div><div className="text-2xl font-bold text-cyan-400">{selectedPlayer.avg.PIE}%</div></div>
+                    <div className="space-y-4 sm:space-y-6">
+                        {/* Stats moyennes - responsive */}
+                        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 bg-slate-900 p-3 sm:p-4 rounded-lg">
+                            <div className="text-center"><div className="text-[10px] sm:text-xs text-slate-500">Points</div><div className="text-lg sm:text-2xl font-bold text-white">{selectedPlayer.avg.pts}</div></div>
+                            <div className="text-center"><div className="text-[10px] sm:text-xs text-slate-500">Rebonds</div><div className="text-lg sm:text-2xl font-bold text-white">{selectedPlayer.avg.reb}</div></div>
+                            <div className="text-center"><div className="text-[10px] sm:text-xs text-slate-500">Passes</div><div className="text-lg sm:text-2xl font-bold text-white">{selectedPlayer.avg.ast}</div></div>
+                            <div className="text-center hidden sm:block"><div className="text-[10px] sm:text-xs text-slate-500">Éval</div><div className="text-lg sm:text-2xl font-bold text-green-400">{selectedPlayer.avg.eff}</div></div>
+                            <div className="text-center hidden sm:block"><div className="text-[10px] sm:text-xs text-slate-500">PIE</div><div className="text-lg sm:text-2xl font-bold text-cyan-400">{selectedPlayer.avg.PIE}%</div></div>
                         </div>
-
-                        {/* Records et Efficacité */}
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="bg-slate-900 p-4 rounded-lg">
-                                <h4 className="text-sm font-bold text-orange-400 mb-3">Records Personnels</h4>
+                        {/* Stats supplémentaires visibles uniquement sur mobile */}
+                        <div className="grid grid-cols-2 gap-2 sm:hidden bg-slate-900 p-3 rounded-lg">
+                            <div className="text-center"><div className="text-[10px] text-slate-500">Éval</div><div className="text-lg font-bold text-green-400">{selectedPlayer.avg.eff}</div></div>
+                            <div className="text-center"><div className="text-[10px] text-slate-500">PIE</div><div className="text-lg font-bold text-cyan-400">{selectedPlayer.avg.PIE}%</div></div>
+                        </div>
+            
+                        {/* Records et Efficacité - responsive */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                            <div className="bg-slate-900 p-3 sm:p-4 rounded-lg">
+                                <h4 className="text-xs sm:text-sm font-bold text-orange-400 mb-2 sm:mb-3">Records Personnels</h4>
                                 <div className="grid grid-cols-3 gap-2 text-center">
-                                    <div><div className="text-xs text-slate-500">PTS</div><div className="text-lg font-bold">{selectedPlayer.records.pts}</div></div>
-                                    <div><div className="text-xs text-slate-500">REB</div><div className="text-lg font-bold">{selectedPlayer.records.reb}</div></div>
-                                    <div><div className="text-xs text-slate-500">AST</div><div className="text-lg font-bold">{selectedPlayer.records.ast}</div></div>
-                                    <div><div className="text-xs text-slate-500">INT</div><div className="text-lg font-bold">{selectedPlayer.records.stl}</div></div>
-                                    <div><div className="text-xs text-slate-500">CTR</div><div className="text-lg font-bold">{selectedPlayer.records.blk}</div></div>
-                                    <div><div className="text-xs text-slate-500">ÉVAL</div><div className="text-lg font-bold text-green-400">{selectedPlayer.records.eff}</div></div>
+                                    <div><div className="text-[10px] sm:text-xs text-slate-500">PTS</div><div className="text-base sm:text-lg font-bold">{selectedPlayer.records.pts}</div></div>
+                                    <div><div className="text-[10px] sm:text-xs text-slate-500">REB</div><div className="text-base sm:text-lg font-bold">{selectedPlayer.records.reb}</div></div>
+                                    <div><div className="text-[10px] sm:text-xs text-slate-500">AST</div><div className="text-base sm:text-lg font-bold">{selectedPlayer.records.ast}</div></div>
+                                    <div><div className="text-[10px] sm:text-xs text-slate-500">INT</div><div className="text-base sm:text-lg font-bold">{selectedPlayer.records.stl}</div></div>
+                                    <div><div className="text-[10px] sm:text-xs text-slate-500">CTR</div><div className="text-base sm:text-lg font-bold">{selectedPlayer.records.blk}</div></div>
+                                    <div><div className="text-[10px] sm:text-xs text-slate-500">ÉVAL</div><div className="text-base sm:text-lg font-bold text-green-400">{selectedPlayer.records.eff}</div></div>
                                 </div>
                             </div>
-                            <div className="bg-slate-900 p-4 rounded-lg">
-                                <h4 className="text-sm font-bold text-blue-400 mb-3">Efficacité Moyenne</h4>
+                            <div className="bg-slate-900 p-3 sm:p-4 rounded-lg">
+                                <h4 className="text-xs sm:text-sm font-bold text-blue-400 mb-2 sm:mb-3">Efficacité Moyenne</h4>
                                 <div className="grid grid-cols-2 gap-2 text-center">
-                                    <div><div className="text-xs text-slate-500">eFG%</div><div className="text-lg font-bold text-blue-300">{selectedPlayer.avg.eFG}%</div></div>
-                                    <div><div className="text-xs text-slate-500">TS%</div><div className="text-lg font-bold text-blue-300">{selectedPlayer.avg.TS}%</div></div>
-                                    <div><div className="text-xs text-slate-500">ORtg</div><div className="text-lg font-bold text-purple-400">{selectedPlayer.avg.ORtg}</div></div>
-                                    <div><div className="text-xs text-slate-500">DRtg</div><div className="text-lg font-bold text-red-400">{selectedPlayer.avg.DRtg}</div></div>
+                                    <div><div className="text-[10px] sm:text-xs text-slate-500">eFG%</div><div className="text-base sm:text-lg font-bold text-blue-300">{selectedPlayer.avg.eFG}%</div></div>
+                                    <div><div className="text-[10px] sm:text-xs text-slate-500">TS%</div><div className="text-base sm:text-lg font-bold text-blue-300">{selectedPlayer.avg.TS}%</div></div>
+                                    <div><div className="text-[10px] sm:text-xs text-slate-500">ORtg</div><div className="text-base sm:text-lg font-bold text-purple-400">{selectedPlayer.avg.ORtg}</div></div>
+                                    <div><div className="text-[10px] sm:text-xs text-slate-500">DRtg</div><div className="text-base sm:text-lg font-bold text-red-400">{selectedPlayer.avg.DRtg}</div></div>
                                 </div>
                             </div>
                         </div>
-
-                        {/* Graphiques */}
+            
+                        {/* Graphiques - responsive */}
                         {selectedPlayer.logs.length > 0 && (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="bg-slate-900 p-3 rounded-lg">
-                                    <h4 className="text-xs font-bold text-orange-400 mb-2">Points / Évaluation</h4>
-                                    <div style={{ width: '100%', height: '180px' }}>
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
+                                <div className="bg-slate-900 p-2 sm:p-3 rounded-lg">
+                                    <h4 className="text-[10px] sm:text-xs font-bold text-orange-400 mb-2">Points / Évaluation</h4>
+                                    <div className="h-40 sm:h-44">
                                         <ResponsiveContainer width="100%" height="100%">
-                                            <LineChart data={[...selectedPlayer.logs].sort((a, b) => parseFrenchDate(a.date) - parseFrenchDate(b.date))} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+                                            <LineChart data={[...selectedPlayer.logs].sort((a, b) => parseFrenchDate(a.date) - parseFrenchDate(b.date))} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
                                                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                                                <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={9} tick={{ fill: '#94a3b8' }} />
-                                                <YAxis stroke="#94a3b8" fontSize={9} tick={{ fill: '#94a3b8' }} />
-                                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', fontSize: '11px' }} />
-                                                <Legend wrapperStyle={{ fontSize: '10px' }} />
-                                                <Line type="monotone" dataKey="pts" stroke="#f97316" strokeWidth={2} name="PTS" dot={{ r: 3 }} connectNulls />
-                                                <Line type="monotone" dataKey="eff" stroke="#22c55e" strokeWidth={2} name="ÉVAL" dot={{ r: 3 }} connectNulls />
+                                                <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={8} tick={{ fill: '#94a3b8' }} interval={0} angle={-45} textAnchor="end" height={50} />
+                                                <YAxis stroke="#94a3b8" fontSize={8} tick={{ fill: '#94a3b8' }} />
+                                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', fontSize: '10px' }} />
+                                                <Legend wrapperStyle={{ fontSize: '9px' }} />
+                                                <Line type="monotone" dataKey="pts" stroke="#f97316" strokeWidth={2} name="PTS" dot={{ r: 2 }} connectNulls />
+                                                <Line type="monotone" dataKey="eff" stroke="#22c55e" strokeWidth={2} name="ÉVAL" dot={{ r: 2 }} connectNulls />
                                             </LineChart>
                                         </ResponsiveContainer>
                                     </div>
                                 </div>
-                                <div className="bg-slate-900 p-3 rounded-lg">
-                                    <h4 className="text-xs font-bold text-purple-400 mb-2">ORtg / DRtg</h4>
-                                    <div style={{ width: '100%', height: '180px' }}>
+                                <div className="bg-slate-900 p-2 sm:p-3 rounded-lg">
+                                    <h4 className="text-[10px] sm:text-xs font-bold text-purple-400 mb-2">ORtg / DRtg</h4>
+                                    <div className="h-40 sm:h-44">
                                         <ResponsiveContainer width="100%" height="100%">
                                             <LineChart data={[...selectedPlayer.logs].sort((a, b) => parseFrenchDate(a.date) - parseFrenchDate(b.date)).map(log => ({
                                                 ...log,
                                                 ORtgNum: parseFloat(log.ORtg) || 0,
                                                 DRtgNum: parseFloat(log.DRtg) || 0
-                                            }))} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+                                            }))} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
                                                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                                                <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={9} tick={{ fill: '#94a3b8' }} />
-                                                <YAxis stroke="#94a3b8" fontSize={9} tick={{ fill: '#94a3b8' }} domain={[60, 140]} />
-                                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', fontSize: '11px' }} formatter={(value) => typeof value === 'number' ? value.toFixed(1) : value} />
-                                                <Legend wrapperStyle={{ fontSize: '10px' }} />
-                                                <Line type="monotone" dataKey="ORtgNum" stroke="#a855f7" strokeWidth={2} name="ORtg" dot={{ r: 3 }} connectNulls />
-                                                <Line type="monotone" dataKey="DRtgNum" stroke="#ef4444" strokeWidth={2} name="DRtg" dot={{ r: 3 }} connectNulls />
+                                                <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={8} tick={{ fill: '#94a3b8' }} interval={0} angle={-45} textAnchor="end" height={50} />
+                                                <YAxis stroke="#94a3b8" fontSize={8} tick={{ fill: '#94a3b8' }} domain={[60, 140]} />
+                                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', fontSize: '10px' }} formatter={(value) => typeof value === 'number' ? value.toFixed(1) : value} />
+                                                <Legend wrapperStyle={{ fontSize: '9px' }} />
+                                                <Line type="monotone" dataKey="ORtgNum" stroke="#a855f7" strokeWidth={2} name="ORtg" dot={{ r: 2 }} connectNulls />
+                                                <Line type="monotone" dataKey="DRtgNum" stroke="#ef4444" strokeWidth={2} name="DRtg" dot={{ r: 2 }} connectNulls />
                                             </LineChart>
                                         </ResponsiveContainer>
                                     </div>
                                 </div>
                             </div>
                         )}
-
-                        {/* Tableau complet des stats par match */}
+            
+                        {/* Tableau complet des stats par match - responsive */}
                         <div>
-                            <h4 className="text-sm font-bold text-slate-400 mb-2">Statistiques Complètes par Match</h4>
-                            <div className="overflow-x-auto bg-slate-900 rounded-lg max-h-64">
-                                <table className="w-full text-xs text-slate-300 whitespace-nowrap">
+                            <h4 className="text-xs sm:text-sm font-bold text-slate-400 mb-2">Statistiques par Match</h4>
+                            <div className="overflow-x-auto bg-slate-900 rounded-lg max-h-48 sm:max-h-64 -mx-3 sm:mx-0">
+                                <table className="w-full text-[10px] sm:text-xs text-slate-300 whitespace-nowrap">
                                     <thead className="bg-slate-800 sticky top-0">
                                         <tr>
-                                            <th className="p-2 text-left sticky left-0 bg-slate-800">Date</th>
-                                            <th className="p-2 text-left">Adversaire</th>
-                                            <th className="p-2 text-center">MIN</th>
-                                            <th className="p-2 text-center text-orange-400">PTS</th>
-                                            <th className="p-2 text-center">REB</th>
-                                            <th className="p-2 text-center">AST</th>
-                                            <th className="p-2 text-center">INT</th>
-                                            <th className="p-2 text-center">CTR</th>
-                                            <th className="p-2 text-center text-red-400">BP</th>
-                                            <th className="p-2 text-center">eFG%</th>
-                                            <th className="p-2 text-center">TS%</th>
-                                            <th className="p-2 text-center text-purple-400">ORtg</th>
-                                            <th className="p-2 text-center text-red-400">DRtg</th>
-                                            <th className="p-2 text-center text-green-400">ÉVAL</th>
-                                            <th className="p-2 text-center text-cyan-400">PIE</th>
+                                            <th className="p-1.5 sm:p-2 text-left sticky left-0 bg-slate-800 z-10">Adv.</th>
+                                            <th className="p-1.5 sm:p-2 text-center">MIN</th>
+                                            <th className="p-1.5 sm:p-2 text-center text-orange-400">PTS</th>
+                                            <th className="p-1.5 sm:p-2 text-center">REB</th>
+                                            <th className="p-1.5 sm:p-2 text-center">AST</th>
+                                            <th className="p-1.5 sm:p-2 text-center hidden sm:table-cell">INT</th>
+                                            <th className="p-1.5 sm:p-2 text-center hidden sm:table-cell">CTR</th>
+                                            <th className="p-1.5 sm:p-2 text-center hidden sm:table-cell text-red-400">BP</th>
+                                            <th className="p-1.5 sm:p-2 text-center hidden md:table-cell">eFG%</th>
+                                            <th className="p-1.5 sm:p-2 text-center hidden md:table-cell">TS%</th>
+                                            <th className="p-1.5 sm:p-2 text-center text-purple-400">ORtg</th>
+                                            <th className="p-1.5 sm:p-2 text-center text-red-400">DRtg</th>
+                                            <th className="p-1.5 sm:p-2 text-center text-green-400">ÉVAL</th>
+                                            <th className="p-1.5 sm:p-2 text-center hidden sm:table-cell text-cyan-400">PIE</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-700">
                                         {[...selectedPlayer.logs].sort((a, b) => parseFrenchDate(a.date) - parseFrenchDate(b.date)).map((log, i) => (
                                             <tr key={i} className="hover:bg-slate-800">
-                                                <td className="p-2 sticky left-0 bg-slate-900 text-slate-500">{log.date}</td>
-                                                <td className="p-2 font-bold">{log.opponent}</td>
-                                                <td className="p-2 text-center">{log.min}</td>
-                                                <td className="p-2 text-center font-bold text-orange-400">{log.pts}</td>
-                                                <td className="p-2 text-center">{log.reb}</td>
-                                                <td className="p-2 text-center">{log.ast}</td>
-                                                <td className="p-2 text-center">{log.stl}</td>
-                                                <td className="p-2 text-center">{log.blk}</td>
-                                                <td className="p-2 text-center text-red-400">{log.tov}</td>
-                                                <td className="p-2 text-center">{log.eFG}%</td>
-                                                <td className="p-2 text-center">{log.TS}%</td>
-                                                <td className="p-2 text-center text-purple-400">{log.ORtg}</td>
-                                                <td className="p-2 text-center text-red-400">{log.DRtg}</td>
-                                                <td className="p-2 text-center font-bold text-green-400">{log.eff}</td>
-                                                <td className="p-2 text-center text-cyan-400">{log.PIE}%</td>
+                                                <td className="p-1.5 sm:p-2 sticky left-0 bg-slate-900 font-bold z-10">{log.opponent}</td>
+                                                <td className="p-1.5 sm:p-2 text-center">{log.min}</td>
+                                                <td className="p-1.5 sm:p-2 text-center font-bold text-orange-400">{log.pts}</td>
+                                                <td className="p-1.5 sm:p-2 text-center">{log.reb}</td>
+                                                <td className="p-1.5 sm:p-2 text-center">{log.ast}</td>
+                                                <td className="p-1.5 sm:p-2 text-center hidden sm:table-cell">{log.stl}</td>
+                                                <td className="p-1.5 sm:p-2 text-center hidden sm:table-cell">{log.blk}</td>
+                                                <td className="p-1.5 sm:p-2 text-center hidden sm:table-cell text-red-400">{log.tov}</td>
+                                                <td className="p-1.5 sm:p-2 text-center hidden md:table-cell">{log.eFG}%</td>
+                                                <td className="p-1.5 sm:p-2 text-center hidden md:table-cell">{log.TS}%</td>
+                                                <td className="p-1.5 sm:p-2 text-center text-purple-400">{log.ORtg}</td>
+                                                <td className="p-1.5 sm:p-2 text-center text-red-400">{log.DRtg}</td>
+                                                <td className="p-1.5 sm:p-2 text-center font-bold text-green-400">{log.eff}</td>
+                                                <td className="p-1.5 sm:p-2 text-center hidden sm:table-cell text-cyan-400">{log.PIE}%</td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -733,49 +737,49 @@ function GlobalStats({ players, games, phases }) {
 
             {/* MODAL COMPARAISON */}
             <Modal isOpen={showComparison} onClose={() => setShowComparison(false)} title="👥 Comparaison Joueurs">
-                <div className="space-y-6">
-                    <div className="grid grid-cols-2 gap-4">
-                        <select value={comparePlayer1?.info.id || ''} onChange={(e) => setComparePlayer1(aggregated.find(p => p.info.id === parseInt(e.target.value)))} className="bg-slate-700 text-white p-3 rounded border border-slate-600">
+                <div className="space-y-4 sm:space-y-6">
+                    <div className="grid grid-cols-2 gap-2 sm:gap-4">
+                        <select value={comparePlayer1?.info.id || ''} onChange={(e) => setComparePlayer1(aggregated.find(p => p.info.id === parseInt(e.target.value)))} className="bg-slate-700 text-white p-2 sm:p-3 rounded border border-slate-600 text-sm sm:text-base">
                             <option value="">Joueur 1</option>
                             {aggregated.map(p => <option key={p.info.id} value={p.info.id}>{p.info.name}</option>)}
                         </select>
-                        <select value={comparePlayer2?.info.id || ''} onChange={(e) => setComparePlayer2(aggregated.find(p => p.info.id === parseInt(e.target.value)))} className="bg-slate-700 text-white p-3 rounded border border-slate-600">
+                        <select value={comparePlayer2?.info.id || ''} onChange={(e) => setComparePlayer2(aggregated.find(p => p.info.id === parseInt(e.target.value)))} className="bg-slate-700 text-white p-2 sm:p-3 rounded border border-slate-600 text-sm sm:text-base">
                             <option value="">Joueur 2</option>
                             {aggregated.map(p => <option key={p.info.id} value={p.info.id}>{p.info.name}</option>)}
                         </select>
                     </div>
                     {comparePlayer1 && comparePlayer2 && (
-                        <div className="space-y-6">
-                            <div className="h-72 bg-slate-900/50 rounded-xl p-4">
+                        <div className="space-y-4 sm:space-y-6">
+                            <div className="h-56 sm:h-72 bg-slate-900/50 rounded-xl p-2 sm:p-4">
                                 <ResponsiveContainer width="100%" height="100%">
-                                    <RadarChart data={getRadarData(comparePlayer1, comparePlayer2)} outerRadius="80%">
+                                    <RadarChart data={getRadarData(comparePlayer1, comparePlayer2)} outerRadius="75%">
                                         <PolarGrid stroke="#334155" />
-                                        <PolarAngleAxis dataKey="category" stroke="#94a3b8" fontSize={12} />
+                                        <PolarAngleAxis dataKey="category" stroke="#94a3b8" fontSize={10} />
                                         <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
                                         <Radar name={comparePlayer1.info.name} dataKey="score1" stroke="#f97316" fill="#f97316" fillOpacity={0.4} />
                                         <Radar name={comparePlayer2.info.name} dataKey="score2" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.4} />
                                         <Tooltip content={({ active, payload }) => {
                                             if (active && payload?.length) {
                                                 const d = payload[0].payload;
-                                                return <div className="bg-slate-800 border border-slate-600 p-2 rounded text-xs"><div className="font-bold text-white mb-1">{d.category}</div><div className="text-orange-400">{d.name1}: {d.real1}</div><div className="text-blue-400">{d.name2}: {d.real2}</div></div>;
+                                                return <div className="bg-slate-800 border border-slate-600 p-2 rounded text-[10px] sm:text-xs"><div className="font-bold text-white mb-1">{d.category}</div><div className="text-orange-400">{d.name1}: {d.real1}</div><div className="text-blue-400">{d.name2}: {d.real2}</div></div>;
                                             }
                                             return null;
                                         }} />
-                                        <Legend />
+                                        <Legend wrapperStyle={{ fontSize: '10px' }} />
                                     </RadarChart>
                                 </ResponsiveContainer>
                             </div>
-                            <div className="grid grid-cols-3 gap-3">
-                                {[{ k: 'pts', l: 'Points' }, { k: 'reb', l: 'Rebonds' }, { k: 'ast', l: 'Passes' }, { k: 'eff', l: 'Évaluation' }, { k: 'ORtg', l: 'Off. Rating' }, { k: 'DRtg', l: 'Def. Rating', inv: true }, { k: 'PIE', l: 'PIE' }, { k: 'eFG', l: 'eFG%' }, { k: 'netRtg', l: 'Net Rating' }].map(stat => {
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
+                                {[{ k: 'pts', l: 'Points' }, { k: 'reb', l: 'Rebonds' }, { k: 'ast', l: 'Passes' }, { k: 'eff', l: 'Évaluation' }, { k: 'ORtg', l: 'Off. Rtg' }, { k: 'DRtg', l: 'Def. Rtg', inv: true }, { k: 'PIE', l: 'PIE' }, { k: 'eFG', l: 'eFG%' }, { k: 'netRtg', l: 'Net Rtg' }].map(stat => {
                                     const v1 = parseFloat(comparePlayer1.avg[stat.k]) || 0;
                                     const v2 = parseFloat(comparePlayer2.avg[stat.k]) || 0;
                                     const win1 = stat.inv ? v1 < v2 : v1 > v2;
                                     const win2 = stat.inv ? v2 < v1 : v2 > v1;
                                     return (
-                                        <div key={stat.k} className="bg-slate-900 p-3 rounded border border-slate-700 flex justify-between items-center">
-                                            <div className={`font-bold text-lg ${win1 ? 'text-orange-400' : 'text-slate-500'}`}>{v1}</div>
-                                            <div className="text-xs text-slate-400 text-center">{stat.l}</div>
-                                            <div className={`font-bold text-lg ${win2 ? 'text-blue-400' : 'text-slate-500'}`}>{v2}</div>
+                                        <div key={stat.k} className="bg-slate-900 p-2 sm:p-3 rounded border border-slate-700 flex justify-between items-center">
+                                            <div className={`font-bold text-sm sm:text-lg ${win1 ? 'text-orange-400' : 'text-slate-500'}`}>{v1}</div>
+                                            <div className="text-[9px] sm:text-xs text-slate-400 text-center px-1">{stat.l}</div>
+                                            <div className={`font-bold text-sm sm:text-lg ${win2 ? 'text-blue-400' : 'text-slate-500'}`}>{v2}</div>
                                         </div>
                                     );
                                 })}
@@ -784,50 +788,49 @@ function GlobalStats({ players, games, phases }) {
                     )}
                 </div>
             </Modal>
-
             {/* MODAL TENDANCES ÉQUIPE */}
             <Modal isOpen={showTeamTrends} onClose={() => setShowTeamTrends(false)} title="📈 Tendances Équipe">
-                <div className="space-y-6">
+                <div className="space-y-4 sm:space-y-6">
                     <div>
-                        <h4 className="text-sm font-bold text-orange-400 mb-3">Net Rating par Match</h4>
-                        <div className="h-56 bg-slate-900 rounded-lg p-2">
+                        <h4 className="text-xs sm:text-sm font-bold text-orange-400 mb-2 sm:mb-3">Net Rating par Match</h4>
+                        <div className="h-44 sm:h-56 bg-slate-900 rounded-lg p-1 sm:p-2">
                             <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={teamTrendsData}>
+                                <BarChart data={teamTrendsData} margin={{ top: 5, right: 5, left: -20, bottom: 40 }}>
                                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                                    <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} />
-                                    <YAxis stroke="#94a3b8" fontSize={10} />
-                                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none' }} />
+                                    <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={9} angle={-45} textAnchor="end" interval={0} />
+                                    <YAxis stroke="#94a3b8" fontSize={9} />
+                                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', fontSize: '11px' }} />
                                     <Bar dataKey="NetRtg" name="Net Rating" fill="#22c55e" />
                                 </BarChart>
                             </ResponsiveContainer>
                         </div>
                     </div>
                     <div>
-                        <h4 className="text-sm font-bold text-purple-400 mb-3">Évolution ORtg / DRtg</h4>
-                        <div className="h-56 bg-slate-900 rounded-lg p-2">
+                        <h4 className="text-xs sm:text-sm font-bold text-purple-400 mb-2 sm:mb-3">Évolution ORtg / DRtg</h4>
+                        <div className="h-44 sm:h-56 bg-slate-900 rounded-lg p-1 sm:p-2">
                             <ResponsiveContainer width="100%" height="100%">
-                                <LineChart data={teamTrendsData}>
+                                <LineChart data={teamTrendsData} margin={{ top: 5, right: 5, left: -20, bottom: 40 }}>
                                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                                    <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} />
-                                    <YAxis stroke="#94a3b8" fontSize={10} domain={['auto', 'auto']} />
-                                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none' }} />
-                                    <Legend />
-                                    <Line type="monotone" dataKey="ORtg" stroke="#a855f7" strokeWidth={2} name="Off. Rating" />
-                                    <Line type="monotone" dataKey="DRtg" stroke="#ef4444" strokeWidth={2} name="Def. Rating" />
+                                    <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={9} angle={-45} textAnchor="end" interval={0} />
+                                    <YAxis stroke="#94a3b8" fontSize={9} domain={['auto', 'auto']} />
+                                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', fontSize: '11px' }} />
+                                    <Legend wrapperStyle={{ fontSize: '10px' }} />
+                                    <Line type="monotone" dataKey="ORtg" stroke="#a855f7" strokeWidth={2} name="Off. Rating" dot={{ r: 3 }} />
+                                    <Line type="monotone" dataKey="DRtg" stroke="#ef4444" strokeWidth={2} name="Def. Rating" dot={{ r: 3 }} />
                                 </LineChart>
                             </ResponsiveContainer>
                         </div>
                     </div>
                     <div>
-                        <h4 className="text-sm font-bold text-green-400 mb-3">Points Marqués vs Encaissés</h4>
-                        <div className="h-56 bg-slate-900 rounded-lg p-2">
+                        <h4 className="text-xs sm:text-sm font-bold text-green-400 mb-2 sm:mb-3">Points Marqués vs Encaissés</h4>
+                        <div className="h-44 sm:h-56 bg-slate-900 rounded-lg p-1 sm:p-2">
                             <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={teamTrendsData}>
+                                <BarChart data={teamTrendsData} margin={{ top: 5, right: 5, left: -20, bottom: 40 }}>
                                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                                    <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} />
-                                    <YAxis stroke="#94a3b8" fontSize={10} />
-                                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none' }} />
-                                    <Legend />
+                                    <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={9} angle={-45} textAnchor="end" interval={0} />
+                                    <YAxis stroke="#94a3b8" fontSize={9} />
+                                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', fontSize: '11px' }} />
+                                    <Legend wrapperStyle={{ fontSize: '10px' }} />
                                     <Bar dataKey="score" name="Marqués" fill="#22c55e" />
                                     <Bar dataKey="conceded" name="Encaissés" fill="#ef4444" />
                                 </BarChart>
@@ -839,18 +842,23 @@ function GlobalStats({ players, games, phases }) {
 
             {/* MODAL HEATMAP */}
             <Modal isOpen={showHeatmap} onClose={() => setShowHeatmap(false)} title="🎯 Heatmap Performance">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                        <thead><tr className="text-slate-400 text-xs uppercase"><th className="p-2 text-left sticky left-0 bg-slate-800">Joueur</th>{heatmapData.categories.map(cat => <th key={cat.key} className="p-2 text-center">{cat.label}</th>)}</tr></thead>
+                <div className="overflow-x-auto -mx-3 sm:mx-0">
+                    <table className="w-full text-[10px] sm:text-sm">
+                        <thead>
+                            <tr className="text-slate-400 text-[9px] sm:text-xs uppercase">
+                                <th className="p-1.5 sm:p-2 text-left sticky left-0 bg-slate-800 z-10">Joueur</th>
+                                {heatmapData.categories.map(cat => <th key={cat.key} className="p-1.5 sm:p-2 text-center">{cat.label}</th>)}
+                            </tr>
+                        </thead>
                         <tbody>
                             {heatmapData.players.map(p => (
                                 <tr key={p.info.id} className="border-t border-slate-700">
-                                    <td className="p-2 font-bold text-white sticky left-0 bg-slate-800">{p.info.name}</td>
+                                    <td className="p-1.5 sm:p-2 font-bold text-white sticky left-0 bg-slate-800 z-10 text-[10px] sm:text-sm">{p.info.name}</td>
                                     {heatmapData.categories.map(cat => {
                                         const val = parseFloat(p.avg[cat.key]) || 0;
                                         const min = heatmapData.minValues[cat.key], max = heatmapData.maxValues[cat.key], range = max - min || 1;
                                         const intensity = cat.inverse ? 1 - ((val - min) / range) : (val - min) / range;
-                                        return <td key={cat.key} className="p-2 text-center font-bold text-white" style={{ backgroundColor: `rgba(${cat.inverse ? '59, 130, 246' : '249, 115, 22'}, ${intensity * 0.8})` }}>{p.avg[cat.key]}</td>;
+                                        return <td key={cat.key} className="p-1.5 sm:p-2 text-center font-bold text-white text-[10px] sm:text-sm" style={{ backgroundColor: `rgba(${cat.inverse ? '59, 130, 246' : '249, 115, 22'}, ${intensity * 0.8})` }}>{p.avg[cat.key]}</td>;
                                     })}
                                 </tr>
                             ))}
