@@ -412,97 +412,100 @@ function GlobalStats({ players, games, phases }) {
             const teamORtg = teamPoss > 0 ? (teamPTS / teamPoss) * 100 : 100;
             const teamDRtg = teamPoss > 0 ? (oppPTS / teamPoss) * 100 : 100;
 
-        Object.entries(g.playerStats || {}).forEach(([pid, s]) => {
-    const id = parseInt(pid);
-    if ((s.minutes || 0) > 0 && stats[id]) {
-        const t = stats[id].total;
-        const playerMin = s.minutes || 0;
-        stats[id].gamesPlayed++; 
-        stats[id].totalMinPlayed += playerMin;
-        stats[id].weightedORtg += teamORtg * playerMin;
-        stats[id].weightedDRtg += teamDRtg * playerMin;
+            // Stats équipe pour le calcul des ratings individuels
+            const teamStatsForCalc = {
+                fgm: 0, fga: 0, ftm: 0, fta: 0, oreb: 0, dreb: 0,
+                ast: 0, stl: 0, blk: 0, tov: 0, pf: 0, pts: 0, minutes: 0, threePM: 0
+            };
+            Object.values(g.playerStats || {}).forEach(ps => {
+                teamStatsForCalc.fgm += (ps.fgm || 0) + (ps.threePM || 0);
+                teamStatsForCalc.fga += (ps.fga || 0) + (ps.threePA || 0);
+                teamStatsForCalc.ftm += ps.ftm || 0;
+                teamStatsForCalc.fta += ps.fta || 0;
+                teamStatsForCalc.oreb += ps.oreb || 0;
+                teamStatsForCalc.dreb += ps.dreb || 0;
+                teamStatsForCalc.ast += ps.ast || 0;
+                teamStatsForCalc.stl += ps.stl || 0;
+                teamStatsForCalc.blk += ps.blk || 0;
+                teamStatsForCalc.tov += ps.tov || 0;
+                teamStatsForCalc.pf += ps.pf || 0;
+                teamStatsForCalc.pts += ps.pts || 0;
+                teamStatsForCalc.minutes += ps.minutes || 0;
+                teamStatsForCalc.threePM += ps.threePM || 0;
+            });
 
-        t.pts += s.pts || 0; t.reb += s.reb || 0; t.oreb += s.oreb || 0; t.dreb += s.dreb || 0;
-        t.ast += s.ast || 0; t.stl += s.stl || 0; t.blk += s.blk || 0; t.tov += s.tov || 0;
-        t.min += playerMin; t.fgm += s.fgm || 0; t.fga += s.fga || 0;
-        t.threePM += s.threePM || 0; t.threePA += s.threePA || 0;
-        t.ftm += s.ftm || 0; t.fta += s.fta || 0; t.pf += s.pf || 0; t.plusMinus += s.plusMinus || 0;
+            const oppStatsForCalc = {
+                pts: g.awayScore || 0,
+                fgm: opp.fgm || Math.round((g.awayScore || 0) / 2.2),
+                fga: opp.fga || Math.round((g.awayScore || 0) / 1.1),
+                ftm: opp.ftm || 0,
+                fta: opp.fta || Math.max(1, Math.round((g.awayScore || 0) * 0.2)),
+                oreb: opp.oreb || 0,
+                dreb: opp.reb ? Math.round(opp.reb * 0.7) : Math.round((g.awayScore || 0) * 0.3),
+                reb: opp.reb || Math.round((g.awayScore || 0) * 0.4),
+                tov: opp.tov || Math.round((g.awayScore || 0) * 0.1)
+            };
 
-        const playerFGA = (s.fga || 0) + (s.threePA || 0);
-        const playerFGM = (s.fgm || 0) + (s.threePM || 0);
-        const evalStat = (s.pts + s.reb + s.ast + s.stl + s.blk) - ((playerFGA - playerFGM) + ((s.fta || 0) - (s.ftm || 0)) + s.tov);
-        t.eff += evalStat;
+            const avgMin = teamStatsForCalc.minutes / Math.max(1, Object.values(g.playerStats || {}).filter(ps => (ps.minutes || 0) > 0).length);
 
-        const playerPIENum = (s.pts || 0) + playerFGM + (s.ftm || 0) - playerFGA - (s.fta || 0) + (s.dreb || 0) + (0.5 * (s.oreb || 0)) + (s.ast || 0) + (s.stl || 0) + (0.5 * (s.blk || 0)) - (s.pf || 0) - (s.tov || 0);
-        const playerPIE = gamePIEDenom !== 0 ? (playerPIENum / gamePIEDenom) * 100 : 0;
-        t.pie += playerPIE;
+            Object.entries(g.playerStats || {}).forEach(([pid, s]) => {
+                const id = parseInt(pid);
+                if ((s.minutes || 0) > 0 && stats[id]) {
+                    const t = stats[id].total;
+                    const playerMin = s.minutes || 0;
+                    stats[id].gamesPlayed++; 
+                    stats[id].totalMinPlayed += playerMin;
+                    stats[id].weightedORtg += teamORtg * playerMin;
+                    stats[id].weightedDRtg += teamDRtg * playerMin;
 
-        if (s.pts > stats[id].records.pts) stats[id].records.pts = s.pts;
-        if (s.reb > stats[id].records.reb) stats[id].records.reb = s.reb;
-        if (s.ast > stats[id].records.ast) stats[id].records.ast = s.ast;
-        if (s.stl > stats[id].records.stl) stats[id].records.stl = s.stl;
-        if (s.blk > stats[id].records.blk) stats[id].records.blk = s.blk;
-        if (evalStat > stats[id].records.eff) stats[id].records.eff = evalStat;
+                    t.pts += s.pts || 0; t.reb += s.reb || 0; t.oreb += s.oreb || 0; t.dreb += s.dreb || 0;
+                    t.ast += s.ast || 0; t.stl += s.stl || 0; t.blk += s.blk || 0; t.tov += s.tov || 0;
+                    t.min += playerMin; t.fgm += s.fgm || 0; t.fga += s.fga || 0;
+                    t.threePM += s.threePM || 0; t.threePA += s.threePA || 0;
+                    t.ftm += s.ftm || 0; t.fta += s.fta || 0; t.pf += s.pf || 0; t.plusMinus += s.plusMinus || 0;
 
-        const gameEFG = playerFGA > 0 ? ((playerFGM + 0.5 * (s.threePM || 0)) / playerFGA) * 100 : 0;
-        const gameTS = (playerFGA + 0.44 * (s.fta || 0)) > 0 ? ((s.pts || 0) / (2 * (playerFGA + 0.44 * (s.fta || 0)))) * 100 : 0;
+                    const playerFGA = (s.fga || 0) + (s.threePA || 0);
+                    const playerFGM = (s.fgm || 0) + (s.threePM || 0);
+                    const evalStat = ((s.pts || 0) + (s.reb || 0) + (s.ast || 0) + (s.stl || 0) + (s.blk || 0)) - ((playerFGA - playerFGM) + ((s.fta || 0) - (s.ftm || 0)) + (s.tov || 0));
+                    t.eff += evalStat;
 
-        // ✅ CALCUL DES RATINGS INDIVIDUELS PAR JOUEUR
-        const teamStatsForCalc = {
-            fgm: 0, fga: 0, ftm: 0, fta: 0, oreb: 0, dreb: 0,
-            ast: 0, stl: 0, blk: 0, tov: 0, pf: 0, pts: 0, minutes: 0, threePM: 0
-        };
-        Object.values(g.playerStats || {}).forEach(ps => {
-            teamStatsForCalc.fgm += (ps.fgm || 0) + (ps.threePM || 0);
-            teamStatsForCalc.fga += (ps.fga || 0) + (ps.threePA || 0);
-            teamStatsForCalc.ftm += ps.ftm || 0;
-            teamStatsForCalc.fta += ps.fta || 0;
-            teamStatsForCalc.oreb += ps.oreb || 0;
-            teamStatsForCalc.dreb += ps.dreb || 0;
-            teamStatsForCalc.ast += ps.ast || 0;
-            teamStatsForCalc.stl += ps.stl || 0;
-            teamStatsForCalc.blk += ps.blk || 0;
-            teamStatsForCalc.tov += ps.tov || 0;
-            teamStatsForCalc.pf += ps.pf || 0;
-            teamStatsForCalc.pts += ps.pts || 0;
-            teamStatsForCalc.minutes += ps.minutes || 0;
-            teamStatsForCalc.threePM += ps.threePM || 0;
+                    const playerPIENum = (s.pts || 0) + playerFGM + (s.ftm || 0) - playerFGA - (s.fta || 0) + (s.dreb || 0) + (0.5 * (s.oreb || 0)) + (s.ast || 0) + (s.stl || 0) + (0.5 * (s.blk || 0)) - (s.pf || 0) - (s.tov || 0);
+                    const playerPIE = gamePIEDenom !== 0 ? (playerPIENum / gamePIEDenom) * 100 : 0;
+                    t.pie += playerPIE;
+
+                    if ((s.pts || 0) > stats[id].records.pts) stats[id].records.pts = s.pts || 0;
+                    if ((s.reb || 0) > stats[id].records.reb) stats[id].records.reb = s.reb || 0;
+                    if ((s.ast || 0) > stats[id].records.ast) stats[id].records.ast = s.ast || 0;
+                    if ((s.stl || 0) > stats[id].records.stl) stats[id].records.stl = s.stl || 0;
+                    if ((s.blk || 0) > stats[id].records.blk) stats[id].records.blk = s.blk || 0;
+                    if (evalStat > stats[id].records.eff) stats[id].records.eff = evalStat;
+
+                    const gameEFG = playerFGA > 0 ? ((playerFGM + 0.5 * (s.threePM || 0)) / playerFGA) * 100 : 0;
+                    const gameTS = (playerFGA + 0.44 * (s.fta || 0)) > 0 ? ((s.pts || 0) / (2 * (playerFGA + 0.44 * (s.fta || 0)))) * 100 : 0;
+
+                    // Calcul des ratings individuels
+                    const playerRatings = calculateIndividualRatings(s, teamStatsForCalc, oppStatsForCalc, avgMin, 1.5);
+
+                    stats[id].logs.push({ 
+                        date: g.date, 
+                        opponent: g.opponent, 
+                        pts: s.pts || 0, 
+                        reb: s.reb || 0, 
+                        ast: s.ast || 0, 
+                        stl: s.stl || 0, 
+                        blk: s.blk || 0, 
+                        tov: s.tov || 0, 
+                        eff: evalStat, 
+                        eFG: gameEFG.toFixed(1), 
+                        TS: gameTS.toFixed(1), 
+                        ORtg: playerRatings.ORtg.toFixed(1),
+                        DRtg: playerRatings.DRtg.toFixed(1),
+                        PIE: playerPIE.toFixed(1), 
+                        min: s.minutes || 0
+                    });
+                }
+            });
         });
-
-        const oppStatsForCalc = {
-            pts: g.awayScore || 0,
-            fgm: opp.fgm || Math.round((g.awayScore || 0) / 2.2),
-            fga: opp.fga || Math.round((g.awayScore || 0) / 1.1),
-            ftm: opp.ftm || 0,
-            fta: opp.fta || Math.max(1, Math.round((g.awayScore || 0) * 0.2)),
-            oreb: opp.oreb || 0,
-            dreb: opp.reb ? Math.round(opp.reb * 0.7) : Math.round((g.awayScore || 0) * 0.3),
-            reb: opp.reb || Math.round((g.awayScore || 0) * 0.4),
-            tov: opp.tov || Math.round((g.awayScore || 0) * 0.1)
-        };
-
-        const avgMin = teamStatsForCalc.minutes / Math.max(1, Object.values(g.playerStats).filter(ps => (ps.minutes || 0) > 0).length);
-        const playerRatings = calculateIndividualRatings(s, teamStatsForCalc, oppStatsForCalc, avgMin, 1.5);
-
-        stats[id].logs.push({ 
-            date: g.date, 
-            opponent: g.opponent, 
-            pts: s.pts, 
-            reb: s.reb, 
-            ast: s.ast, 
-            stl: s.stl || 0, 
-            blk: s.blk || 0, 
-            tov: s.tov || 0, 
-            eff: evalStat, 
-            eFG: gameEFG.toFixed(1), 
-            TS: gameTS.toFixed(1), 
-            ORtg: playerRatings.ORtg.toFixed(1),  // ✅ Rating INDIVIDUEL
-            DRtg: playerRatings.DRtg.toFixed(1),  // ✅ Rating INDIVIDUEL
-            PIE: playerPIE.toFixed(1), 
-            min: s.minutes 
-        });
-    }
-});
 
         return Object.values(stats).map(p => {
             const gp = p.gamesPlayed || 1, t = p.total, totalMin = p.totalMinPlayed || 1;
@@ -548,6 +551,13 @@ function GlobalStats({ players, games, phases }) {
             const maxVal = Math.max(v1, v2, 1);
             return { category: cat.label, score1: (v1 / maxVal) * 100, score2: (v2 / maxVal) * 100, real1: v1, real2: v2, name1: p1.info.name, name2: p2.info.name };
         });
+    };
+
+    // Fonction pour parser les dates françaises
+    const parseFrenchDate = (d) => { 
+        const months = {'janv':0,'févr':1,'mars':2,'avr':3,'mai':4,'juin':5,'juil':6,'août':7,'sept':8,'oct':9,'nov':10,'déc':11}; 
+        const m = d.match(/(\d{1,2})\s+([a-zéûô]+)\.?\s+(\d{4})/i); 
+        return m ? new Date(m[3], months[m[2].toLowerCase().replace('.','')]||0, m[1]) : new Date(d); 
     };
 
     return (
@@ -602,7 +612,7 @@ function GlobalStats({ players, games, phases }) {
                             <div className="text-center"><div className="text-xs text-slate-500">Éval</div><div className="text-2xl font-bold text-green-400">{selectedPlayer.avg.eff}</div></div>
                             <div className="text-center"><div className="text-xs text-slate-500">PIE</div><div className="text-2xl font-bold text-cyan-400">{selectedPlayer.avg.PIE}%</div></div>
                         </div>
-            
+
                         {/* Records et Efficacité */}
                         <div className="grid grid-cols-2 gap-4">
                             <div className="bg-slate-900 p-4 rounded-lg">
@@ -626,7 +636,7 @@ function GlobalStats({ players, games, phases }) {
                                 </div>
                             </div>
                         </div>
-            
+
                         {/* Graphiques */}
                         {selectedPlayer.logs.length > 0 && (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -634,17 +644,14 @@ function GlobalStats({ players, games, phases }) {
                                     <h4 className="text-xs font-bold text-orange-400 mb-2">Points / Évaluation</h4>
                                     <div style={{ width: '100%', height: '180px' }}>
                                         <ResponsiveContainer width="100%" height="100%">
-                                            <LineChart data={[...selectedPlayer.logs].sort((a, b) => {
-                                                const parseDate = (d) => { const months = {'janv':0,'févr':1,'mars':2,'avr':3,'mai':4,'juin':5,'juil':6,'août':7,'sept':8,'oct':9,'nov':10,'déc':11}; const m = d.match(/(\d{1,2})\s+([a-zéûô]+)\.?\s+(\d{4})/i); return m ? new Date(m[3], months[m[2].toLowerCase().replace('.','')]||0, m[1]) : new Date(d); };
-                                                return parseDate(a.date) - parseDate(b.date);
-                                            })} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+                                            <LineChart data={[...selectedPlayer.logs].sort((a, b) => parseFrenchDate(a.date) - parseFrenchDate(b.date))} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
                                                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                                                 <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={9} tick={{ fill: '#94a3b8' }} />
                                                 <YAxis stroke="#94a3b8" fontSize={9} tick={{ fill: '#94a3b8' }} />
                                                 <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', fontSize: '11px' }} />
                                                 <Legend wrapperStyle={{ fontSize: '10px' }} />
-                                                <Line type="monotone" dataKey="pts" stroke="#f97316" strokeWidth={2} name="PTS" dot={{ r: 3 }} />
-                                                <Line type="monotone" dataKey="eff" stroke="#22c55e" strokeWidth={2} name="ÉVAL" dot={{ r: 3 }} />
+                                                <Line type="monotone" dataKey="pts" stroke="#f97316" strokeWidth={2} name="PTS" dot={{ r: 3 }} connectNulls />
+                                                <Line type="monotone" dataKey="eff" stroke="#22c55e" strokeWidth={2} name="ÉVAL" dot={{ r: 3 }} connectNulls />
                                             </LineChart>
                                         </ResponsiveContainer>
                                     </div>
@@ -653,10 +660,7 @@ function GlobalStats({ players, games, phases }) {
                                     <h4 className="text-xs font-bold text-purple-400 mb-2">ORtg / DRtg</h4>
                                     <div style={{ width: '100%', height: '180px' }}>
                                         <ResponsiveContainer width="100%" height="100%">
-                                            <LineChart data={[...selectedPlayer.logs].sort((a, b) => {
-                                                const parseDate = (d) => { const months = {'janv':0,'févr':1,'mars':2,'avr':3,'mai':4,'juin':5,'juil':6,'août':7,'sept':8,'oct':9,'nov':10,'déc':11}; const m = d.match(/(\d{1,2})\s+([a-zéûô]+)\.?\s+(\d{4})/i); return m ? new Date(m[3], months[m[2].toLowerCase().replace('.','')]||0, m[1]) : new Date(d); };
-                                                return parseDate(a.date) - parseDate(b.date);
-                                            }).map(log => ({
+                                            <LineChart data={[...selectedPlayer.logs].sort((a, b) => parseFrenchDate(a.date) - parseFrenchDate(b.date)).map(log => ({
                                                 ...log,
                                                 ORtgNum: parseFloat(log.ORtg) || 0,
                                                 DRtgNum: parseFloat(log.DRtg) || 0
@@ -664,7 +668,7 @@ function GlobalStats({ players, games, phases }) {
                                                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                                                 <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={9} tick={{ fill: '#94a3b8' }} />
                                                 <YAxis stroke="#94a3b8" fontSize={9} tick={{ fill: '#94a3b8' }} domain={[60, 140]} />
-                                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', fontSize: '11px' }} formatter={(value) => value.toFixed(1)} />
+                                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', fontSize: '11px' }} formatter={(value) => typeof value === 'number' ? value.toFixed(1) : value} />
                                                 <Legend wrapperStyle={{ fontSize: '10px' }} />
                                                 <Line type="monotone" dataKey="ORtgNum" stroke="#a855f7" strokeWidth={2} name="ORtg" dot={{ r: 3 }} connectNulls />
                                                 <Line type="monotone" dataKey="DRtgNum" stroke="#ef4444" strokeWidth={2} name="DRtg" dot={{ r: 3 }} connectNulls />
@@ -674,7 +678,7 @@ function GlobalStats({ players, games, phases }) {
                                 </div>
                             </div>
                         )}
-            
+
                         {/* Tableau complet des stats par match */}
                         <div>
                             <h4 className="text-sm font-bold text-slate-400 mb-2">Statistiques Complètes par Match</h4>
@@ -700,14 +704,7 @@ function GlobalStats({ players, games, phases }) {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-700">
-                                        {[...selectedPlayer.logs].sort((a, b) => {
-                                            const parseDate = (d) => { 
-                                                const months = {'janv':0,'févr':1,'mars':2,'avr':3,'mai':4,'juin':5,'juil':6,'août':7,'sept':8,'oct':9,'nov':10,'déc':11}; 
-                                                const m = d.match(/(\d{1,2})\s+([a-zéûô]+)\.?\s+(\d{4})/i); 
-                                                return m ? new Date(m[3], months[m[2].toLowerCase().replace('.','')]||0, m[1]) : new Date(d); 
-                                            };
-                                            return parseDate(a.date) - parseDate(b.date);
-                                        }).map((log, i) => (
+                                        {[...selectedPlayer.logs].sort((a, b) => parseFrenchDate(a.date) - parseFrenchDate(b.date)).map((log, i) => (
                                             <tr key={i} className="hover:bg-slate-800">
                                                 <td className="p-2 sticky left-0 bg-slate-900 text-slate-500">{log.date}</td>
                                                 <td className="p-2 font-bold">{log.opponent}</td>
@@ -715,9 +712,9 @@ function GlobalStats({ players, games, phases }) {
                                                 <td className="p-2 text-center font-bold text-orange-400">{log.pts}</td>
                                                 <td className="p-2 text-center">{log.reb}</td>
                                                 <td className="p-2 text-center">{log.ast}</td>
-                                                <td className="p-2 text-center">{log.stl || 0}</td>
-                                                <td className="p-2 text-center">{log.blk || 0}</td>
-                                                <td className="p-2 text-center text-red-400">{log.tov || 0}</td>
+                                                <td className="p-2 text-center">{log.stl}</td>
+                                                <td className="p-2 text-center">{log.blk}</td>
+                                                <td className="p-2 text-center text-red-400">{log.tov}</td>
                                                 <td className="p-2 text-center">{log.eFG}%</td>
                                                 <td className="p-2 text-center">{log.TS}%</td>
                                                 <td className="p-2 text-center text-purple-400">{log.ORtg}</td>
@@ -733,6 +730,7 @@ function GlobalStats({ players, games, phases }) {
                     </div>
                 )}
             </Modal>
+
             {/* MODAL COMPARAISON */}
             <Modal isOpen={showComparison} onClose={() => setShowComparison(false)} title="👥 Comparaison Joueurs">
                 <div className="space-y-6">
