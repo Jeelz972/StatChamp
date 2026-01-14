@@ -1430,23 +1430,26 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
     );
 }
 
-// --- HISTORY ---
-function History({ games, players, setGames, phases, onEditGame, onImportClick, onMultiImport }) {
+// --- HISTORY (Sécurisé) ---
+function History({ games, players, setGames, phases, onEditGame, onImportClick, onMultiImport, isAdmin }) {
     const [selectedGame, setSelectedGame] = useState(null);
 
     return (
         <div className="space-y-4">
-            <div className="flex justify-end gap-2 no-print">
-                <Button variant="secondary" onClick={onMultiImport}><Icon path={Icons.Upload} /> Multi-Import</Button>
-                <Button variant="primary" onClick={onImportClick}><Icon path={Icons.Upload} /> Importer</Button>
-            </div>
+            {/* Boutons d'import visibles UNIQUEMENT pour l'admin */}
+            {isAdmin && (
+                <div className="flex justify-end gap-2 no-print">
+                    <Button variant="secondary" onClick={onMultiImport}><Icon path={Icons.Upload} /> Multi-Import</Button>
+                    <Button variant="primary" onClick={onImportClick}><Icon path={Icons.Upload} /> Importer</Button>
+                </div>
+            )}
             
             {games.length === 0 && <div className="text-center text-slate-500 py-10">Aucun match enregistré</div>}
             
             {games.map(g => (
                 <Card key={g.id} className="p-0 overflow-hidden group hover:border-orange-500/50 transition-colors">
                     <div className="flex justify-between items-stretch">
-                        {/* Zone Cliquable pour ouvrir les détails */}
+                        {/* Zone Cliquable (Accessible à TOUS pour voir les stats) */}
                         <div 
                             className="flex-1 p-4 cursor-pointer group-hover:bg-slate-800/80 transition-colors"
                             onClick={() => setSelectedGame(g)}
@@ -1464,27 +1467,29 @@ function History({ games, players, setGames, phases, onEditGame, onImportClick, 
                             </div>
                         </div>
 
-                        {/* Boutons d'action */}
-                        <div className="flex flex-col justify-center gap-2 p-2 bg-slate-900/50 border-l border-slate-700">
-                            <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); onEditGame(g); }}>
-                                <Icon path={Icons.Edit} />
-                            </Button>
-                            <Button variant="danger" size="sm" onClick={(e) => { 
-                                e.stopPropagation(); 
-                                if (confirm("Supprimer ?")) { 
-                                    const newG = games.filter(x => x.id !== g.id); 
-                                    setGames(newG); 
-                                    if (window.db) saveDataToCloud(window.db, "games", newG); 
-                                } 
-                            }}>
-                                <Icon path={Icons.Trash} />
-                            </Button>
-                        </div>
+                        {/* Boutons d'action visibles UNIQUEMENT pour l'admin */}
+                        {isAdmin && (
+                            <div className="flex flex-col justify-center gap-2 p-2 bg-slate-900/50 border-l border-slate-700">
+                                <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); onEditGame(g); }}>
+                                    <Icon path={Icons.Edit} />
+                                </Button>
+                                <Button variant="danger" size="sm" onClick={(e) => { 
+                                    e.stopPropagation(); 
+                                    if (confirm("Supprimer ?")) { 
+                                        const newG = games.filter(x => x.id !== g.id); 
+                                        setGames(newG); 
+                                        if (window.db) saveDataToCloud(window.db, "games", newG); 
+                                    } 
+                                }}>
+                                    <Icon path={Icons.Trash} />
+                                </Button>
+                            </div>
+                        )}
                     </div>
                 </Card>
             ))}
 
-            {/* Intégration de la Modale Détails */}
+            {/* Modale de détails (Accessible à TOUS) */}
             <GameDetailsModal 
                 game={selectedGame} 
                 isOpen={!!selectedGame} 
@@ -1537,10 +1542,53 @@ function Settings({ players, onUpdatePlayers, phases, onUpdatePhases, firebaseCo
         </div>
     );
 }
+// --- LOGIN MODAL ---
+function LoginModal({ isOpen, onLogin, onClose }) {
+    const [pwd, setPwd] = useState("");
+    const [error, setError] = useState(false);
 
-// --- MAIN APP ---
+    if (!isOpen) return null;
+
+    const handleLogin = () => {
+        // REMPLACE "coach2025" PAR TON MOT DE PASSE PRÉFÉRÉ
+        if (pwd === "coach2025") { 
+            onLogin();
+            onClose();
+        } else {
+            setError(true);
+        }
+    };
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Accès Coach" size="max-w-sm">
+            <div className="space-y-4 p-2">
+                <p className="text-sm text-slate-400">Veuillez entrer le mot de passe pour accéder aux modifications et au live.</p>
+                <input 
+                    type="password" 
+                    className="w-full bg-slate-900 text-white p-3 rounded border border-slate-700 outline-none focus:border-orange-500"
+                    placeholder="Mot de passe..."
+                    value={pwd}
+                    onChange={(e) => { setPwd(e.target.value); setError(false); }}
+                    onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
+                />
+                {error && <div className="text-red-500 text-xs">Mot de passe incorrect</div>}
+                <div className="flex justify-end gap-2">
+                    <Button variant="ghost" onClick={onClose}>Annuler</Button>
+                    <Button variant="primary" onClick={handleLogin}>Se connecter</Button>
+                </div>
+            </div>
+        </Modal>
+    );
+}
+// --- MAIN APP (Avec Sécurité) ---
 function App() {
-    const [view, setView] = useState("live");
+    // Par défaut, on regarde si le navigateur a déjà le "token" admin
+    const [isAdmin, setIsAdmin] = useState(localStorage.getItem('statchamp_admin') === 'true');
+    const [showLogin, setShowLogin] = useState(false);
+    
+    // Si pas admin, on force la vue sur 'global_stats' ou 'history' par défaut
+    const [view, setView] = useState(isAdmin ? "live" : "global_stats");
+    
     const [players, setPlayers] = useState([]);
     const [games, setGames] = useState([]);
     const [phases, setPhases] = useState(DEFAULT_PHASES);
@@ -1550,8 +1598,12 @@ function App() {
     const [importData, setImportData] = useState(null);
     const [multiImportQueue, setMultiImportQueue] = useState([]);
     const [isDataLoaded, setIsDataLoaded] = useState(false);
+    
+    // Mode joueur URL (optionnel, garde ta logique existante)
     const isPlayerMode = useMemo(() => new URLSearchParams(window.location.search).get('mode') === 'player', []);
 
+    // ... (GARDE TES USEEFFECTS EXISTANTS ICI POUR LE CHARGEMENT FIREBASE/LOCALSTORAGE) ...
+    // Note: Je ne les recopie pas pour alléger la réponse, mais garde tes useEffects de chargement de données tels quels.
     useEffect(() => {
         const savedFbConfig = localStorage.getItem('basket_firebase_config');
         const savedPhases = localStorage.getItem('basket_phases');
@@ -1584,7 +1636,9 @@ function App() {
     useEffect(() => { localStorage.setItem('basket_phases', JSON.stringify(phases)); }, [phases]);
     useEffect(() => { if (firebaseConfig) localStorage.setItem('basket_firebase_config', JSON.stringify(firebaseConfig)); }, [firebaseConfig]);
 
+    // Fonctions Admin (Sauvegarde, Import...)
     const handleSaveGame = (gameState) => {
+        if (!isAdmin) return; // Sécurité supplémentaire
         const gameId = activeGame?.id || generateId();
         const newGame = { ...gameState, id: gameId, date: activeGame?.date || new Date().toLocaleDateString() };
         const newGamesList = games.some(g => g.id === gameId) ? games.map(g => g.id === gameId ? newGame : g) : [newGame, ...games];
@@ -1593,70 +1647,144 @@ function App() {
         setActiveGame(null); setView('history');
     };
 
-    const handleUpdatePhases = (newPhases) => { setPhases(newPhases); if (window.db && !isPlayerMode) saveDataToCloud(window.db, "phases", newPhases); };
+    const handleUpdatePhases = (newPhases) => { if(!isAdmin) return; setPhases(newPhases); if (window.db && !isPlayerMode) saveDataToCloud(window.db, "phases", newPhases); };
+    const handleSettingsUpdate = (newPlayers) => { if(!isAdmin) return; setPlayers(newPlayers); if (window.db && !isPlayerMode) saveDataToCloud(window.db, "roster", newPlayers); };
+    
+    // Gestion Login
+    const performLogin = () => {
+        setIsAdmin(true);
+        localStorage.setItem('statchamp_admin', 'true');
+        setView('live'); // Redirige vers le live après connexion
+    };
+
+    const performLogout = () => {
+        setIsAdmin(false);
+        localStorage.removeItem('statchamp_admin');
+        setView('global_stats'); // Redirige vers stats publiques
+    };
+
+    // Gestion Imports (inchangé mais protégé par l'UI)
     const handleFileImport = (e) => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (ev) => setImportData(parseHTMLStats(ev.target.result)); reader.readAsText(file); e.target.value = null; };
-
-    // Multi-import
-    const handleMultiFileImport = (e) => {
-        const files = Array.from(e.target.files);
-        if (files.length === 0) return;
-        const queue = [];
-        let processed = 0;
-        files.forEach(file => {
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                queue.push(parseHTMLStats(ev.target.result));
-                processed++;
-                if (processed === files.length) setMultiImportQueue(queue);
-            };
-            reader.readAsText(file);
-        });
-        e.target.value = null;
-    };
-
-    const confirmImport = (newGame, updatedPlayers) => {
-        setPlayers(updatedPlayers);
-        const newGamesList = [newGame, ...games];
-        setGames(newGamesList);
-        if (window.db && !isPlayerMode) { saveDataToCloud(window.db, "roster", updatedPlayers); saveDataToCloud(window.db, "games", newGamesList); }
-        setImportData(null); alert("Importé !"); setView('history');
-    };
-
-    const confirmMultiImport = (newGame, updatedPlayers) => {
-        setPlayers(updatedPlayers);
-        const newGamesList = [newGame, ...games];
-        setGames(newGamesList);
-        if (window.db && !isPlayerMode) { saveDataToCloud(window.db, "roster", updatedPlayers); saveDataToCloud(window.db, "games", newGamesList); }
-        setMultiImportQueue(prev => prev.slice(1));
-        if (multiImportQueue.length <= 1) { alert("Tous les matchs importés !"); setView('history'); }
-    };
-
-    const handleSettingsUpdate = (newPlayers) => { setPlayers(newPlayers); if (window.db && !isPlayerMode) saveDataToCloud(window.db, "roster", newPlayers); };
+    const handleMultiFileImport = (e) => { const files = Array.from(e.target.files); if (files.length === 0) return; const queue = []; let processed = 0; files.forEach(file => { const reader = new FileReader(); reader.onload = (ev) => { queue.push(parseHTMLStats(ev.target.result)); processed++; if (processed === files.length) setMultiImportQueue(queue); }; reader.readAsText(file); }); e.target.value = null; };
+    const confirmImport = (newGame, updatedPlayers) => { setPlayers(updatedPlayers); const newGamesList = [newGame, ...games]; setGames(newGamesList); if (window.db && !isPlayerMode) { saveDataToCloud(window.db, "roster", updatedPlayers); saveDataToCloud(window.db, "games", newGamesList); } setImportData(null); alert("Importé !"); setView('history'); };
+    const confirmMultiImport = (newGame, updatedPlayers) => { setPlayers(updatedPlayers); const newGamesList = [newGame, ...games]; setGames(newGamesList); if (window.db && !isPlayerMode) { saveDataToCloud(window.db, "roster", updatedPlayers); saveDataToCloud(window.db, "games", newGamesList); } setMultiImportQueue(prev => prev.slice(1)); if (multiImportQueue.length <= 1) { alert("Tous les matchs importés !"); setView('history'); } };
 
     if (isPlayerMode) return <div className="max-w-5xl mx-auto h-screen bg-slate-950 flex flex-col font-sans text-slate-200"><header className="h-16 bg-slate-900 flex items-center px-6"><h1 className="font-bold text-lg text-white">🏀 Stats</h1><span className="ml-auto text-xs text-orange-500 px-2 py-1 bg-orange-900/20 rounded border border-orange-900">Mode Joueur</span></header><div className="flex-1 p-4 overflow-y-auto"><GlobalStats players={players} games={games} phases={phases} /></div></div>;
 
     return (
         <div className="max-w-5xl mx-auto h-screen bg-slate-950 flex flex-col md:flex-row overflow-hidden font-sans text-slate-200">
-            <input type="file" accept=".html" id="html-upload" onChange={handleFileImport} className="hidden" />
-            <input type="file" accept=".html" id="multi-upload" onChange={handleMultiFileImport} multiple className="hidden" />
+            {/* INPUTS CACHÉS pour import (Seulement si admin, ou protégés par CSS/JS) */}
+            {isAdmin && (
+                <>
+                    <input type="file" accept=".html" id="html-upload" onChange={handleFileImport} className="hidden" />
+                    <input type="file" accept=".html" id="multi-upload" onChange={handleMultiFileImport} multiple className="hidden" />
+                </>
+            )}
+
+            {/* MODALES IMPORT */}
             {importData && <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"><div className="bg-slate-800 w-full max-w-2xl rounded-xl border border-slate-600 p-6"><h2 className="text-2xl font-bold text-white mb-4">Import</h2><ImportReviewModal importData={importData} currentPlayers={players} phases={phases} onConfirm={confirmImport} onCancel={() => setImportData(null)} /></div></div>}
             {multiImportQueue.length > 0 && <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"><div className="bg-slate-800 w-full max-w-2xl rounded-xl border border-slate-600 p-6"><h2 className="text-2xl font-bold text-white mb-2">Multi-Import ({multiImportQueue.length} restant{multiImportQueue.length > 1 ? 's' : ''})</h2><ImportReviewModal importData={multiImportQueue[0]} currentPlayers={players} phases={phases} onConfirm={confirmMultiImport} onCancel={() => setMultiImportQueue([])} /></div></div>}
-            <nav className="bg-slate-900 border-r border-slate-800 w-full md:w-20 flex md:flex-col items-center justify-evenly md:justify-start md:pt-6 p-2 z-50 shrink-0">
-                <div className="mb-0 md:mb-8 p-2 bg-orange-600 rounded-xl text-white font-black text-xl">BP</div>
-                {[{ id: "live", icon: Icons.Play }, { id: "global_stats", icon: Icons.Chart }, { id: "history", icon: Icons.Clipboard }, { id: "settings", icon: Icons.Settings }].map(btn => (
-                    <button key={btn.id} onClick={() => setView(btn.id)} className={`p-3 rounded-xl transition-all ${view === btn.id ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`}><Icon path={btn.icon} /></button>
-                ))}
+            
+            {/* LOGIN MODAL */}
+            <LoginModal isOpen={showLogin} onLogin={performLogin} onClose={() => setShowLogin(false)} />
+
+            {/* NAVIGATION LATÉRALE */}
+            <nav className="bg-slate-900 border-r border-slate-800 w-full md:w-20 flex md:flex-col items-center justify-between md:pt-6 p-2 z-50 shrink-0">
+                <div className="flex md:flex-col items-center gap-2 md:gap-4 w-full justify-evenly md:justify-start">
+                    <div className="mb-0 md:mb-4 p-2 bg-orange-600 rounded-xl text-white font-black text-xl cursor-default">BP</div>
+                    
+                    {/* Bouton Live (Admin seulement) */}
+                    {isAdmin && (
+                        <button onClick={() => setView("live")} className={`p-3 rounded-xl transition-all ${view === "live" ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`} title="Match en direct">
+                            <Icon path={Icons.Play} />
+                        </button>
+                    )}
+
+                    {/* Stats Globales (Public) */}
+                    <button onClick={() => setView("global_stats")} className={`p-3 rounded-xl transition-all ${view === "global_stats" ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`} title="Statistiques Saison">
+                        <Icon path={Icons.Chart} />
+                    </button>
+
+                    {/* Historique (Public - mais contenu filtré) */}
+                    <button onClick={() => setView("history")} className={`p-3 rounded-xl transition-all ${view === "history" ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`} title="Historique Matchs">
+                        <Icon path={Icons.Clipboard} />
+                    </button>
+
+                    {/* Paramètres (Admin seulement) */}
+                    {isAdmin && (
+                        <button onClick={() => setView("settings")} className={`p-3 rounded-xl transition-all ${view === "settings" ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`} title="Configuration">
+                            <Icon path={Icons.Settings} />
+                        </button>
+                    )}
+                </div>
+
+                {/* Bouton Login/Logout en bas */}
+                <div className="mt-auto hidden md:block pb-4">
+                    {isAdmin ? (
+                        <button onClick={performLogout} className="p-3 text-red-500 hover:bg-slate-800 rounded-xl" title="Se déconnecter"><Icon path={Icons.Users} /></button>
+                    ) : (
+                        <button onClick={() => setShowLogin(true)} className="p-3 text-slate-600 hover:text-white hover:bg-slate-800 rounded-xl" title="Accès Coach"><Icon path={Icons.Users} /></button>
+                    )}
+                </div>
+                {/* Version Mobile du Login */}
+                <div className="md:hidden">
+                     {isAdmin ? (
+                        <button onClick={performLogout} className="p-3 text-red-500"><Icon path={Icons.Users} /></button>
+                    ) : (
+                        <button onClick={() => setShowLogin(true)} className="p-3 text-slate-600"><Icon path={Icons.Users} /></button>
+                    )}
+                </div>
             </nav>
-            <main className="flex-1 flex flex-col h-full overflow-hidden">
-                <header className="h-16 bg-slate-900 border-b border-slate-800 flex items-center px-6 shrink-0">
-                    <h1 className="font-bold text-lg text-white">{view === 'live' && "🔴 Live"}{view === 'global_stats' && "📊 Stats"}{view === 'history' && "📜 Historique"}{view === 'settings' && "⚙️ Paramètres"}</h1>
-                    {window.db && <span className="ml-auto text-xs text-green-400"><Icon path={Icons.Cloud} /> Synchro</span>}
+
+            <main className="flex-1 flex flex-col h-full overflow-hidden relative">
+                <header className="h-16 bg-slate-900 border-b border-slate-800 flex items-center px-6 shrink-0 z-20">
+                    <h1 className="font-bold text-lg text-white">
+                        {view === 'live' && "🔴 Live Tracker"}
+                        {view === 'global_stats' && "📊 Stats Saison"}
+                        {view === 'history' && "📜 Historique des Matchs"}
+                        {view === 'settings' && "⚙️ Paramètres"}
+                    </h1>
+                    <div className="ml-auto flex items-center gap-3">
+                        {!isAdmin && <span className="text-xs text-slate-500 px-2 py-1 bg-slate-800 rounded border border-slate-700">Mode Public</span>}
+                        {isAdmin && <span className="text-xs text-orange-500 px-2 py-1 bg-orange-900/20 rounded border border-orange-900">Mode Admin</span>}
+                        {window.db && <span className="text-xs text-green-400 flex items-center gap-1"><Icon path={Icons.Cloud} className="w-3 h-3"/> Synchro</span>}
+                    </div>
                 </header>
-                <div className="flex-1 p-4 overflow-y-auto">
-                    {view === 'live' && <LiveTracker players={players} onSaveGame={handleSaveGame} initialGame={activeGame} phases={phases} selectedPhase={phases[0]?.id} />}
-                    {view === 'global_stats' && <GlobalStats players={players} games={games} phases={phases} />}
-                    {view === 'history' && <History games={games} players={players} setGames={setGames} phases={phases} onEditGame={(g) => { setActiveGame(g); setView('live'); }} onImportClick={() => document.getElementById('html-upload').click()} onMultiImport={() => document.getElementById('multi-upload').click()} />}
-                    {view === 'settings' && <Settings players={players} onUpdatePlayers={handleSettingsUpdate} phases={phases} onUpdatePhases={handleUpdatePhases} firebaseConfig={firebaseConfig} setFirebaseConfig={setFirebaseConfig} />}
+
+                <div className="flex-1 p-4 overflow-y-auto z-10">
+                    {view === 'live' && isAdmin && (
+                        <LiveTracker players={players} onSaveGame={handleSaveGame} initialGame={activeGame} phases={phases} selectedPhase={phases[0]?.id} />
+                    )}
+                    
+                    {view === 'global_stats' && (
+                        <GlobalStats players={players} games={games} phases={phases} />
+                    )}
+                    
+                    {view === 'history' && (
+                        <History 
+                            games={games} 
+                            players={players} 
+                            setGames={setGames} 
+                            phases={phases} 
+                            isAdmin={isAdmin} // On passe le statut admin ici
+                            onEditGame={(g) => { setActiveGame(g); setView('live'); }} 
+                            onImportClick={() => document.getElementById('html-upload').click()} 
+                            onMultiImport={() => document.getElementById('multi-upload').click()} 
+                        />
+                    )}
+                    
+                    {view === 'settings' && isAdmin && (
+                        <Settings players={players} onUpdatePlayers={handleSettingsUpdate} phases={phases} onUpdatePhases={handleUpdatePhases} firebaseConfig={firebaseConfig} setFirebaseConfig={setFirebaseConfig} />
+                    )}
+
+                    {/* Si on essaie d'accéder à une vue admin sans l'être */}
+                    {!isAdmin && (view === 'live' || view === 'settings') && (
+                        <div className="h-full flex flex-col items-center justify-center text-slate-500">
+                            <Icon path={Icons.Users} className="w-16 h-16 mb-4 opacity-20" />
+                            <p>Accès réservé au coach.</p>
+                            <button onClick={() => setShowLogin(true)} className="mt-4 text-orange-500 hover:underline">Se connecter</button>
+                        </div>
+                    )}
                 </div>
             </main>
         </div>
