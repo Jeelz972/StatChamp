@@ -12,8 +12,9 @@ const PRECONFIGURED_FIREBASE = {
 };
 // ===========================================
 // FONCTIONS DE CALCUL DES RATINGS AVANCÉS
-// Basées sur les formules Basketball-Reference
-// À AJOUTER AU DÉBUT de ton app.js (après les imports)
+// Basées sur les formules Dean Oliver (Basketball on Paper)
+// Avec pondération par temps de jeu (shrinkage U18)
+// À AJOUTER AU DÉBUT de ton app.js (après DEFAULT_PHASES)
 // ===========================================
 
 /**
@@ -21,9 +22,11 @@ const PRECONFIGURED_FIREBASE = {
  * @param {Object} playerStats - Stats du joueur pour ce match
  * @param {Object} teamStats - Stats totales de l'équipe
  * @param {Object} oppStats - Stats de l'adversaire
- * @returns {Object} { ORtg, DRtg, netRtg }
+ * @param {Number} avgMinutes - Temps de jeu moyen de l'effectif (pour shrinkage)
+ * @param {Number} k - Coefficient de shrinkage (1.5 recommandé U18)
+ * @returns {Object} { ORtg, DRtg, netRtg, ORtg_raw, DRtg_raw }
  */
-const calculateIndividualRatings = (playerStats, teamStats, oppStats) => {
+const calculateIndividualRatings = (playerStats, teamStats, oppStats, avgMinutes = null, k = 1.5) => {
     // Extraction des stats joueur
     const s = playerStats;
     const FGM = (s.fgm || 0) + (s.threePM || 0);
@@ -54,7 +57,7 @@ const calculateIndividualRatings = (playerStats, teamStats, oppStats) => {
     const Team_PTS = teamStats.pts || 1;
     const Team_TOV = teamStats.tov || 0;
     const Team_PF = teamStats.pf || 1;
-    const Team_MP = teamStats.minutes || 200; // ~5 joueurs * 40 min
+    const Team_MP = teamStats.minutes || 200;
     const Team_3PM = teamStats.threePM || 0;
 
     // Stats adversaire
@@ -64,31 +67,36 @@ const calculateIndividualRatings = (playerStats, teamStats, oppStats) => {
     const Opp_FTA = oppStats.fta || 1;
     const Opp_ORB = oppStats.oreb || 0;
     const Opp_DRB = oppStats.dreb || Math.round((oppStats.reb || 0) * 0.7);
+    const Opp_TRB = oppStats.reb || (Opp_ORB + Opp_DRB);
     const Opp_TOV = oppStats.tov || 0;
     const Opp_PTS = oppStats.pts || 0;
-    const Opp_MP = Team_MP; // Même durée de match
+    const Opp_MP = Team_MP;
 
     // ========================================
-    // OFFENSIVE RATING (ORtg)
+    // 1️⃣ OFFENSIVE RATING (Dean Oliver)
     // ========================================
 
-    // Team_ORB% = Team_ORB / (Team_ORB + Opp_DRB)
-    const Team_ORB_Pct = (Team_ORB + Opp_DRB) > 0 ? Team_ORB / (Team_ORB + Opp_DRB) : 0;
+    // Team_ORB% = Team_ORB / (Team_ORB + (Opponent_TRB - Opponent_ORB))
+    const Opp_DRB_calc = Opp_TRB - Opp_ORB;
+    const Team_ORB_Pct = (Team_ORB + Opp_DRB_calc) > 0 ? Team_ORB / (Team_ORB + Opp_DRB_calc) : 0;
 
     // Team Possessions
-    const Team_Poss = Team_FGA + 0.4 * Team_FTA - 1.07 * (Team_ORB / (Team_ORB + Opp_DRB + 0.001)) * (Team_FGA - Team_FGM) + Team_TOV;
+    const Team_Poss = Team_FGA + 0.4 * Team_FTA - 1.07 * Team_ORB_Pct * (Team_FGA - Team_FGM) + Team_TOV;
 
-    // Team Scoring Possessions (approximation)
-    const Team_FT_Part = (1 - Math.pow(1 - (Team_FTM / (Team_FTA || 1)), 2)) * 0.4 * Team_FTA;
+    // Team_Scoring_Poss = Team_FGM + (1 - (1 - (Team_FTM / Team_FTA))^2) * 0.4 * Team_FTA
+    const Team_FT_Part = Team_FTA > 0 ? (1 - Math.pow(1 - (Team_FTM / Team_FTA), 2)) * 0.4 * Team_FTA : 0;
     const Team_Scoring_Poss = Team_FGM + Team_FT_Part;
 
-    // Team ORB Weight
-    const Team_ORB_Weight = ((1 - Team_ORB_Pct) * Team_Scoring_Poss) / (((1 - Team_ORB_Pct) * Team_Scoring_Poss) + Team_ORB_Pct * (Team_FGA - Team_FGM) + 0.001);
+    // Team_Play% = Team_Scoring_Poss / (Team_FGA + 0.4 * Team_FTA + Team_TOV)
+    const Team_Play_Pct = Team_Scoring_Poss / (Team_FGA + 0.4 * Team_FTA + Team_TOV || 1);
 
-    // Team Play% (approximation simplifiée)
-    const Team_Play_Pct = Team_Scoring_Poss / (Team_Poss || 1);
+    // Team_ORB_Weight = ((1 - Team_ORB%) * Team_Play%) / ((1 - Team_ORB%) * Team_Play% + Team_ORB% * (1 - Team_Play%))
+    const Team_ORB_Weight_Num = (1 - Team_ORB_Pct) * Team_Play_Pct;
+    const Team_ORB_Weight_Denom = Team_ORB_Weight_Num + Team_ORB_Pct * (1 - Team_Play_Pct);
+    const Team_ORB_Weight = Team_ORB_Weight_Denom > 0 ? Team_ORB_Weight_Num / Team_ORB_Weight_Denom : 0;
 
-    // qAST - facteur d'assistance
+    // qAST = ((MP / (Team_MP / 5)) * (1.14 * ((Team_AST - AST) / Team_FGM)))
+    //      + ((((Team_AST / Team_MP) * MP * 5 - AST) / ((Team_FGM / Team_MP) * MP * 5 - FGM)) * (1 - (MP / (Team_MP / 5))))
     const MP_Pct = MP / (Team_MP / 5 || 1);
     let qAST = 0;
     if (FGM > 0 && Team_FGM > FGM) {
@@ -98,112 +106,134 @@ const calculateIndividualRatings = (playerStats, teamStats, oppStats) => {
         const qAST_Part2 = (qAST_Part2_Num / qAST_Part2_Denom) * (1 - MP_Pct);
         qAST = qAST_Part1 + qAST_Part2;
     }
-    qAST = Math.max(0, Math.min(qAST, 1)); // Clamp entre 0 et 1
+    qAST = Math.max(0, Math.min(qAST, 1));
 
-    // FG_Part
+    // FG_Part = FGM * (1 - 0.5 * ((PTS - FTM) / (2 * FGA)) * qAST)
     const PTS_minus_FTM = PTS - FTM;
-    const FG_Part = FGA > 0 ? FGM * (1 - 0.5 * ((PTS_minus_FTM) / (2 * FGA || 1)) * qAST) : 0;
+    const FG_Part = FGA > 0 ? FGM * (1 - 0.5 * (PTS_minus_FTM / (2 * FGA || 1)) * qAST) : 0;
 
-    // AST_Part
+    // AST_Part = 0.5 * (((Team_PTS - Team_FTM) - (PTS - FTM)) / (2 * (Team_FGA - FGA))) * AST
     const Team_PTS_minus_FTM = Team_PTS - Team_FTM;
-    const AST_Part = (Team_FGA - FGA) > 0 ? 0.5 * (((Team_PTS_minus_FTM) - (PTS_minus_FTM)) / (2 * (Team_FGA - FGA) || 1)) * AST : 0;
+    const AST_Part = (Team_FGA - FGA) > 0 ? 0.5 * ((Team_PTS_minus_FTM - PTS_minus_FTM) / (2 * (Team_FGA - FGA) || 1)) * AST : 0;
 
-    // FT_Part
+    // FT_Part = (1 - (1 - (FTM / FTA))^2) * 0.4 * FTA
     const FT_Part = FTA > 0 ? (1 - Math.pow(1 - (FTM / FTA), 2)) * 0.4 * FTA : 0;
 
-    // ORB_Part
+    // ORB_Part = ORB * Team_ORB_Weight * Team_Play%
     const ORB_Part = ORB * Team_ORB_Weight * Team_Play_Pct;
 
-    // ScPoss (Scoring Possessions)
-    const ScPoss_Factor = Team_Scoring_Poss > 0 ? (1 - (Team_ORB / (Team_Scoring_Poss || 1)) * Team_ORB_Weight * Team_Play_Pct) : 1;
+    // ScPoss = (FG_Part + AST_Part + FT_Part) * (1 - (Team_ORB / Team_Scoring_Poss) * Team_ORB_Weight * Team_Play%) + ORB_Part
+    const ScPoss_Factor = Team_Scoring_Poss > 0 ? (1 - (Team_ORB / Team_Scoring_Poss) * Team_ORB_Weight * Team_Play_Pct) : 1;
     const ScPoss = (FG_Part + AST_Part + FT_Part) * ScPoss_Factor + ORB_Part;
 
-    // FGxPoss (Missed FG Possessions)
+    // FGxPoss = (FGA - FGM) * (1 - 1.07 * Team_ORB%)
     const FGxPoss = (FGA - FGM) * (1 - 1.07 * Team_ORB_Pct);
 
-    // FTxPoss (Missed FT Possessions)
+    // FTxPoss = ((1 - (FTM / FTA))^2) * 0.4 * FTA
     const FTxPoss = FTA > 0 ? Math.pow(1 - (FTM / FTA), 2) * 0.4 * FTA : 0;
 
-    // TotPoss (Total Possessions utilisées)
+    // TotPoss = ScPoss + FGxPoss + FTxPoss + TOV
     const TotPoss = ScPoss + FGxPoss + FTxPoss + TOV;
 
-    // PProd_FG_Part
-    const PProd_FG_Part = FGA > 0 ? 2 * (FGM + 0.5 * threePM) * (1 - 0.5 * ((PTS_minus_FTM) / (2 * FGA || 1)) * qAST) : 0;
+    // PProd_FG_Part = 2 * (FGM + 0.5 * 3PM) * (1 - 0.5 * ((PTS - FTM) / (2 * FGA)) * qAST)
+    const PProd_FG_Part = FGA > 0 ? 2 * (FGM + 0.5 * threePM) * (1 - 0.5 * (PTS_minus_FTM / (2 * FGA || 1)) * qAST) : 0;
 
-    // PProd_AST_Part
+    // PProd_AST_Part = 2 * ((Team_FGM - FGM + 0.5 * (Team_3PM - 3PM)) / (Team_FGM - FGM)) * 0.5 * (((Team_PTS - Team_FTM) - (PTS - FTM)) / (2 * (Team_FGA - FGA))) * AST
     let PProd_AST_Part = 0;
     if ((Team_FGM - FGM) > 0 && (Team_FGA - FGA) > 0) {
         const assist_factor = 2 * ((Team_FGM - FGM + 0.5 * (Team_3PM - threePM)) / (Team_FGM - FGM || 1));
-        PProd_AST_Part = assist_factor * 0.5 * (((Team_PTS_minus_FTM) - (PTS_minus_FTM)) / (2 * (Team_FGA - FGA) || 1)) * AST;
+        PProd_AST_Part = assist_factor * 0.5 * ((Team_PTS_minus_FTM - PTS_minus_FTM) / (2 * (Team_FGA - FGA) || 1)) * AST;
     }
 
-    // PProd_ORB_Part
-    const Team_FT_Scoring = Team_FTA > 0 ? (1 - Math.pow(1 - (Team_FTM / Team_FTA), 2)) * 0.4 * Team_FTA : 0;
-    const Team_Pts_Per_Score = (Team_FGM + Team_FT_Scoring) > 0 ? Team_PTS / (Team_FGM + Team_FT_Scoring) : 2;
+    // PProd_ORB_Part = ORB * Team_ORB_Weight * Team_Play% * (Team_PTS / Team_Scoring_Poss)
+    const Team_Pts_Per_Score = Team_Scoring_Poss > 0 ? Team_PTS / Team_Scoring_Poss : 2;
     const PProd_ORB_Part = ORB * Team_ORB_Weight * Team_Play_Pct * Team_Pts_Per_Score;
 
-    // PProd (Points Produced)
+    // PProd = (PProd_FG_Part + PProd_AST_Part + FTM) * (1 - (Team_ORB / Team_Scoring_Poss) * Team_ORB_Weight * Team_Play%) + PProd_ORB_Part
     const PProd = (PProd_FG_Part + PProd_AST_Part + FTM) * ScPoss_Factor + PProd_ORB_Part;
 
-    // ORtg final
-    const ORtg = TotPoss > 0 ? 100 * (PProd / TotPoss) : 0;
+    // ORtg_ind = 100 * (PProd / TotPoss)
+    const ORtg_ind = TotPoss > 0 ? 100 * (PProd / TotPoss) : 0;
 
     // ========================================
-    // DEFENSIVE RATING (DRtg)
+    // 2️⃣ DEFENSIVE RATING (Dean Oliver)
     // ========================================
 
-    // DOR% (Defensive Opponent Rebounding %)
+    // DOR% = Opponent_ORB / (Opponent_ORB + Team_DRB)
     const DOR_Pct = (Opp_ORB + Team_DRB) > 0 ? Opp_ORB / (Opp_ORB + Team_DRB) : 0;
 
-    // DFG% (Opponent FG%)
+    // DFG% = Opponent_FGM / Opponent_FGA
     const DFG_Pct = Opp_FGA > 0 ? Opp_FGM / Opp_FGA : 0.45;
 
-    // FMwt (Floor Percentage Weight)
+    // FMwt = (DFG% * (1 - DOR%)) / (DFG% * (1 - DOR%) + (1 - DFG%) * DOR%)
     const FMwt_Num = DFG_Pct * (1 - DOR_Pct);
     const FMwt_Denom = DFG_Pct * (1 - DOR_Pct) + (1 - DFG_Pct) * DOR_Pct;
     const FMwt = FMwt_Denom > 0 ? FMwt_Num / FMwt_Denom : 0.5;
 
-    // Stops1
+    // Stops1 = STL + BLK * FMwt * (1 - 1.07 * DOR%) + DRB * (1 - FMwt)
     const Stops1 = STL + BLK * FMwt * (1 - 1.07 * DOR_Pct) + DRB * (1 - FMwt);
 
-    // Stops2
+    // Stops2 = (((Opponent_FGA - Opponent_FGM - Team_BLK) / Team_MP) * FMwt * (1 - 1.07 * DOR%) + ((Opponent_TOV - Team_STL) / Team_MP)) * MP + (PF / Team_PF) * 0.4 * Opponent_FTA * (1 - (Opponent_FTM / Opponent_FTA))^2
     const Opp_Missed_FG = Opp_FGA - Opp_FGM;
     const Stops2_Part1 = Team_MP > 0 ? ((Opp_Missed_FG - Team_BLK) / Team_MP) * FMwt * (1 - 1.07 * DOR_Pct) : 0;
     const Stops2_Part2 = Team_MP > 0 ? ((Opp_TOV - Team_STL) / Team_MP) : 0;
     const Stops2_Part3 = Team_PF > 0 && Opp_FTA > 0 ? (PF / Team_PF) * 0.4 * Opp_FTA * Math.pow(1 - (Opp_FTM / Opp_FTA), 2) : 0;
     const Stops2 = (Stops2_Part1 + Stops2_Part2) * MP + Stops2_Part3;
 
-    // Total Stops
+    // Stops = Stops1 + Stops2
     const Stops = Stops1 + Stops2;
 
-    // Stop%
+    // Stop% = (Stops * Opponent_MP) / (Team_Possessions * MP)
     const Stop_Pct = (Team_Poss * MP) > 0 ? (Stops * Opp_MP) / (Team_Poss * MP) : 0;
 
-    // Team DRtg
+    // Team_DRtg = 100 * (Opponent_PTS / Team_Possessions)
     const Team_DRtg = Team_Poss > 0 ? 100 * (Opp_PTS / Team_Poss) : 100;
 
-    // D_Pts_per_ScPoss (Points par possession scoring adverse)
-    const Opp_FT_Scoring = Opp_FTA > 0 ? (1 - Math.pow(1 - (Opp_FTM / Opp_FTA), 2)) * Opp_FTA * 0.4 : 0;
+    // D_Pts_per_ScPoss = Opponent_PTS / (Opponent_FGM + (1 - (1 - (Opponent_FTM / Opponent_FTA))^2) * 0.4 * Opponent_FTA)
+    const Opp_FT_Scoring = Opp_FTA > 0 ? (1 - Math.pow(1 - (Opp_FTM / Opp_FTA), 2)) * 0.4 * Opp_FTA : 0;
     const Opp_Scoring_Poss = Opp_FGM + Opp_FT_Scoring;
     const D_Pts_per_ScPoss = Opp_Scoring_Poss > 0 ? Opp_PTS / Opp_Scoring_Poss : 2;
 
-    // DRtg final
-    const DRtg = Team_DRtg + 0.2 * (100 * D_Pts_per_ScPoss * (1 - Stop_Pct) - Team_DRtg);
+    // DRtg_ind = Team_DRtg + 0.2 * (100 * D_Pts_per_ScPoss * (1 - Stop%) - Team_DRtg)
+    const DRtg_ind = Team_DRtg + 0.2 * (100 * D_Pts_per_ScPoss * (1 - Stop_Pct) - Team_DRtg);
+
+    // ========================================
+    // 3️⃣ PONDÉRATION PAR TEMPS DE JEU (Shrinkage U18)
+    // ========================================
+
+    // Team ORtg et DRtg (références pour le shrinkage)
+    const Team_ORtg = Team_Poss > 0 ? 100 * (Team_PTS / Team_Poss) : 100;
+
+    // Coefficient dynamique: C = k × Min_moy
+    // Si avgMinutes n'est pas fourni, on utilise Team_MP / 5 (moyenne théorique)
+    const Min_moy = avgMinutes || (Team_MP / 5);
+    const C = k * Min_moy;
+
+    // Poids du joueur basé sur ses minutes
+    const weight = MP / (MP + C);
+
+    // ORtg_pond = ORtg_equipe + (ORtg_ind - ORtg_equipe) * (Min_joueur / (Min_joueur + C))
+    const ORtg = Team_ORtg + (ORtg_ind - Team_ORtg) * weight;
+
+    // DRtg_pond = DRtg_equipe + (DRtg_ind - DRtg_equipe) * (Min_joueur / (Min_joueur + C))
+    const DRtg = Team_DRtg + (DRtg_ind - Team_DRtg) * weight;
 
     // Net Rating
     const netRtg = ORtg - DRtg;
 
     return {
-        ORtg: isFinite(ORtg) ? ORtg : 0,
-        DRtg: isFinite(DRtg) ? DRtg : 100,
+        ORtg: isFinite(ORtg) ? ORtg : Team_ORtg,
+        DRtg: isFinite(DRtg) ? DRtg : Team_DRtg,
         netRtg: isFinite(netRtg) ? netRtg : 0,
-        // Debug values (optionnel)
-        debug: {
-            TotPoss: TotPoss.toFixed(2),
-            PProd: PProd.toFixed(2),
-            Stops: Stops.toFixed(2),
-            Stop_Pct: (Stop_Pct * 100).toFixed(1) + '%'
-        }
+        // Valeurs brutes (avant pondération) pour debug
+        ORtg_raw: isFinite(ORtg_ind) ? ORtg_ind : 0,
+        DRtg_raw: isFinite(DRtg_ind) ? DRtg_ind : 100,
+        // Infos de pondération
+        weight: weight,
+        C: C,
+        // Stats équipe de référence
+        Team_ORtg: Team_ORtg,
+        Team_DRtg: Team_DRtg
     };
 };
 
@@ -257,6 +287,16 @@ const prepareOpponentStats = (oppStats, awayScore) => {
         blk: oppStats.blk || 0,
         fouls: oppStats.fouls || 0
     };
+};
+
+/**
+ * Calcule le temps de jeu moyen des joueurs actifs
+ */
+const calculateAverageMinutes = (playerStats) => {
+    const activePlayers = Object.values(playerStats).filter(s => (s.minutes || 0) > 0);
+    if (activePlayers.length === 0) return 20; // Fallback
+    const totalMinutes = activePlayers.reduce((sum, s) => sum + (s.minutes || 0), 0);
+    return totalMinutes / activePlayers.length;
 };
 // ==========================================
 const { useState, useEffect, useMemo } = React;
@@ -1170,161 +1210,127 @@ function ImportReviewModal({ importData, currentPlayers, phases, onConfirm, onCa
     );
 }
 
-// --- COMPOSANT DÉTAILS DU MATCH (Formules Dean Oliver + Stabilisation U18) ---
+// --- COMPOSANT DÉTAILS DU MATCH (Dean Oliver + Shrinkage U18) ---
+// REMPLACE la fonction GameDetailsModal dans ton app.js
+
 function GameDetailsModal({ game, isOpen, onClose, players }) {
     if (!game) return null;
 
-    const [viewMode, setViewMode] = useState('advanced');
+    const [viewMode, setViewMode] = useState('classic');
 
     const statsData = useMemo(() => {
         const pStats = game.playerStats || {};
         const opp = game.opponentStats || {};
+        const oppScore = game.awayScore || 0;
+
+        // Agrégation des stats équipe
+        const teamStats = aggregateTeamStats(pStats);
         
-        let T_FGM = 0, T_FGA = 0, T_3PM = 0, T_FTM = 0, T_FTA = 0;
-        let T_ORB = 0, T_DRB = 0, T_AST = 0, T_STL = 0, T_BLK = 0, T_TOV = 0, T_PF = 0, T_PTS = 0, T_MP = 0;
+        // Préparation des stats adversaire
+        const oppStatsPrepped = prepareOpponentStats(opp, oppScore);
 
-        Object.values(pStats).forEach(s => {
-            T_FGM += (s.fgm || 0) + (s.threePM || 0);
-            T_FGA += (s.fga || 0) + (s.threePA || 0);
-            T_3PM += (s.threePM || 0);
-            T_FTM += (s.ftm || 0);
-            T_FTA += (s.fta || 0);
-            T_ORB += (s.oreb || 0);
-            T_DRB += (s.dreb || 0);
-            T_AST += (s.ast || 0);
-            T_STL += (s.stl || 0);
-            T_BLK += (s.blk || 0);
-            T_TOV += (s.tov || 0);
-            T_PF += (s.pf || 0);
-            T_PTS += (s.pts || 0);
-            T_MP += (s.minutes || 0);
-        });
-        const T_TRB = T_ORB + T_DRB;
+        // Calcul du temps de jeu moyen (pour le coefficient C)
+        const avgMinutes = calculateAverageMinutes(pStats);
 
-        const O_PTS = game.awayScore || 0;
-        const O_FGM = opp.fgm || 0; 
-        const O_FGA = opp.fga || (O_FGM + T_DRB);
-        const O_FTM = opp.ftm || 0;
-        const O_FTA = opp.fta || 0;
-        const O_ORB = opp.oreb || 0;
-        const O_TRB = opp.reb || (O_ORB + T_DRB);
-        const O_DRB = O_TRB - O_ORB;
-        const O_TOV = opp.tov || 0;
-        const O_MP = T_MP;
+        // Calcul des possessions et ratings équipe
+        const Opp_DRB = oppStatsPrepped.reb - oppStatsPrepped.oreb;
+        const Team_ORB_Pct = (teamStats.oreb + Opp_DRB) > 0 ? teamStats.oreb / (teamStats.oreb + Opp_DRB) : 0;
+        const Team_Poss = teamStats.fga + 0.4 * teamStats.fta - 1.07 * Team_ORB_Pct * (teamStats.fga - teamStats.fgm) + teamStats.tov;
+        const teamORtg = Team_Poss > 0 ? (teamStats.pts / Team_Poss) * 100 : 0;
+        const teamDRtg = Team_Poss > 0 ? (oppScore / Team_Poss) * 100 : 0;
+        const teamNetRtg = teamORtg - teamDRtg;
 
-        const Team_Possessions = T_FGA + 0.44 * T_FTA - T_ORB + T_TOV;
-        const Team_Scoring_Poss = T_FGM + (1 - Math.pow(1 - (T_FTM / (T_FTA || 1)), 2)) * 0.4 * T_FTA;
-        const Team_Play_Pct = Team_Scoring_Poss / (T_FGA + 0.4 * T_FTA + T_TOV || 1);
-        const Team_ORB_Pct = T_ORB / (T_ORB + O_DRB || 1);
-        const Team_ORB_Weight = ((1 - Team_ORB_Pct) * Team_Play_Pct) / 
-                                ((1 - Team_ORB_Pct) * Team_Play_Pct + Team_ORB_Pct * (1 - Team_Play_Pct) || 1);
+        // PIE dénominateur
+        const tFGM = teamStats.fgm, tFGA = teamStats.fga, tFTM = teamStats.ftm, tFTA = teamStats.fta;
+        const tORB = teamStats.oreb, tDRB = teamStats.dreb, tAST = teamStats.ast;
+        const tSTL = teamStats.stl, tBLK = teamStats.blk, tPF = teamStats.pf, tTOV = teamStats.tov;
+        const tPTS = teamStats.pts;
 
-        let rawPlayers = Object.entries(pStats).map(([pid, s]) => {
-            const MP = s.minutes || 0;
-            if (MP === 0) return null;
+        const oppFGM = oppStatsPrepped.fgm, oppFGA = oppStatsPrepped.fga;
+        const oppFTM = oppStatsPrepped.ftm, oppFTA = oppStatsPrepped.fta;
+        const oppORB = oppStatsPrepped.oreb, oppDRB_calc = oppStatsPrepped.dreb;
+        const oppAST = oppStatsPrepped.ast, oppBLK = oppStatsPrepped.blk || 0;
+        const oppPF = oppStatsPrepped.fouls || 0, oppTOV = oppStatsPrepped.tov;
+        const oppPTS = oppScore;
 
-            const FGM = (s.fgm || 0) + (s.threePM || 0);
-            const FGA = (s.fga || 0) + (s.threePA || 0);
-            const FTM = s.ftm || 0;
-            const FTA = s.fta || 0;
-            const ThreePM = s.threePM || 0;
-            const AST = s.ast || 0;
-            const TOV = s.tov || 0;
-            const ORB = s.oreb || 0;
-            const DRB = s.dreb || 0;
-            const STL = s.stl || 0;
-            const BLK = s.blk || 0;
-            const PF = s.pf || 0;
-            const PTS = s.pts || 0;
+        const gamePIEDenom = (tPTS + oppPTS) + (tFGM + oppFGM) + (tFTM + oppFTM) 
+                           - (tFGA + oppFGA) - (tFTA + oppFTA) + (tDRB + oppDRB_calc) 
+                           + (0.5 * (tORB + oppORB)) + (tAST + oppAST) + tSTL 
+                           + (0.5 * (tBLK + oppBLK)) - (tPF + oppPF) - (tTOV + oppTOV);
 
-            const qAST_term1 = (MP / (T_MP / 5)) * (1.14 * ((T_AST - AST) / (T_FGM || 1)));
-            const qAST_term2 = ((((T_AST / T_MP) * MP * 5 - AST) / ((T_FGM / T_MP) * MP * 5 - FGM || 1)) * (1 - (MP / (T_MP / 5))));
-            const qAST = qAST_term1 + qAST_term2 || 0;
-
-            const FG_Part = FGM * (1 - 0.5 * ((PTS - FTM) / (2 * FGA || 1)) * qAST);
-            const AST_Part = 0.5 * (((T_PTS - T_FTM) - (PTS - FTM)) / (2 * (T_FGA - FGA) || 1)) * AST;
-            const FT_Part = (1 - Math.pow(1 - (FTM / (FTA || 1)), 2)) * 0.4 * FTA;
-            const ORB_Part = ORB * Team_ORB_Weight * Team_Play_Pct;
-
-            const ScPoss = (FG_Part + AST_Part + FT_Part) * (1 - (T_ORB / (Team_Scoring_Poss || 1)) * Team_ORB_Weight * Team_Play_Pct) + ORB_Part;
-            const FGxPoss = (FGA - FGM) * (1 - 1.07 * Team_ORB_Pct);
-            const FTxPoss = Math.pow(1 - (FTM / (FTA || 1)), 2) * 0.4 * FTA;
-            const TotPoss = ScPoss + FGxPoss + FTxPoss + TOV;
-
-            const PProd_FG_Part = 2 * (FGM + 0.5 * ThreePM) * (1 - 0.5 * ((PTS - FTM) / (2 * FGA || 1)) * qAST);
-            const PProd_AST_Part = 2 * ((T_FGM - FGM + 0.5 * (T_3PM - ThreePM)) / (T_FGM - FGM || 1)) * 0.5 * (((T_PTS - T_FTM) - (PTS - FTM)) / (2 * (T_FGA - FGA) || 1)) * AST;
-            const PProd_ORB_Part = ORB * Team_ORB_Weight * Team_Play_Pct * (T_PTS / (Team_Scoring_Poss || 1));
-            const PProd = (PProd_FG_Part + PProd_AST_Part + FTM) * (1 - (T_ORB / (Team_Scoring_Poss || 1)) * Team_ORB_Weight * Team_Play_Pct) + PProd_ORB_Part;
-
-            const ORtg_Raw = TotPoss > 0 ? 100 * (PProd / TotPoss) : 0;
-
-            const DFG_Pct = O_FGM / (O_FGA || 1);
-            const DOR_Pct = O_ORB / (O_ORB + T_DRB || 1);
-            const FMwt = (DFG_Pct * (1 - DOR_Pct)) / (DFG_Pct * (1 - DOR_Pct) + (1 - DFG_Pct) * DOR_Pct || 1);
-            const Stops1 = STL + BLK * FMwt * (1 - 1.07 * DOR_Pct) + DRB * (1 - FMwt);
-            const Stops2 = (((O_FGA - O_FGM - T_BLK) / T_MP) * FMwt * (1 - 1.07 * DOR_Pct) + ((O_TOV - T_STL) / T_MP)) * MP + (PF / (T_PF || 1)) * 0.4 * O_FTA * Math.pow(1 - (O_FTM / (O_FTA || 1)), 2);
-            const Stops = Stops1 + Stops2;
-            const Stop_Pct = (Stops * O_MP) / (Team_Possessions * MP || 1);
-            const Team_DRtg = 100 * (O_PTS / (Team_Possessions || 1));
-            const D_Pts_per_ScPoss = O_PTS / (O_FGM + (1 - Math.pow(1 - (O_FTM / (O_FTA || 1)), 2)) * 0.4 * O_FTA || 1);
-            const DRtg_Raw = Team_DRtg + 0.2 * (100 * D_Pts_per_ScPoss * (1 - Stop_Pct) - Team_DRtg);
-
-            const eFG = FGA > 0 ? ((FGM + 0.5 * ThreePM) / FGA) * 100 : 0;
-            const TS = (FGA + 0.44 * FTA) > 0 ? (PTS / (2 * (FGA + 0.44 * FTA))) * 100 : 0;
-
-            // Utilisation de 'players' ici, qui doit être passé en props
+        // Enrichissement des stats joueurs avec RATINGS AVANCÉS + SHRINKAGE
+        const enrichedPlayers = Object.entries(pStats).map(([pid, s]) => {
             const player = players.find(p => p.id === parseInt(pid));
+            const name = player ? player.name : `Joueur #${pid}`;
+            
+            const fga = (s.fga || 0) + (s.threePA || 0);
+            const fgm = (s.fgm || 0) + (s.threePM || 0);
+            const fta = s.fta || 0;
+            const ftm = s.ftm || 0;
+            const pts = s.pts || 0;
+
+            // eFG% et TS%
+            const eFG = fga > 0 ? ((fgm + 0.5 * (s.threePM || 0)) / fga) * 100 : 0;
+            const ts = (fga + 0.44 * fta) > 0 ? (pts / (2 * (fga + 0.44 * fta))) * 100 : 0;
+            
+            // PIE individuel
+            const playerPIENum = pts + fgm + ftm - fga - fta + (s.dreb || 0) + (0.5 * (s.oreb || 0)) 
+                               + (s.ast || 0) + (s.stl || 0) + (0.5 * (s.blk || 0)) - (s.pf || 0) - (s.tov || 0);
+            const pie = gamePIEDenom !== 0 ? (playerPIENum / gamePIEDenom) * 100 : 0;
+
+            // === RATINGS AVANCÉS (Dean Oliver + Shrinkage U18) ===
+            // k = 1.5 recommandé pour U18
+            const ratings = calculateIndividualRatings(s, teamStats, oppStatsPrepped, avgMinutes, 1.5);
+
             return {
-                id: pid,
-                name: player ? player.name : `#${pid}`,
-                minutes: MP,
-                pts: PTS, ast: AST, reb: ORB + DRB, stl: STL, blk: BLK, tov: TOV, pf: PF,
-                fgm: FGM, fga: FGA, threePM: ThreePM, threePA: s.threePA || 0, ftm: FTM, fta: FTA, oreb: ORB, dreb: DRB,
-                plusMinus: s.plusMinus || 0,
-                eFG: eFG.toFixed(1), TS: TS.toFixed(1),
-                ORtg_Raw, DRtg_Raw, raw_stops: Stops
-            };
-        }).filter(p => p !== null);
-
-        const activePlayersCount = rawPlayers.length;
-        const Min_moy = activePlayersCount > 0 ? T_MP / activePlayersCount : 0;
-        const k = 1.5; 
-        const C = k * Min_moy;
-
-        const Team_ORtg_Global = Team_Possessions > 0 ? (T_PTS / Team_Possessions) * 100 : 0;
-        const Team_DRtg_Global = Team_Possessions > 0 ? (O_PTS / Team_Possessions) * 100 : 0;
-        const Team_Net = Team_ORtg_Global - Team_DRtg_Global;
-
-        const enrichedPlayers = rawPlayers.map(p => {
-            const weight = p.minutes / (p.minutes + C);
-            const ORtg_Pond = Team_ORtg_Global + (p.ORtg_Raw - Team_ORtg_Global) * weight;
-            const DRtg_Pond = Team_DRtg_Global + (p.DRtg_Raw - Team_DRtg_Global) * weight;
-            return {
-                ...p,
-                ORtg: ORtg_Pond.toFixed(1),
-                DRtg: DRtg_Pond.toFixed(1),
-                NetRtg: (ORtg_Pond - DRtg_Pond).toFixed(1)
+                id: pid, name, ...s, fga, fgm,
+                eFG: eFG.toFixed(1),
+                TS: ts.toFixed(1),
+                PIE: pie.toFixed(1),
+                ORtg: ratings.ORtg.toFixed(1),
+                DRtg: ratings.DRtg.toFixed(1),
+                netRtg: ratings.netRtg.toFixed(1),
+                // Pour debug (optionnel)
+                ORtg_raw: ratings.ORtg_raw.toFixed(1),
+                DRtg_raw: ratings.DRtg_raw.toFixed(1),
+                weight: (ratings.weight * 100).toFixed(0)
             };
         });
 
         return { 
-            team: { poss: Team_Possessions.toFixed(1), ORtg: Team_ORtg_Global.toFixed(1), DRtg: Team_DRtg_Global.toFixed(1), Net: Team_Net.toFixed(1) },
+            team: { 
+                poss: Team_Poss.toFixed(1), 
+                ORtg: teamORtg.toFixed(1), 
+                DRtg: teamDRtg.toFixed(1), 
+                Net: teamNetRtg.toFixed(1),
+                avgMin: avgMinutes.toFixed(1)
+            },
             players: enrichedPlayers
         };
     }, [game, players]);
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={`Détails: vs ${game.opponent}`} size="max-w-6xl">
+        <Modal isOpen={isOpen} onClose={onClose} title={`Détails: vs ${game.opponent}`} size="max-w-5xl">
             <div className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="md:col-span-2 bg-slate-900 p-4 rounded-lg flex justify-between items-center border border-slate-700 relative overflow-hidden">
-                        <div className="text-center z-10"><div className="text-xs text-slate-400 uppercase">Nous</div><div className="text-4xl font-bold text-green-400">{game.homeScore}</div></div>
-                        <div className="flex flex-col items-center z-10"><span className="text-xl font-bold text-white uppercase tracking-wider">{game.opponent}</span><span className="text-xs text-slate-500 mt-1">{game.date}</span></div>
-                        <div className="text-center z-10"><div className="text-xs text-slate-400 uppercase">Eux</div><div className="text-4xl font-bold text-red-400">{game.awayScore}</div></div>
+                        <div className="text-center z-10">
+                            <div className="text-xs text-slate-400 uppercase">Nous</div>
+                            <div className="text-4xl font-bold text-green-400">{game.homeScore}</div>
+                        </div>
+                        <div className="flex flex-col items-center z-10">
+                            <span className="text-xl font-bold text-white uppercase tracking-wider">{game.opponent}</span>
+                            <span className="text-xs text-slate-500 mt-1">{game.date}</span>
+                        </div>
+                        <div className="text-center z-10">
+                            <div className="text-xs text-slate-400 uppercase">Eux</div>
+                            <div className="text-4xl font-bold text-red-400">{game.awayScore}</div>
+                        </div>
                         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-500 via-transparent to-red-500"></div>
                     </div>
+                    
                     <div className="bg-slate-800 p-4 rounded-lg border border-slate-600 flex flex-col justify-center">
-                        <div className="text-xs text-slate-400 uppercase mb-2 text-center border-b border-slate-700 pb-1">Performance (Dean Oliver)</div>
+                        <div className="text-xs text-slate-400 uppercase mb-2 text-center border-b border-slate-700 pb-1">Performance Équipe</div>
                         <div className="grid grid-cols-2 gap-y-2 gap-x-4">
                             <div className="flex justify-between"><span className="text-slate-400 text-xs">Poss:</span> <span className="text-white font-mono">{statsData.team.poss}</span></div>
                             <div className="flex justify-between"><span className="text-slate-400 text-xs">NetRtg:</span> <span className={`${parseFloat(statsData.team.Net) >= 0 ? 'text-green-400' : 'text-red-400'} font-bold text-xs`}>{statsData.team.Net}</span></div>
@@ -1333,32 +1339,91 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
                         </div>
                     </div>
                 </div>
+
                 <div>
                     <div className="flex justify-between items-center mb-3">
-                        <h4 className="text-orange-400 font-bold text-sm uppercase flex items-center gap-2"><Icon path={Icons.Users} /> Stats Joueurs ({statsData.players.length})</h4>
+                        <h4 className="text-orange-400 font-bold text-sm uppercase flex items-center gap-2">
+                            <Icon path={Icons.Users} /> Stats Joueurs
+                        </h4>
                         <div className="flex bg-slate-800 rounded p-1 border border-slate-700">
                             <button onClick={() => setViewMode('classic')} className={`px-3 py-1 text-xs rounded transition-all ${viewMode === 'classic' ? 'bg-slate-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>Classique</button>
                             <button onClick={() => setViewMode('advanced')} className={`px-3 py-1 text-xs rounded transition-all ${viewMode === 'advanced' ? 'bg-slate-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>Avancé</button>
                         </div>
                     </div>
+
                     <div className="overflow-x-auto bg-slate-900 rounded-lg border border-slate-700">
                         <table className="w-full text-left text-xs text-slate-300 whitespace-nowrap">
                             <thead className="bg-slate-800 text-white uppercase font-semibold">
                                 <tr>
-                                    <th className="p-3 sticky left-0 bg-slate-800 z-10 border-r border-slate-700">Joueur</th><th className="p-3 text-center">MIN</th>
-                                    {viewMode === 'classic' ? (<><th className="p-3 text-center text-orange-400">PTS</th><th className="p-3 text-center">TIR</th><th className="p-3 text-center">3P</th><th className="p-3 text-center">LF</th><th className="p-3 text-center">REB</th><th className="p-3 text-center">AST</th><th className="p-3 text-center">INT</th><th className="p-3 text-center">CTR</th><th className="p-3 text-center">BP</th><th className="p-3 text-center">FTE</th><th className="p-3 text-center">+/-</th></>) : (<><th className="p-3 text-center text-orange-400">PTS</th><th className="p-3 text-center text-blue-300">eFG%</th><th className="p-3 text-center text-purple-300">TS%</th><th className="p-3 text-center text-purple-400 border-l border-slate-700">ORtg</th><th className="p-3 text-center text-red-400">DRtg</th><th className="p-3 text-center text-yellow-400 font-bold border-r border-slate-700">Net</th><th className="p-3 text-center text-slate-500">Stops</th></>)}
+                                    <th className="p-3 sticky left-0 bg-slate-800 z-10 border-r border-slate-700">Joueur</th>
+                                    <th className="p-3 text-center">MIN</th>
+                                    {viewMode === 'classic' ? (
+                                        <>
+                                            <th className="p-3 text-center text-orange-400">PTS</th>
+                                            <th className="p-3 text-center">TIR</th>
+                                            <th className="p-3 text-center">3P</th>
+                                            <th className="p-3 text-center">LF</th>
+                                            <th className="p-3 text-center">REB</th>
+                                            <th className="p-3 text-center">AST</th>
+                                            <th className="p-3 text-center">INT</th>
+                                            <th className="p-3 text-center">CTR</th>
+                                            <th className="p-3 text-center">BP</th>
+                                            <th className="p-3 text-center">FTE</th>
+                                            <th className="p-3 text-center">+/-</th>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <th className="p-3 text-center text-blue-300">eFG%</th>
+                                            <th className="p-3 text-center text-blue-300">TS%</th>
+                                            <th className="p-3 text-center text-purple-400">ORtg</th>
+                                            <th className="p-3 text-center text-red-400">DRtg</th>
+                                            <th className="p-3 text-center text-yellow-400">Net</th>
+                                            <th className="p-3 text-center text-cyan-400">PIE</th>
+                                        </>
+                                    )}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-800">
                                 {statsData.players.map(p => (
                                     <tr key={p.id} className="hover:bg-slate-800/50 transition-colors">
-                                        <td className="p-3 font-bold text-white sticky left-0 bg-slate-900 z-10 border-r border-slate-800">{p.name}</td><td className="p-3 text-center text-slate-400">{p.minutes}</td>
-                                        {viewMode === 'classic' ? (<><td className="p-3 text-center font-bold text-orange-400">{p.pts}</td><td className="p-3 text-center">{p.fgm}-{p.fga}</td><td className="p-3 text-center text-slate-400">{p.threePM}-{p.threePA}</td><td className="p-3 text-center text-slate-400">{p.ftm}-{p.fta}</td><td className="p-3 text-center font-bold">{p.reb} <span className="text-[10px] font-normal text-slate-500">({p.oreb}/{p.dreb})</span></td><td className="p-3 text-center">{p.ast}</td><td className="p-3 text-center">{p.stl}</td><td className="p-3 text-center">{p.blk}</td><td className="p-3 text-center text-red-400">{p.tov}</td><td className="p-3 text-center text-red-400">{p.pf}</td><td className={`p-3 text-center font-bold ${p.plusMinus >= 0 ? 'text-green-400' : 'text-red-400'}`}>{p.plusMinus > 0 ? '+' : ''}{p.plusMinus}</td></>) : (<><td className="p-3 text-center font-bold text-white">{p.pts}</td><td className="p-3 text-center text-blue-300 font-mono">{p.eFG}%</td><td className="p-3 text-center text-purple-300 font-mono">{p.TS}%</td><td className="p-3 text-center text-purple-400 font-bold font-mono border-l border-slate-700">{p.ORtg}</td><td className="p-3 text-center text-red-400 font-bold font-mono">{p.DRtg}</td><td className={`p-3 text-center font-bold font-mono border-r border-slate-700 ${parseFloat(p.NetRtg) >= 0 ? 'text-green-400' : 'text-red-400'}`}>{parseFloat(p.NetRtg) > 0 ? '+' : ''}{p.NetRtg}</td><td className="p-3 text-center text-slate-500 text-[10px]">{p.raw_stops.toFixed(1)}</td></>)}
+                                        <td className="p-3 font-bold text-white sticky left-0 bg-slate-900 z-10 border-r border-slate-800">{p.name}</td>
+                                        <td className="p-3 text-center text-slate-400">{p.minutes}</td>
+                                        {viewMode === 'classic' ? (
+                                            <>
+                                                <td className="p-3 text-center font-bold text-orange-400">{p.pts}</td>
+                                                <td className="p-3 text-center">{p.fgm}-{p.fga}</td>
+                                                <td className="p-3 text-center text-slate-400">{p.threePM}-{p.threePA}</td>
+                                                <td className="p-3 text-center text-slate-400">{p.ftm}-{p.fta}</td>
+                                                <td className="p-3 text-center font-bold">{p.reb} <span className="text-[10px] font-normal text-slate-500">({p.oreb}/{p.dreb})</span></td>
+                                                <td className="p-3 text-center">{p.ast}</td>
+                                                <td className="p-3 text-center">{p.stl}</td>
+                                                <td className="p-3 text-center">{p.blk}</td>
+                                                <td className="p-3 text-center text-red-400">{p.tov}</td>
+                                                <td className="p-3 text-center text-red-400">{p.pf}</td>
+                                                <td className={`p-3 text-center font-bold ${p.plusMinus >= 0 ? 'text-green-400' : 'text-red-400'}`}>{p.plusMinus > 0 ? '+' : ''}{p.plusMinus}</td>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <td className="p-3 text-center text-blue-300 font-mono">{p.eFG}%</td>
+                                                <td className="p-3 text-center text-blue-300 font-mono">{p.TS}%</td>
+                                                <td className="p-3 text-center text-purple-400 font-mono">{p.ORtg}</td>
+                                                <td className="p-3 text-center text-red-400 font-mono">{p.DRtg}</td>
+                                                <td className={`p-3 text-center font-bold font-mono ${parseFloat(p.netRtg) >= 0 ? 'text-green-400' : 'text-red-400'}`}>{p.netRtg}</td>
+                                                <td className="p-3 text-center text-cyan-400 font-bold font-mono">{p.PIE}%</td>
+                                            </>
+                                        )}
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
                     </div>
+                    
+                    {viewMode === 'advanced' && (
+                        <div className="mt-3 p-3 bg-slate-900/50 rounded border border-slate-700 text-xs text-slate-500">
+                            <p>📊 <strong>Méthodologie Dean Oliver</strong> avec pondération U18 (k=1.5)</p>
+                            <p>Les ratings sont ajustés vers la moyenne équipe selon le temps de jeu (shrinkage).</p>
+                        </div>
+                    )}
                 </div>
             </div>
         </Modal>
