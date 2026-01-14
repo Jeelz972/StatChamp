@@ -601,14 +601,18 @@ function GlobalStats({ players, games, phases }) {
                                             <LineChart data={[...selectedPlayer.logs].sort((a, b) => {
                                                 const parseDate = (d) => { const months = {'janv':0,'févr':1,'mars':2,'avr':3,'mai':4,'juin':5,'juil':6,'août':7,'sept':8,'oct':9,'nov':10,'déc':11}; const m = d.match(/(\d{1,2})\s+([a-zéûô]+)\.?\s+(\d{4})/i); return m ? new Date(m[3], months[m[2].toLowerCase().replace('.','')]||0, m[1]) : new Date(d); };
                                                 return parseDate(a.date) - parseDate(b.date);
-                                            })} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+                                            }).map(log => ({
+                                                ...log,
+                                                ORtgNum: parseFloat(log.ORtg) || 0,
+                                                DRtgNum: parseFloat(log.DRtg) || 0
+                                            }))} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
                                                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                                                 <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={9} tick={{ fill: '#94a3b8' }} />
-                                                <YAxis stroke="#94a3b8" fontSize={9} tick={{ fill: '#94a3b8' }} domain={['auto', 'auto']} />
-                                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', fontSize: '11px' }} />
+                                                <YAxis stroke="#94a3b8" fontSize={9} tick={{ fill: '#94a3b8' }} domain={[60, 140]} />
+                                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', fontSize: '11px' }} formatter={(value) => value.toFixed(1)} />
                                                 <Legend wrapperStyle={{ fontSize: '10px' }} />
-                                                <Line type="monotone" dataKey="ORtg" stroke="#a855f7" strokeWidth={2} name="ORtg" dot={{ r: 3 }} />
-                                                <Line type="monotone" dataKey="DRtg" stroke="#ef4444" strokeWidth={2} name="DRtg" dot={{ r: 3 }} />
+                                                <Line type="monotone" dataKey="ORtgNum" stroke="#a855f7" strokeWidth={2} name="ORtg" dot={{ r: 3 }} connectNulls />
+                                                <Line type="monotone" dataKey="DRtgNum" stroke="#ef4444" strokeWidth={2} name="DRtg" dot={{ r: 3 }} connectNulls />
                                             </LineChart>
                                         </ResponsiveContainer>
                                     </div>
