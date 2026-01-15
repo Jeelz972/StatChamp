@@ -385,8 +385,8 @@ function LiveTracker({ players, onSaveGame, initialGame, phases, selectedPhase }
     );
 }
 
-// --- GLOBAL STATS COMPLET ---
-function GlobalStats({ players, games, phases }) {
+// --- GLOBAL STATS (Complet : Responsive + Dean Oliver + Sécurité Admin) ---
+function GlobalStats({ players, games, phases, isAdmin }) {
     const [selectedPlayer, setSelectedPlayer] = useState(null);
     const [viewMode, setViewMode] = useState('classic');
     const [phaseFilter, setPhaseFilter] = useState('all');
@@ -398,205 +398,229 @@ function GlobalStats({ players, games, phases }) {
 
     const filteredGames = useMemo(() => phaseFilter === 'all' ? games : games.filter(g => g.phase === phaseFilter), [games, phaseFilter]);
 
-    // CALCUL COMPLET DES STATS AGRÉGÉES
+    // --- CŒUR DU CALCUL (DEAN OLIVER + STABILISATION) ---
     const aggregated = useMemo(() => {
         const stats = {};
-        players.forEach(p => {
-            stats[p.id] = { info: p, gamesPlayed: 0, total: { pts: 0, reb: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, tov: 0, min: 0, eff: 0, fgm: 0, fga: 0, threePM: 0, threePA: 0, ftm: 0, fta: 0, pf: 0, plusMinus: 0, pie: 0 }, totalMinPlayed: 0, weightedORtg: 0, weightedDRtg: 0, logs: [], records: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, eff: 0 } };
+        players.forEach(p => { 
+            stats[p.id] = { 
+                info: p, gamesPlayed: 0, 
+                total: { pts: 0, reb: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, tov: 0, min: 0, eff: 0, fgm: 0, fga: 0, threePM: 0, threePA: 0, ftm: 0, fta: 0, pf: 0, plusMinus: 0, pie: 0 }, 
+                totalMinPlayed: 0, weightedORtg: 0, weightedDRtg: 0, 
+                logs: [], 
+                records: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, eff: 0 } 
+            }; 
         });
 
+        // Accumulateurs Saison (Grand Totals)
+        const GT = { FGM: 0, FGA: 0, ThreePM: 0, FTM: 0, FTA: 0, ORB: 0, DRB: 0, TRB: 0, AST: 0, STL: 0, BLK: 0, TOV: 0, PF: 0, PTS: 0, MP: 0, Opp_PTS: 0, Opp_FGM: 0, Opp_FGA: 0, Opp_FTM: 0, Opp_FTA: 0, Opp_ORB: 0, Opp_TRB: 0, Opp_TOV: 0 };
+
         filteredGames.forEach(g => {
-            let gamePTS = 0, gameFGM = 0, gameFTM = 0, gameFGA = 0, gameFTA = 0, gameDRB = 0, gameORB = 0, gameAST = 0, gameSTL = 0, gameBLK = 0, gamePF = 0, gameTO = 0;
-            let teamFGA = 0, teamFTA = 0, teamORB = 0, teamTO = 0, teamPTS = 0;
-
-            Object.values(g.playerStats || {}).forEach(s => {
-                gamePTS += s.pts || 0; gameFGM += (s.fgm || 0) + (s.threePM || 0); gameFTM += s.ftm || 0;
-                gameFGA += (s.fga || 0) + (s.threePA || 0); gameFTA += s.fta || 0;
-                gameDRB += s.dreb || 0; gameORB += s.oreb || 0; gameAST += s.ast || 0;
-                gameSTL += s.stl || 0; gameBLK += s.blk || 0; gamePF += s.pf || 0; gameTO += s.tov || 0;
-                teamFGA += (s.fga || 0) + (s.threePA || 0); teamFTA += s.fta || 0;
-                teamORB += s.oreb || 0; teamTO += s.tov || 0; teamPTS += s.pts || 0;
+            let gamePTS=0, gameFGM=0, gameFTM=0, gameFGA=0, gameFTA=0;
+            let gameDRB=0, gameORB=0, gameAST=0, gameSTL=0, gameBLK=0, gamePF=0, gameTO=0;
+            
+            // 1. Accumulation Stats Joueurs & Équipe
+            Object.values(g.playerStats).forEach(s => {
+                const min = s.minutes||0;
+                GT.FGM+=(s.fgm||0)+(s.threePM||0); GT.FGA+=(s.fga||0)+(s.threePA||0); GT.ThreePM+=(s.threePM||0); GT.FTM+=(s.ftm||0); GT.FTA+=(s.fta||0); GT.ORB+=(s.oreb||0); GT.DRB+=(s.dreb||0); GT.AST+=(s.ast||0); GT.STL+=(s.stl||0); GT.BLK+=(s.blk||0); GT.TOV+=(s.tov||0); GT.PF+=(s.pf||0); GT.PTS+=(s.pts||0); GT.MP+=min;
+                gamePTS+=s.pts||0; gameFGM+=(s.fgm||0)+(s.threePM||0); gameFTM+=s.ftm||0; gameFGA+=(s.fga||0)+(s.threePA||0); gameFTA+=s.fta||0; gameDRB+=s.dreb||0; gameORB+=s.oreb||0; gameAST+=s.ast||0; gameSTL+=s.stl||0; gameBLK+=s.blk||0; gamePF+=s.pf||0; gameTO+=s.tov||0;
             });
 
-            const opp = g.opponentStats || {};
-            const oppPTS = g.awayScore || 0;
-            gamePTS += oppPTS; gameFGM += opp.fgm || Math.round(oppPTS / 2.2);
-            gameFTM += opp.ftm || 0; gameFGA += opp.fga || Math.round(oppPTS / 1.1);
-            gameFTA += opp.fta || 0; gameDRB += opp.reb ? Math.round(opp.reb * 0.7) : 0;
-            gameORB += opp.oreb || 0; gameAST += opp.ast || 0; gameBLK += opp.blk || 0;
-            gamePF += opp.fouls || 0; gameTO += opp.tov || 0;
-
+            // 2. Accumulation Stats Adversaire
+            const opp = g.opponentStats||{}; const oppPTS = g.awayScore||0;
+            const oppFGM = opp.fgm||Math.round(oppPTS/2.2); const oppFTM = opp.ftm||0; const oppFGA = opp.fga||Math.round(oppPTS/1.1); const oppFTA = opp.fta||0; const oppDRB = opp.reb?Math.round(opp.reb*0.7):0; const oppORB = opp.oreb||0; const oppTOV = opp.tov||0;
+            GT.Opp_PTS+=oppPTS; GT.Opp_FGM+=oppFGM; GT.Opp_FGA+=oppFGA; GT.Opp_FTM+=oppFTM; GT.Opp_FTA+=oppFTA; GT.Opp_ORB+=oppORB; GT.Opp_TRB+=(oppDRB+oppORB); GT.Opp_TOV+=oppTOV;
+            
+            gamePTS+=oppPTS; gameFGM+=oppFGM; gameFTM+=oppFTM; gameFGA+=oppFGA; gameFTA+=oppFTA; gameDRB+=oppDRB; gameORB+=oppORB; gameAST+=opp.ast||0; gameSTL+=opp.stl||0; gameBLK+=opp.blk||0; gamePF+=opp.fouls||0; gameTO+=oppTOV;
+            
+            // PIE Dénominateur (Game)
             const gamePIEDenom = gamePTS + gameFGM + gameFTM - gameFGA - gameFTA + gameDRB + (0.5 * gameORB) + gameAST + gameSTL + (0.5 * gameBLK) - gamePF - gameTO;
-            const teamPoss = teamFGA + 0.44 * teamFTA - teamORB + teamTO;
-            const teamORtg = teamPoss > 0 ? (teamPTS / teamPoss) * 100 : 100;
-            const teamDRtg = teamPoss > 0 ? (oppPTS / teamPoss) * 100 : 100;
+            
+            // Estimations Rapides pour les logs quotidiens (Le vrai calcul Dean Oliver se fait sur la saison)
+            const teamPoss = (gameFGA-oppFGA) + 0.44*(gameFTA-oppFTA) - (gameORB-oppORB) + (gameTO-oppTOV);
+            const teamORtg = teamPoss>0 ? ((gamePTS-oppPTS)/teamPoss)*100 : 100;
+            const teamDRtg = teamPoss>0 ? (oppPTS/teamPoss)*100 : 100;
 
-            // Stats équipe pour le calcul des ratings individuels
-            const teamStatsForCalc = {
-                fgm: 0, fga: 0, ftm: 0, fta: 0, oreb: 0, dreb: 0,
-                ast: 0, stl: 0, blk: 0, tov: 0, pf: 0, pts: 0, minutes: 0, threePM: 0
-            };
-            Object.values(g.playerStats || {}).forEach(ps => {
-                teamStatsForCalc.fgm += (ps.fgm || 0) + (ps.threePM || 0);
-                teamStatsForCalc.fga += (ps.fga || 0) + (ps.threePA || 0);
-                teamStatsForCalc.ftm += ps.ftm || 0;
-                teamStatsForCalc.fta += ps.fta || 0;
-                teamStatsForCalc.oreb += ps.oreb || 0;
-                teamStatsForCalc.dreb += ps.dreb || 0;
-                teamStatsForCalc.ast += ps.ast || 0;
-                teamStatsForCalc.stl += ps.stl || 0;
-                teamStatsForCalc.blk += ps.blk || 0;
-                teamStatsForCalc.tov += ps.tov || 0;
-                teamStatsForCalc.pf += ps.pf || 0;
-                teamStatsForCalc.pts += ps.pts || 0;
-                teamStatsForCalc.minutes += ps.minutes || 0;
-                teamStatsForCalc.threePM += ps.threePM || 0;
-            });
-
-            const oppStatsForCalc = {
-                pts: g.awayScore || 0,
-                fgm: opp.fgm || Math.round((g.awayScore || 0) / 2.2),
-                fga: opp.fga || Math.round((g.awayScore || 0) / 1.1),
-                ftm: opp.ftm || 0,
-                fta: opp.fta || Math.max(1, Math.round((g.awayScore || 0) * 0.2)),
-                oreb: opp.oreb || 0,
-                dreb: opp.reb ? Math.round(opp.reb * 0.7) : Math.round((g.awayScore || 0) * 0.3),
-                reb: opp.reb || Math.round((g.awayScore || 0) * 0.4),
-                tov: opp.tov || Math.round((g.awayScore || 0) * 0.1)
-            };
-
-            const avgMin = teamStatsForCalc.minutes / Math.max(1, Object.values(g.playerStats || {}).filter(ps => (ps.minutes || 0) > 0).length);
-
-            Object.entries(g.playerStats || {}).forEach(([pid, s]) => {
+            // 3. Traitement Individuel par match
+            Object.entries(g.playerStats).forEach(([pid, s]) => {
                 const id = parseInt(pid);
-                if ((s.minutes || 0) > 0 && stats[id]) {
-                    const t = stats[id].total;
-                    const playerMin = s.minutes || 0;
-                    stats[id].gamesPlayed++; 
-                    stats[id].totalMinPlayed += playerMin;
-                    stats[id].weightedORtg += teamORtg * playerMin;
-                    stats[id].weightedDRtg += teamDRtg * playerMin;
-
-                    t.pts += s.pts || 0; t.reb += s.reb || 0; t.oreb += s.oreb || 0; t.dreb += s.dreb || 0;
-                    t.ast += s.ast || 0; t.stl += s.stl || 0; t.blk += s.blk || 0; t.tov += s.tov || 0;
-                    t.min += playerMin; t.fgm += s.fgm || 0; t.fga += s.fga || 0;
-                    t.threePM += s.threePM || 0; t.threePA += s.threePA || 0;
-                    t.ftm += s.ftm || 0; t.fta += s.fta || 0; t.pf += s.pf || 0; t.plusMinus += s.plusMinus || 0;
-
-                    const playerFGA = (s.fga || 0) + (s.threePA || 0);
-                    const playerFGM = (s.fgm || 0) + (s.threePM || 0);
-                    const evalStat = ((s.pts || 0) + (s.reb || 0) + (s.ast || 0) + (s.stl || 0) + (s.blk || 0)) - ((playerFGA - playerFGM) + ((s.fta || 0) - (s.ftm || 0)) + (s.tov || 0));
+                if ((s.minutes||0) > 0 && stats[id]) {
+                    const t = stats[id].total; const playerMin = s.minutes||0;
+                    stats[id].gamesPlayed += 1; stats[id].totalMinPlayed += playerMin;
+                    stats[id].weightedORtg += teamORtg * playerMin; stats[id].weightedDRtg += teamDRtg * playerMin; // Pour fallback si needed
+                    t.pts += (s.pts||0); t.reb += (s.reb||0); t.oreb += (s.oreb||0); t.dreb += (s.dreb||0);
+                    t.ast += (s.ast||0); t.stl += (s.stl||0); t.blk += (s.blk||0); t.tov += (s.tov||0); t.min += playerMin;
+                    t.fgm += (s.fgm||0); t.fga += (s.fga||0); t.threePM += (s.threePM||0); t.threePA += (s.threePA||0);
+                    t.ftm += (s.ftm||0); t.fta += (s.fta||0); t.pf += (s.pf||0); t.plusMinus += (s.plusMinus||0);
+                    
+                    const playerFGA = (s.fga||0)+(s.threePA||0); const playerFGM = (s.fgm||0)+(s.threePM||0);
+                    const evalStat = (s.pts+s.reb+s.ast+s.stl+s.blk) - ((playerFGA-playerFGM) + ((s.fta||0)-(s.ftm||0)) + s.tov);
                     t.eff += evalStat;
-
-                    const playerPIENum = (s.pts || 0) + playerFGM + (s.ftm || 0) - playerFGA - (s.fta || 0) + (s.dreb || 0) + (0.5 * (s.oreb || 0)) + (s.ast || 0) + (s.stl || 0) + (0.5 * (s.blk || 0)) - (s.pf || 0) - (s.tov || 0);
+                    
+                    const playerPIENum = (s.pts||0) + playerFGM + (s.ftm||0) - playerFGA - (s.fta||0) + (s.dreb||0) + (0.5*(s.oreb||0)) + (s.ast||0) + (s.stl||0) + (0.5*(s.blk||0)) - (s.pf||0) - (s.tov||0);
                     const playerPIE = gamePIEDenom !== 0 ? (playerPIENum / gamePIEDenom) * 100 : 0;
                     t.pie += playerPIE;
 
-                    if ((s.pts || 0) > stats[id].records.pts) stats[id].records.pts = s.pts || 0;
-                    if ((s.reb || 0) > stats[id].records.reb) stats[id].records.reb = s.reb || 0;
-                    if ((s.ast || 0) > stats[id].records.ast) stats[id].records.ast = s.ast || 0;
-                    if ((s.stl || 0) > stats[id].records.stl) stats[id].records.stl = s.stl || 0;
-                    if ((s.blk || 0) > stats[id].records.blk) stats[id].records.blk = s.blk || 0;
-                    if (evalStat > stats[id].records.eff) stats[id].records.eff = evalStat;
+                    if(s.pts>stats[id].records.pts) stats[id].records.pts=s.pts; 
+                    if(s.reb>stats[id].records.reb) stats[id].records.reb=s.reb; 
+                    if(s.ast>stats[id].records.ast) stats[id].records.ast=s.ast; 
+                    if(s.stl>stats[id].records.stl) stats[id].records.stl=s.stl; 
+                    if(s.blk>stats[id].records.blk) stats[id].records.blk=s.blk; 
+                    if(evalStat>stats[id].records.eff) stats[id].records.eff=evalStat;
 
-                    const gameEFG = playerFGA > 0 ? ((playerFGM + 0.5 * (s.threePM || 0)) / playerFGA) * 100 : 0;
-                    const gameTS = (playerFGA + 0.44 * (s.fta || 0)) > 0 ? ((s.pts || 0) / (2 * (playerFGA + 0.44 * (s.fta || 0)))) * 100 : 0;
+                    const gameEFG = playerFGA>0?((playerFGM+0.5*(s.threePM||0))/playerFGA)*100:0;
+                    const gameTS = (playerFGA+0.44*(s.fta||0))>0?((s.pts||0)/(2*(playerFGA+0.44*(s.fta||0))))*100:0;
 
-                    // Calcul des ratings individuels
-                    const playerRatings = calculateIndividualRatings(s, teamStatsForCalc, oppStatsForCalc, avgMin, 1.5);
-
+                    // Ajout au Log pour tableau détaillé
                     stats[id].logs.push({ 
-                        date: g.date, 
-                        opponent: g.opponent, 
-                        pts: s.pts || 0, 
-                        reb: s.reb || 0, 
-                        ast: s.ast || 0, 
-                        stl: s.stl || 0, 
-                        blk: s.blk || 0, 
-                        tov: s.tov || 0, 
-                        eff: evalStat, 
-                        eFG: gameEFG.toFixed(1), 
-                        TS: gameTS.toFixed(1), 
-                        ORtg: playerRatings.ORtg.toFixed(1),
-                        DRtg: playerRatings.DRtg.toFixed(1),
-                        PIE: playerPIE.toFixed(1), 
-                        min: s.minutes || 0
+                        date: g.date, opponent: g.opponent, phase: g.phase, min: s.minutes,
+                        pts: s.pts||0, reb: s.reb||0, oreb: s.oreb||0, dreb: s.dreb||0, ast: s.ast||0, stl: s.stl||0, blk: s.blk||0, tov: s.tov||0, pf: s.pf||0, plusMinus: s.plusMinus||0,
+                        fgm: playerFGM, fga: playerFGA, threePM: s.threePM||0, threePA: s.threePA||0, ftm: s.ftm||0, fta: s.fta||0,
+                        eff: evalStat, eFG: gameEFG.toFixed(1), TS: gameTS.toFixed(1), PIE: playerPIE.toFixed(1),
+                        ORtg: "0", DRtg: "0" // Sera rempli par la moyenne saison pour le contexte du graphe
                     });
                 }
             });
         });
 
-        return Object.values(stats).map(p => {
-            const gp = p.gamesPlayed || 1, t = p.total, totalMin = p.totalMinPlayed || 1;
-            const totalFGA = t.fga + t.threePA, totalFGM = t.fgm + t.threePM;
+        // 4. Calculs Saisonniers Avancés (Dean Oliver)
+        GT.TRB = GT.ORB + GT.DRB;
+        const Team_Poss = GT.FGA + 0.44 * GT.FTA - GT.ORB + GT.TOV;
+        const Team_Scoring_Poss = GT.FGM + (1 - Math.pow(1 - (GT.FTM / (GT.FTA || 1)), 2)) * 0.4 * GT.FTA;
+        const Team_Play_Pct = Team_Scoring_Poss / (GT.FGA + 0.4 * GT.FTA + GT.TOV || 1);
+        const Team_ORB_Pct = GT.ORB / (GT.ORB + (GT.Opp_TRB - GT.Opp_ORB) || 1);
+        const Team_ORB_Weight = ((1 - Team_ORB_Pct) * Team_Play_Pct) / ((1 - Team_ORB_Pct) * Team_Play_Pct + Team_ORB_Pct * (1 - Team_Play_Pct) || 1);
+        const Team_ORtg = Team_Poss > 0 ? (GT.PTS / Team_Poss) * 100 : 0;
+        const Team_DRtg = Team_Poss > 0 ? (GT.Opp_PTS / Team_Poss) * 100 : 0;
+        
+        const activePlayers = Object.values(stats).filter(p => p.gamesPlayed > 0);
+        const Min_moy = activePlayers.length > 0 ? GT.MP / activePlayers.length : 0;
+        const C = 1.5 * Min_moy; // Facteur Stabilisation
+
+        return activePlayers.map(p => {
+            const t = p.total; const gp = p.gamesPlayed || 1;
+            
+            // --- OFFENSIVE RATING (INDIVIDUAL) ---
+            const qAST_term1 = (t.min / (GT.MP / 5)) * (1.14 * ((GT.AST - t.ast) / (GT.FGM || 1)));
+            const qAST_term2 = ((((GT.AST / GT.MP) * t.min * 5 - t.ast) / ((GT.FGM / GT.MP) * t.min * 5 - t.fgm || 1)) * (1 - (t.min / (GT.MP / 5))));
+            const qAST = qAST_term1 + qAST_term2 || 0;
+            const FG_Part = t.fgm * (1 - 0.5 * ((t.pts - t.ftm) / (2 * (t.fga + t.threePA) || 1)) * qAST);
+            const AST_Part = 0.5 * (((GT.PTS - GT.FTM) - (t.pts - t.ftm)) / (2 * (GT.FGA - (t.fga + t.threePA)) || 1)) * t.ast;
+            const FT_Part = (1 - Math.pow(1 - (t.ftm / (t.fta || 1)), 2)) * 0.4 * t.fta;
+            const ORB_Part = t.oreb * Team_ORB_Weight * Team_Play_Pct;
+            const ScPoss = (FG_Part + AST_Part + FT_Part) * (1 - (GT.ORB / (Team_Scoring_Poss || 1)) * Team_ORB_Weight * Team_Play_Pct) + ORB_Part;
+            const FGxPoss = ((t.fga + t.threePA) - (t.fgm + t.threePM)) * (1 - 1.07 * Team_ORB_Pct);
+            const FTxPoss = Math.pow(1 - (t.ftm / (t.fta || 1)), 2) * 0.4 * t.fta;
+            const TotPoss = ScPoss + FGxPoss + FTxPoss + t.tov;
+            const PProd_FG = 2 * (t.fgm + 0.5 * t.threePM) * (1 - 0.5 * ((t.pts - t.ftm) / (2 * (t.fga + t.threePA) || 1)) * qAST);
+            const PProd_AST = 2 * ((GT.FGM - t.fgm + 0.5 * (GT.ThreePM - t.threePM)) / (GT.FGM - t.fgm || 1)) * 0.5 * (((GT.PTS - GT.FTM) - (t.pts - t.ftm)) / (2 * (GT.FGA - (t.fga + t.threePA)) || 1)) * t.ast;
+            const PProd_ORB = t.oreb * Team_ORB_Weight * Team_Play_Pct * (GT.PTS / (Team_Scoring_Poss || 1));
+            const PProd = (PProd_FG + PProd_AST + t.ftm) * (1 - (GT.ORB / (Team_Scoring_Poss || 1)) * Team_ORB_Weight * Team_Play_Pct) + PProd_ORB;
+            const ORtg_Raw = TotPoss > 0 ? 100 * (PProd / TotPoss) : 0;
+            
+            // --- DEFENSIVE RATING (INDIVIDUAL) ---
+            const DFG_Pct = GT.Opp_FGM / (GT.Opp_FGA || 1);
+            const DOR_Pct = GT.Opp_ORB / (GT.Opp_ORB + GT.DRB || 1);
+            const FMwt = (DFG_Pct * (1 - DOR_Pct)) / (DFG_Pct * (1 - DOR_Pct) + (1 - DFG_Pct) * DOR_Pct || 1);
+            const Stops1 = t.stl + t.blk * FMwt * (1 - 1.07 * DOR_Pct) + t.dreb * (1 - FMwt);
+            const Stops2 = (((GT.Opp_FGA - GT.Opp_FGM - GT.BLK) / GT.MP) * FMwt * (1 - 1.07 * DOR_Pct) + ((GT.Opp_TOV - GT.STL) / GT.MP)) * t.min + (t.pf / (GT.PF || 1)) * 0.4 * GT.Opp_FTA * Math.pow(1 - (GT.Opp_FTM / (GT.Opp_FTA || 1)), 2);
+            const Stops = Stops1 + Stops2;
+            const Stop_Pct = (Stops * GT.MP) / (Team_Poss * t.min || 1);
+            const D_Pts_per_ScPoss = GT.Opp_PTS / (GT.Opp_FGM + (1 - Math.pow(1 - (GT.Opp_FTM / (GT.Opp_FTA || 1)), 2)) * 0.4 * GT.Opp_FTA || 1);
+            const DRtg_Raw = Team_DRtg + 0.2 * (100 * D_Pts_per_ScPoss * (1 - Stop_Pct) - Team_DRtg);
+
+            // --- STABILISATION (WEIGHTED) ---
+            const weight = t.min / (t.min + C);
+            const ORtg = Team_ORtg + (ORtg_Raw - Team_ORtg) * weight;
+            const DRtg = Team_DRtg + (DRtg_Raw - Team_DRtg) * weight;
+
+            // Update Logs for Graphs (Propagate Season Rating for Context)
+            p.logs.sort((a, b) => parseDate(a.date) - parseDate(b.date));
+            p.logs.forEach(l => { 
+                l.ORtg = ORtg.toFixed(1); 
+                l.DRtg = DRtg.toFixed(1); 
+            });
+
+            // Basic Stats Calculations
+            const totalFGA = t.fga + t.threePA; const totalFGM = t.fgm + t.threePM;
             const eFG = totalFGA > 0 ? (((totalFGM + 0.5 * t.threePM) / totalFGA) * 100).toFixed(1) : "0.0";
             const ts = (totalFGA + 0.44 * t.fta) > 0 ? ((t.pts / (2 * (totalFGA + 0.44 * t.fta))) * 100).toFixed(1) : "0.0";
-            return { ...p, avg: { min: (t.min / gp).toFixed(1), pts: (t.pts / gp).toFixed(1), reb: (t.reb / gp).toFixed(1), ast: (t.ast / gp).toFixed(1), stl: (t.stl / gp).toFixed(1), blk: (t.blk / gp).toFixed(1), tov: (t.tov / gp).toFixed(1), pf: (t.pf / gp).toFixed(1), plusMinus: (t.plusMinus / gp).toFixed(1), eff: (t.eff / gp).toFixed(1), fgm: totalFGM, fga: totalFGA, fgPct: totalFGA > 0 ? ((totalFGM / totalFGA) * 100).toFixed(1) : "0.0", threePM: t.threePM, threePA: t.threePA, threePct: t.threePA > 0 ? ((t.threePM / t.threePA) * 100).toFixed(1) : "0.0", ftm: t.ftm, fta: t.fta, ftPct: t.fta > 0 ? ((t.ftm / t.fta) * 100).toFixed(1) : "0.0", eFG, TS: ts, ORtg: (p.weightedORtg / totalMin).toFixed(1), DRtg: (p.weightedDRtg / totalMin).toFixed(1), netRtg: ((p.weightedORtg - p.weightedDRtg) / totalMin).toFixed(1), PIE: (t.pie / gp).toFixed(1) } };
+
+            return {
+                ...p,
+                avg: {
+                    min: (t.min/gp).toFixed(1), pts: (t.pts/gp).toFixed(1), reb: (t.reb/gp).toFixed(1),
+                    ast: (t.ast/gp).toFixed(1), stl: (t.stl/gp).toFixed(1), blk: (t.blk/gp).toFixed(1),
+                    tov: (t.tov/gp).toFixed(1), pf: (t.pf/gp).toFixed(1), plusMinus: (t.plusMinus/gp).toFixed(1),
+                    eff: (t.eff/gp).toFixed(1), fgm: totalFGM, fga: totalFGA, fgPct: totalFGA>0?((totalFGM/totalFGA)*100).toFixed(1):"0.0",
+                    threePM: t.threePM, threePA: t.threePA, threePct: t.threePA>0?((t.threePM/t.threePA)*100).toFixed(1):"0.0",
+                    ftm: t.ftm, fta: t.fta, ftPct: t.fta>0?((t.ftm/t.fta)*100).toFixed(1):"0.0",
+                    eFG, TS: ts, ORtg: ORtg.toFixed(1), DRtg: DRtg.toFixed(1), netRtg: (ORtg-DRtg).toFixed(1), PIE: (t.pie/gp).toFixed(1)
+                }
+            };
         }).filter(p => p.gamesPlayed > 0);
     }, [players, filteredGames]);
 
-    // TEAM TRENDS DATA
+    // Data for Graphs
     const teamTrendsData = useMemo(() => {
-        const parseFrenchDate = (dateStr) => {
-            const months = { 'janv': 0, 'févr': 1, 'mars': 2, 'avr': 3, 'mai': 4, 'juin': 5, 'juil': 6, 'août': 7, 'sept': 8, 'oct': 9, 'nov': 10, 'déc': 11 };
-            const match = dateStr.match(/(\d{1,2})\s+([a-zéûô]+)\.?\s+(\d{4})/i);
-            if (match) return new Date(match[3], months[match[2].toLowerCase().replace('.', '')] || 0, match[1]);
-            return new Date(dateStr);
-        };
-        return filteredGames.map(g => {
-            let totalPts = 0, totalFGA = 0, totalFTA = 0, totalTOV = 0, totalORB = 0;
-            Object.values(g.playerStats || {}).forEach(s => { totalPts += s.pts || 0; totalFGA += (s.fga || 0) + (s.threePA || 0); totalFTA += s.fta || 0; totalTOV += s.tov || 0; totalORB += s.oreb || 0; });
-            const totalPoss = totalFGA + 0.44 * totalFTA - totalORB + totalTOV;
-            const ortg = totalPoss > 0 ? (totalPts / totalPoss) * 100 : 0;
-            const drtg = totalPoss > 0 ? ((g.awayScore || 0) / totalPoss) * 100 : 100;
-            return { date: g.date, dateTs: parseFrenchDate(g.date).getTime(), opponent: g.opponent, ORtg: parseFloat(ortg.toFixed(1)), DRtg: parseFloat(drtg.toFixed(1)), NetRtg: parseFloat((ortg - drtg).toFixed(1)), score: g.homeScore, conceded: g.awayScore };
-        }).sort((a, b) => a.dateTs - b.dateTs);
+        const data = filteredGames.map(g => {
+            let totalPts=0, totalFGA=0, totalFTA=0, totalTOV=0, totalORB=0;
+            Object.values(g.playerStats).forEach(s => { totalPts+=s.pts||0; totalFGA+=(s.fga||0)+(s.threePA||0); totalFTA+=s.fta||0; totalTOV+=s.tov||0; totalORB+=s.oreb||0; });
+            const totalPoss = totalFGA + 0.44*totalFTA - totalORB + totalTOV;
+            const ortg = totalPoss>0?(totalPts/totalPoss)*100:0;
+            const drtg = totalPoss>0?((g.awayScore||0)/totalPoss)*100:0;
+            return { date: g.date, timestamp: parseDate(g.date).getTime(), opponent: g.opponent, ORtg: parseFloat(ortg.toFixed(1)), DRtg: parseFloat(drtg.toFixed(1)), NetRtg: parseFloat((ortg-drtg).toFixed(1)), score: g.homeScore, conceded: g.awayScore };
+        });
+        return data.sort((a,b) => a.timestamp - b.timestamp);
     }, [filteredGames]);
 
-    // HEATMAP DATA
     const heatmapData = useMemo(() => {
-        const categories = [{ key: 'pts', label: 'PTS' }, { key: 'reb', label: 'REB' }, { key: 'ast', label: 'AST' }, { key: 'stl', label: 'INT' }, { key: 'eFG', label: 'eFG%' }, { key: 'TS', label: 'TS%' }, { key: 'ORtg', label: 'ORtg' }, { key: 'DRtg', label: 'DRtg', inverse: true }, { key: 'PIE', label: 'PIE' }];
+        const categories = [{ key: 'pts', label: 'PTS' }, { key: 'reb', label: 'REB' }, { key: 'ast', label: 'AST' }, { key: 'stl', label: 'INT' }, { key: 'blk', label: 'CTR' }, { key: 'tov', label: 'BP', inverse: true }, { key: 'fgPct', label: 'FG%' }, { key: 'threePct', label: '3P%' }, { key: 'ftPct', label: 'LF%' }, { key: 'eFG', label: 'eFG%' }, { key: 'TS', label: 'TS%' }, { key: 'plusMinus', label: '+/-' }, { key: 'eff', label: 'ÉVAL' }, { key: 'ORtg', label: 'ORtg' }, { key: 'DRtg', label: 'DRtg', inverse: true }, { key: 'netRtg', label: 'NetRtg' }, { key: 'PIE', label: 'PIE' }];
         const maxValues = {}, minValues = {};
         categories.forEach(cat => { const values = aggregated.map(p => parseFloat(p.avg[cat.key]) || 0); maxValues[cat.key] = Math.max(...values, 1); minValues[cat.key] = Math.min(...values, 0); });
         return { categories, maxValues, minValues, players: aggregated };
     }, [aggregated]);
 
-    // RADAR DATA
     const getRadarData = (p1, p2) => {
         if (!p1 || !p2) return [];
-        const cats = [{ key: 'pts', label: 'PTS' }, { key: 'reb', label: 'REB' }, { key: 'ast', label: 'AST' }, { key: 'stl', label: 'INT' }, { key: 'eFG', label: 'eFG%' }, { key: 'PIE', label: 'PIE' }];
-        return cats.map(cat => {
-            const v1 = parseFloat(p1.avg[cat.key]) || 0, v2 = parseFloat(p2.avg[cat.key]) || 0;
-            const maxVal = Math.max(v1, v2, 1);
-            return { category: cat.label, score1: (v1 / maxVal) * 100, score2: (v2 / maxVal) * 100, real1: v1, real2: v2, name1: p1.info.name, name2: p2.info.name };
+        const categories = [{ key: 'pts', label: 'PTS', type: 'max' }, { key: 'reb', label: 'REB', type: 'max' }, { key: 'ast', label: 'AST', type: 'max' }, { key: 'stl', label: 'INT', type: 'max' }, { key: 'eFG', label: 'eFG%', type: 'max' }, { key: 'PIE', label: 'PIE', type: 'max' }, { key: 'DRtg', label: 'Déf', type: 'min' }];
+        return categories.map(cat => {
+            const val1 = parseFloat(p1.avg[cat.key]) || 0; const val2 = parseFloat(p2.avg[cat.key]) || 0;
+            let maxVal = Math.max(val1, val2); let minVal = Math.min(val1, val2);
+            if (maxVal === 0) maxVal = 1; if (minVal === 0 && cat.type === 'min') minVal = 1;
+            let score1, score2;
+            if (cat.type === 'min') { score1 = val1 === 0 ? 0 : (minVal / val1) * 100; score2 = val2 === 0 ? 0 : (minVal / val2) * 100; }
+            else { score1 = (val1 / maxVal) * 100; score2 = (val2 / maxVal) * 100; }
+            return { category: cat.label, score1: Math.min(100, Math.max(0, score1)), score2: Math.min(100, Math.max(0, score2)), real1: val1, real2: val2, name1: p1.info.name, name2: p2.info.name };
         });
     };
 
-    // Fonction pour parser les dates françaises
-    const parseFrenchDate = (d) => { 
-        const months = {'janv':0,'févr':1,'mars':2,'avr':3,'mai':4,'juin':5,'juil':6,'août':7,'sept':8,'oct':9,'nov':10,'déc':11}; 
-        const m = d.match(/(\d{1,2})\s+([a-zéûô]+)\.?\s+(\d{4})/i); 
-        return m ? new Date(m[3], months[m[2].toLowerCase().replace('.','')]||0, m[1]) : new Date(d); 
-    };
-
     return (
-        <div className="space-y-4 h-full flex flex-col">
-            <Card className="p-4 flex-1 overflow-hidden flex flex-col">
-                <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
+        <div className="space-y-4 h-full flex flex-col pb-20 md:pb-0">
+            <Card className="p-2 md:p-4 flex-1 overflow-hidden flex flex-col">
+                <div className="flex flex-wrap justify-between items-center gap-3 mb-4 no-print">
                     <div className="flex gap-2 flex-wrap">
+                        {/* BOUTONS PUBLICS */}
                         <Button size="sm" variant={viewMode === 'classic' ? 'primary' : 'secondary'} onClick={() => setViewMode('classic')}>📊 Classique</Button>
-                        <Button size="sm" variant={viewMode === 'advanced' ? 'primary' : 'secondary'} onClick={() => setViewMode('advanced')}>🧠 Avancé</Button>
-                        <Button size="sm" variant="secondary" onClick={() => setShowHeatmap(true)}><Icon path={Icons.Target} /> Heatmap</Button>
-                        <Button size="sm" variant="secondary" onClick={() => setShowComparison(true)}><Icon path={Icons.Users} /> Comparer</Button>
-                        <Button size="sm" variant="secondary" onClick={() => setShowTeamTrends(true)}><Icon path={Icons.TrendingUp} /> Tendances</Button>
+                        <Button size="sm" variant="secondary" onClick={() => setShowComparison(true)}><Icon path={Icons.Users} /> <span className="hidden md:inline">Comparer</span></Button>
+
+                        {/* BOUTONS RESTREINTS (ADMIN SEULEMENT) */}
+                        {isAdmin && (
+                            <>
+                                <Button size="sm" variant={viewMode === 'advanced' ? 'primary' : 'secondary'} onClick={() => setViewMode('advanced')}>🧠 Avancé</Button>
+                                <Button size="sm" variant="secondary" onClick={() => setShowHeatmap(true)}><Icon path={Icons.Target} /> <span className="hidden md:inline">Heatmap</span></Button>
+                                <Button size="sm" variant="secondary" onClick={() => setShowTeamTrends(true)}><Icon path={Icons.TrendingUp} /> <span className="hidden md:inline">Tendances</span></Button>
+                            </>
+                        )}
                     </div>
                     <div className="flex items-center gap-2">
-                        <select value={phaseFilter} onChange={(e) => setPhaseFilter(e.target.value)} className="bg-slate-700 text-white text-sm px-3 py-2 rounded border border-slate-600">
-                            <option value="all">Toutes les phases</option>
+                        <Icon path={Icons.Filter} className="text-slate-400" />
+                        <select value={phaseFilter} onChange={(e) => setPhaseFilter(e.target.value)} className="bg-slate-700 text-white text-sm px-3 py-2 rounded border border-slate-600 max-w-[120px] md:max-w-none">
+                            <option value="all">Toutes</option>
                             {phases.map(ph => <option key={ph.id} value={ph.id}>{ph.name}</option>)}
                         </select>
                     </div>
                 </div>
+                
                 <div className="text-xs text-slate-400 mb-2">{filteredGames.length} match(s)</div>
                 <div className="overflow-auto flex-1">
                     <table className="w-full text-left text-sm text-slate-300 whitespace-nowrap">
@@ -619,130 +643,98 @@ function GlobalStats({ players, games, phases }) {
                 </div>
             </Card>
 
-            {/* MODAL DÉTAIL JOUEUR */}
-            <Modal isOpen={!!selectedPlayer} onClose={() => setSelectedPlayer(null)} title={selectedPlayer ? `🏆 ${selectedPlayer.info.name}` : ""}>
+            <Modal isOpen={!!selectedPlayer} onClose={() => setSelectedPlayer(null)} title={<><Icon path={Icons.Trophy} className="text-yellow-400" /> {selectedPlayer?.info.name}</>}>
                 {selectedPlayer && (
-                    <div className="space-y-4 sm:space-y-6">
-                        {/* Stats moyennes - responsive */}
-                        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 bg-slate-900 p-3 sm:p-4 rounded-lg">
-                            <div className="text-center"><div className="text-[10px] sm:text-xs text-slate-500">Points</div><div className="text-lg sm:text-2xl font-bold text-white">{selectedPlayer.avg.pts}</div></div>
-                            <div className="text-center"><div className="text-[10px] sm:text-xs text-slate-500">Rebonds</div><div className="text-lg sm:text-2xl font-bold text-white">{selectedPlayer.avg.reb}</div></div>
-                            <div className="text-center"><div className="text-[10px] sm:text-xs text-slate-500">Passes</div><div className="text-lg sm:text-2xl font-bold text-white">{selectedPlayer.avg.ast}</div></div>
-                            <div className="text-center hidden sm:block"><div className="text-[10px] sm:text-xs text-slate-500">Éval</div><div className="text-lg sm:text-2xl font-bold text-green-400">{selectedPlayer.avg.eff}</div></div>
-                            <div className="text-center hidden sm:block"><div className="text-[10px] sm:text-xs text-slate-500">PIE</div><div className="text-lg sm:text-2xl font-bold text-cyan-400">{selectedPlayer.avg.PIE}%</div></div>
+                    <div className="space-y-6">
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 bg-slate-900 p-4 rounded-lg">
+                            <div className="text-center"><div className="text-xs text-slate-500">Points</div><div className="text-xl md:text-2xl font-bold text-white">{selectedPlayer.avg.pts}</div></div>
+                            <div className="text-center"><div className="text-xs text-slate-500">Rebonds</div><div className="text-xl md:text-2xl font-bold text-white">{selectedPlayer.avg.reb}</div></div>
+                            <div className="text-center"><div className="text-xs text-slate-500">Passes</div><div className="text-xl md:text-2xl font-bold text-white">{selectedPlayer.avg.ast}</div></div>
+                            <div className="text-center"><div className="text-xs text-slate-500">Éval</div><div className="text-xl md:text-2xl font-bold text-green-400">{selectedPlayer.avg.eff}</div></div>
+                            <div className="text-center col-span-2 md:col-span-1"><div className="text-xs text-slate-500">PIE</div><div className="text-xl md:text-2xl font-bold text-cyan-400">{selectedPlayer.avg.PIE}%</div></div>
                         </div>
-                        {/* Stats supplémentaires visibles uniquement sur mobile */}
-                        <div className="grid grid-cols-2 gap-2 sm:hidden bg-slate-900 p-3 rounded-lg">
-                            <div className="text-center"><div className="text-[10px] text-slate-500">Éval</div><div className="text-lg font-bold text-green-400">{selectedPlayer.avg.eff}</div></div>
-                            <div className="text-center"><div className="text-[10px] text-slate-500">PIE</div><div className="text-lg font-bold text-cyan-400">{selectedPlayer.avg.PIE}%</div></div>
-                        </div>
-            
-                        {/* Records et Efficacité - responsive */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                            <div className="bg-slate-900 p-3 sm:p-4 rounded-lg">
-                                <h4 className="text-xs sm:text-sm font-bold text-orange-400 mb-2 sm:mb-3">Records Personnels</h4>
-                                <div className="grid grid-cols-3 gap-2 text-center">
-                                    <div><div className="text-[10px] sm:text-xs text-slate-500">PTS</div><div className="text-base sm:text-lg font-bold">{selectedPlayer.records.pts}</div></div>
-                                    <div><div className="text-[10px] sm:text-xs text-slate-500">REB</div><div className="text-base sm:text-lg font-bold">{selectedPlayer.records.reb}</div></div>
-                                    <div><div className="text-[10px] sm:text-xs text-slate-500">AST</div><div className="text-base sm:text-lg font-bold">{selectedPlayer.records.ast}</div></div>
-                                    <div><div className="text-[10px] sm:text-xs text-slate-500">INT</div><div className="text-base sm:text-lg font-bold">{selectedPlayer.records.stl}</div></div>
-                                    <div><div className="text-[10px] sm:text-xs text-slate-500">CTR</div><div className="text-base sm:text-lg font-bold">{selectedPlayer.records.blk}</div></div>
-                                    <div><div className="text-[10px] sm:text-xs text-slate-500">ÉVAL</div><div className="text-base sm:text-lg font-bold text-green-400">{selectedPlayer.records.eff}</div></div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <h4 className="text-xs text-slate-400 mb-2 uppercase">Scoring & Éval</h4>
+                                <div className="h-48 w-full bg-slate-900/50 rounded p-2">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <LineChart data={selectedPlayer.logs}>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                                            <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} hide />
+                                            <YAxis stroke="#94a3b8" fontSize={10} />
+                                            <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none' }} />
+                                            <Line type="monotone" dataKey="pts" name="Points" stroke="#f97316" strokeWidth={2} dot={{r:3}} />
+                                            <Line type="monotone" dataKey="eff" name="Éval" stroke="#22c55e" strokeWidth={2} dot={{r:3}} />
+                                        </LineChart>
+                                    </ResponsiveContainer>
                                 </div>
                             </div>
-                            <div className="bg-slate-900 p-3 sm:p-4 rounded-lg">
-                                <h4 className="text-xs sm:text-sm font-bold text-blue-400 mb-2 sm:mb-3">Efficacité Moyenne</h4>
-                                <div className="grid grid-cols-2 gap-2 text-center">
-                                    <div><div className="text-[10px] sm:text-xs text-slate-500">eFG%</div><div className="text-base sm:text-lg font-bold text-blue-300">{selectedPlayer.avg.eFG}%</div></div>
-                                    <div><div className="text-[10px] sm:text-xs text-slate-500">TS%</div><div className="text-base sm:text-lg font-bold text-blue-300">{selectedPlayer.avg.TS}%</div></div>
-                                    <div><div className="text-[10px] sm:text-xs text-slate-500">ORtg</div><div className="text-base sm:text-lg font-bold text-purple-400">{selectedPlayer.avg.ORtg}</div></div>
-                                    <div><div className="text-[10px] sm:text-xs text-slate-500">DRtg</div><div className="text-base sm:text-lg font-bold text-red-400">{selectedPlayer.avg.DRtg}</div></div>
+                            <div>
+                                <h4 className="text-xs text-slate-400 mb-2 uppercase">Offensive vs Defensive Rating</h4>
+                                <div className="h-48 w-full bg-slate-900/50 rounded p-2">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <LineChart data={selectedPlayer.logs}>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                                            <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} hide />
+                                            <YAxis stroke="#94a3b8" fontSize={10} domain={['auto', 'auto']} />
+                                            <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none' }} />
+                                            <Line type="monotone" dataKey="ORtg" name="ORtg" stroke="#a855f7" strokeWidth={2} dot={{r:3}} />
+                                            <Line type="monotone" dataKey="DRtg" name="DRtg" stroke="#ef4444" strokeWidth={2} dot={{r:3}} />
+                                        </LineChart>
+                                    </ResponsiveContainer>
                                 </div>
                             </div>
                         </div>
-            
-                        {/* Graphiques - responsive */}
-                        {selectedPlayer.logs.length > 0 && (
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
-                                <div className="bg-slate-900 p-2 sm:p-3 rounded-lg">
-                                    <h4 className="text-[10px] sm:text-xs font-bold text-orange-400 mb-2">Points / Évaluation</h4>
-                                    <div className="h-40 sm:h-44">
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <LineChart data={[...selectedPlayer.logs].sort((a, b) => parseFrenchDate(a.date) - parseFrenchDate(b.date))} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
-                                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                                                <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={8} tick={{ fill: '#94a3b8' }} interval={0} angle={-45} textAnchor="end" height={50} />
-                                                <YAxis stroke="#94a3b8" fontSize={8} tick={{ fill: '#94a3b8' }} />
-                                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', fontSize: '10px' }} />
-                                                <Legend wrapperStyle={{ fontSize: '9px' }} />
-                                                <Line type="monotone" dataKey="pts" stroke="#f97316" strokeWidth={2} name="PTS" dot={{ r: 2 }} connectNulls />
-                                                <Line type="monotone" dataKey="eff" stroke="#22c55e" strokeWidth={2} name="ÉVAL" dot={{ r: 2 }} connectNulls />
-                                            </LineChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                </div>
-                                <div className="bg-slate-900 p-2 sm:p-3 rounded-lg">
-                                    <h4 className="text-[10px] sm:text-xs font-bold text-purple-400 mb-2">ORtg / DRtg</h4>
-                                    <div className="h-40 sm:h-44">
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <LineChart data={[...selectedPlayer.logs].sort((a, b) => parseFrenchDate(a.date) - parseFrenchDate(b.date)).map(log => ({
-                                                ...log,
-                                                ORtgNum: parseFloat(log.ORtg) || 0,
-                                                DRtgNum: parseFloat(log.DRtg) || 0
-                                            }))} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
-                                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                                                <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={8} tick={{ fill: '#94a3b8' }} interval={0} angle={-45} textAnchor="end" height={50} />
-                                                <YAxis stroke="#94a3b8" fontSize={8} tick={{ fill: '#94a3b8' }} domain={[60, 140]} />
-                                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', fontSize: '10px' }} formatter={(value) => typeof value === 'number' ? value.toFixed(1) : value} />
-                                                <Legend wrapperStyle={{ fontSize: '9px' }} />
-                                                <Line type="monotone" dataKey="ORtgNum" stroke="#a855f7" strokeWidth={2} name="ORtg" dot={{ r: 2 }} connectNulls />
-                                                <Line type="monotone" dataKey="DRtgNum" stroke="#ef4444" strokeWidth={2} name="DRtg" dot={{ r: 2 }} connectNulls />
-                                            </LineChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-            
-                        {/* Tableau complet des stats par match - responsive */}
+
                         <div>
-                            <h4 className="text-xs sm:text-sm font-bold text-slate-400 mb-2">Statistiques par Match</h4>
-                            <div className="overflow-x-auto bg-slate-900 rounded-lg max-h-48 sm:max-h-64 -mx-3 sm:mx-0">
-                                <table className="w-full text-[10px] sm:text-xs text-slate-300 whitespace-nowrap">
-                                    <thead className="bg-slate-800 sticky top-0">
+                            <h4 className="text-xs text-slate-400 mb-2 uppercase">Historique Complet</h4>
+                            <div className="overflow-x-auto max-h-64 border border-slate-700 rounded-lg">
+                                <table className="w-full text-center text-xs text-slate-300 whitespace-nowrap">
+                                    <thead className="bg-slate-800 text-white sticky top-0 z-10">
                                         <tr>
-                                            <th className="p-1.5 sm:p-2 text-left sticky left-0 bg-slate-800 z-10">Adv.</th>
-                                            <th className="p-1.5 sm:p-2 text-center">MIN</th>
-                                            <th className="p-1.5 sm:p-2 text-center text-orange-400">PTS</th>
-                                            <th className="p-1.5 sm:p-2 text-center">REB</th>
-                                            <th className="p-1.5 sm:p-2 text-center">AST</th>
-                                            <th className="p-1.5 sm:p-2 text-center hidden sm:table-cell">INT</th>
-                                            <th className="p-1.5 sm:p-2 text-center hidden sm:table-cell">CTR</th>
-                                            <th className="p-1.5 sm:p-2 text-center hidden sm:table-cell text-red-400">BP</th>
-                                            <th className="p-1.5 sm:p-2 text-center hidden md:table-cell">eFG%</th>
-                                            <th className="p-1.5 sm:p-2 text-center hidden md:table-cell">TS%</th>
-                                            <th className="p-1.5 sm:p-2 text-center text-purple-400">ORtg</th>
-                                            <th className="p-1.5 sm:p-2 text-center text-red-400">DRtg</th>
-                                            <th className="p-1.5 sm:p-2 text-center text-green-400">ÉVAL</th>
-                                            <th className="p-1.5 sm:p-2 text-center hidden sm:table-cell text-cyan-400">PIE</th>
+                                            <th className="p-2 text-left sticky left-0 bg-slate-800">Match</th>
+                                            <th className="p-2">MIN</th>
+                                            <th className="p-2 font-bold text-orange-400">PTS</th>
+                                            <th className="p-2">TIR</th>
+                                            <th className="p-2">3PT</th>
+                                            <th className="p-2">LF</th>
+                                            <th className="p-2 font-bold text-white">REB</th>
+                                            <th className="p-2 text-[10px] text-slate-500">RO/RD</th>
+                                            <th className="p-2">AST</th>
+                                            <th className="p-2">INT</th>
+                                            <th className="p-2">CTR</th>
+                                            <th className="p-2 text-red-400">BP</th>
+                                            <th className="p-2">FT</th>
+                                            <th className="p-2 font-bold">+/-</th>
+                                            <th className="p-2 font-bold text-green-400">ÉVAL</th>
+                                            <th className="p-2 text-purple-400 border-l border-slate-700">ORtg</th>
+                                            <th className="p-2 text-red-400">DRtg</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-700">
-                                        {[...selectedPlayer.logs].sort((a, b) => parseFrenchDate(a.date) - parseFrenchDate(b.date)).map((log, i) => (
+                                        {selectedPlayer.logs.map((log, i) => (
                                             <tr key={i} className="hover:bg-slate-800">
-                                                <td className="p-1.5 sm:p-2 sticky left-0 bg-slate-900 font-bold z-10">{log.opponent}</td>
-                                                <td className="p-1.5 sm:p-2 text-center">{log.min}</td>
-                                                <td className="p-1.5 sm:p-2 text-center font-bold text-orange-400">{log.pts}</td>
-                                                <td className="p-1.5 sm:p-2 text-center">{log.reb}</td>
-                                                <td className="p-1.5 sm:p-2 text-center">{log.ast}</td>
-                                                <td className="p-1.5 sm:p-2 text-center hidden sm:table-cell">{log.stl}</td>
-                                                <td className="p-1.5 sm:p-2 text-center hidden sm:table-cell">{log.blk}</td>
-                                                <td className="p-1.5 sm:p-2 text-center hidden sm:table-cell text-red-400">{log.tov}</td>
-                                                <td className="p-1.5 sm:p-2 text-center hidden md:table-cell">{log.eFG}%</td>
-                                                <td className="p-1.5 sm:p-2 text-center hidden md:table-cell">{log.TS}%</td>
-                                                <td className="p-1.5 sm:p-2 text-center text-purple-400">{log.ORtg}</td>
-                                                <td className="p-1.5 sm:p-2 text-center text-red-400">{log.DRtg}</td>
-                                                <td className="p-1.5 sm:p-2 text-center font-bold text-green-400">{log.eff}</td>
-                                                <td className="p-1.5 sm:p-2 text-center hidden sm:table-cell text-cyan-400">{log.PIE}%</td>
+                                                <td className="p-2 text-left font-bold text-white sticky left-0 bg-slate-900 border-r border-slate-700">
+                                                    <div className="text-[10px] font-normal text-slate-500">{log.date}</div>
+                                                    {log.opponent}
+                                                </td>
+                                                <td className="p-2">{log.min}</td>
+                                                <td className="p-2 font-bold text-orange-400">{log.pts}</td>
+                                                <td className="p-2">{log.fgm}-{log.fga}</td>
+                                                <td className="p-2">{log.threePM}-{log.threePA}</td>
+                                                <td className="p-2">{log.ftm}-{log.fta}</td>
+                                                <td className="p-2 font-bold text-white">{log.reb}</td>
+                                                <td className="p-2 text-[10px] text-slate-500">{log.oreb}/{log.dreb}</td>
+                                                <td className="p-2">{log.ast}</td>
+                                                <td className="p-2">{log.stl}</td>
+                                                <td className="p-2">{log.blk}</td>
+                                                <td className="p-2 text-red-400">{log.tov}</td>
+                                                <td className="p-2">{log.pf}</td>
+                                                <td className={`p-2 font-bold ${log.plusMinus >= 0 ? 'text-green-400' : 'text-red-400'}`}>{log.plusMinus > 0 ? '+' : ''}{log.plusMinus}</td>
+                                                <td className="p-2 font-bold text-green-400">{log.eff}</td>
+                                                <td className="p-2 text-purple-400 border-l border-slate-700">{log.ORtg}</td>
+                                                <td className="p-2 text-red-400">{log.DRtg}</td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -753,136 +745,49 @@ function GlobalStats({ players, games, phases }) {
                 )}
             </Modal>
 
-            {/* MODAL COMPARAISON */}
-            <Modal isOpen={showComparison} onClose={() => setShowComparison(false)} title="👥 Comparaison Joueurs">
-                <div className="space-y-4 sm:space-y-6">
-                    <div className="grid grid-cols-2 gap-2 sm:gap-4">
-                        <select value={comparePlayer1?.info.id || ''} onChange={(e) => setComparePlayer1(aggregated.find(p => p.info.id === parseInt(e.target.value)))} className="bg-slate-700 text-white p-2 sm:p-3 rounded border border-slate-600 text-sm sm:text-base">
+            <Modal isOpen={showComparison} onClose={() => setShowComparison(false)} title={<><Icon path={Icons.Users} /> Comparaison Joueurs</>}>
+                <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <select value={comparePlayer1?.info.id || ''} onChange={(e) => setComparePlayer1(aggregated.find(p => p.info.id === parseInt(e.target.value)))} className="bg-slate-700 text-white p-3 rounded border border-slate-600">
                             <option value="">Joueur 1</option>
                             {aggregated.map(p => <option key={p.info.id} value={p.info.id}>{p.info.name}</option>)}
                         </select>
-                        <select value={comparePlayer2?.info.id || ''} onChange={(e) => setComparePlayer2(aggregated.find(p => p.info.id === parseInt(e.target.value)))} className="bg-slate-700 text-white p-2 sm:p-3 rounded border border-slate-600 text-sm sm:text-base">
+                        <select value={comparePlayer2?.info.id || ''} onChange={(e) => setComparePlayer2(aggregated.find(p => p.info.id === parseInt(e.target.value)))} className="bg-slate-700 text-white p-3 rounded border border-slate-600">
                             <option value="">Joueur 2</option>
                             {aggregated.map(p => <option key={p.info.id} value={p.info.id}>{p.info.name}</option>)}
                         </select>
                     </div>
                     {comparePlayer1 && comparePlayer2 && (
-                        <div className="space-y-4 sm:space-y-6">
-                            <div className="h-56 sm:h-72 bg-slate-900/50 rounded-xl p-2 sm:p-4">
+                        <div className="grid grid-cols-1 md:grid-cols-1 gap-6">
+                            <div className="h-64 md:h-80 w-full">
                                 <ResponsiveContainer width="100%" height="100%">
-                                    <RadarChart data={getRadarData(comparePlayer1, comparePlayer2)} outerRadius="75%">
+                                    <RadarChart data={getRadarData(comparePlayer1, comparePlayer2)}>
                                         <PolarGrid stroke="#334155" />
-                                        <PolarAngleAxis dataKey="category" stroke="#94a3b8" fontSize={10} />
-                                        <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
-                                        <Radar name={comparePlayer1.info.name} dataKey="score1" stroke="#f97316" fill="#f97316" fillOpacity={0.4} />
-                                        <Radar name={comparePlayer2.info.name} dataKey="score2" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.4} />
+                                        <PolarAngleAxis dataKey="category" stroke="#94a3b8" fontSize={12} />
+                                        <PolarRadiusAxis stroke="#94a3b8" fontSize={10} />
+                                        <Radar name={comparePlayer1.info.name} dataKey="score1" stroke="#f97316" fill="#f97316" fillOpacity={0.3} />
+                                        <Radar name={comparePlayer2.info.name} dataKey="score2" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.3} />
+                                        <Legend />
                                         <Tooltip content={({ active, payload }) => {
-                                            if (active && payload?.length) {
-                                                const d = payload[0].payload;
-                                                return <div className="bg-slate-800 border border-slate-600 p-2 rounded text-[10px] sm:text-xs"><div className="font-bold text-white mb-1">{d.category}</div><div className="text-orange-400">{d.name1}: {d.real1}</div><div className="text-blue-400">{d.name2}: {d.real2}</div></div>;
-                                            }
-                                            return null;
+                                            if (active && payload && payload.length) {
+                                                const data = payload[0].payload;
+                                                return (<div className="bg-slate-800 border border-slate-600 p-2 rounded shadow-xl text-xs z-50"><div className="font-bold text-white mb-1">{data.category}</div><div className="text-orange-400">{data.name1}: <span className="font-bold">{data.real1}</span></div><div className="text-blue-400">{data.name2}: <span className="font-bold">{data.real2}</span></div></div>);
+                                            } return null;
                                         }} />
-                                        <Legend wrapperStyle={{ fontSize: '10px' }} />
                                     </RadarChart>
                                 </ResponsiveContainer>
-                            </div>
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
-                                {[{ k: 'pts', l: 'Points' }, { k: 'reb', l: 'Rebonds' }, { k: 'ast', l: 'Passes' }, { k: 'eff', l: 'Évaluation' }, { k: 'ORtg', l: 'Off. Rtg' }, { k: 'DRtg', l: 'Def. Rtg', inv: true }, { k: 'PIE', l: 'PIE' }, { k: 'eFG', l: 'eFG%' }, { k: 'netRtg', l: 'Net Rtg' }].map(stat => {
-                                    const v1 = parseFloat(comparePlayer1.avg[stat.k]) || 0;
-                                    const v2 = parseFloat(comparePlayer2.avg[stat.k]) || 0;
-                                    const win1 = stat.inv ? v1 < v2 : v1 > v2;
-                                    const win2 = stat.inv ? v2 < v1 : v2 > v1;
-                                    return (
-                                        <div key={stat.k} className="bg-slate-900 p-2 sm:p-3 rounded border border-slate-700 flex justify-between items-center">
-                                            <div className={`font-bold text-sm sm:text-lg ${win1 ? 'text-orange-400' : 'text-slate-500'}`}>{v1}</div>
-                                            <div className="text-[9px] sm:text-xs text-slate-400 text-center px-1">{stat.l}</div>
-                                            <div className={`font-bold text-sm sm:text-lg ${win2 ? 'text-blue-400' : 'text-slate-500'}`}>{v2}</div>
-                                        </div>
-                                    );
-                                })}
                             </div>
                         </div>
                     )}
                 </div>
             </Modal>
-            {/* MODAL TENDANCES ÉQUIPE */}
-            <Modal isOpen={showTeamTrends} onClose={() => setShowTeamTrends(false)} title="📈 Tendances Équipe">
-                <div className="space-y-4 sm:space-y-6">
-                    <div>
-                        <h4 className="text-xs sm:text-sm font-bold text-orange-400 mb-2 sm:mb-3">Net Rating par Match</h4>
-                        <div className="h-44 sm:h-56 bg-slate-900 rounded-lg p-1 sm:p-2">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={teamTrendsData} margin={{ top: 5, right: 5, left: -20, bottom: 40 }}>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                                    <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={9} angle={-45} textAnchor="end" interval={0} />
-                                    <YAxis stroke="#94a3b8" fontSize={9} />
-                                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', fontSize: '11px' }} />
-                                    <Bar dataKey="NetRtg" name="Net Rating" fill="#22c55e" />
-                                </BarChart>
-                            </ResponsiveContainer>
-                        </div>
-                    </div>
-                    <div>
-                        <h4 className="text-xs sm:text-sm font-bold text-purple-400 mb-2 sm:mb-3">Évolution ORtg / DRtg</h4>
-                        <div className="h-44 sm:h-56 bg-slate-900 rounded-lg p-1 sm:p-2">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <LineChart data={teamTrendsData} margin={{ top: 5, right: 5, left: -20, bottom: 40 }}>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                                    <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={9} angle={-45} textAnchor="end" interval={0} />
-                                    <YAxis stroke="#94a3b8" fontSize={9} domain={['auto', 'auto']} />
-                                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', fontSize: '11px' }} />
-                                    <Legend wrapperStyle={{ fontSize: '10px' }} />
-                                    <Line type="monotone" dataKey="ORtg" stroke="#a855f7" strokeWidth={2} name="Off. Rating" dot={{ r: 3 }} />
-                                    <Line type="monotone" dataKey="DRtg" stroke="#ef4444" strokeWidth={2} name="Def. Rating" dot={{ r: 3 }} />
-                                </LineChart>
-                            </ResponsiveContainer>
-                        </div>
-                    </div>
-                    <div>
-                        <h4 className="text-xs sm:text-sm font-bold text-green-400 mb-2 sm:mb-3">Points Marqués vs Encaissés</h4>
-                        <div className="h-44 sm:h-56 bg-slate-900 rounded-lg p-1 sm:p-2">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={teamTrendsData} margin={{ top: 5, right: 5, left: -20, bottom: 40 }}>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                                    <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={9} angle={-45} textAnchor="end" interval={0} />
-                                    <YAxis stroke="#94a3b8" fontSize={9} />
-                                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', fontSize: '11px' }} />
-                                    <Legend wrapperStyle={{ fontSize: '10px' }} />
-                                    <Bar dataKey="score" name="Marqués" fill="#22c55e" />
-                                    <Bar dataKey="conceded" name="Encaissés" fill="#ef4444" />
-                                </BarChart>
-                            </ResponsiveContainer>
-                        </div>
-                    </div>
-                </div>
-            </Modal>
 
-            {/* MODAL HEATMAP */}
-            <Modal isOpen={showHeatmap} onClose={() => setShowHeatmap(false)} title="🎯 Heatmap Performance">
-                <div className="overflow-x-auto -mx-3 sm:mx-0">
-                    <table className="w-full text-[10px] sm:text-sm">
-                        <thead>
-                            <tr className="text-slate-400 text-[9px] sm:text-xs uppercase">
-                                <th className="p-1.5 sm:p-2 text-left sticky left-0 bg-slate-800 z-10">Joueur</th>
-                                {heatmapData.categories.map(cat => <th key={cat.key} className="p-1.5 sm:p-2 text-center">{cat.label}</th>)}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {heatmapData.players.map(p => (
-                                <tr key={p.info.id} className="border-t border-slate-700">
-                                    <td className="p-1.5 sm:p-2 font-bold text-white sticky left-0 bg-slate-800 z-10 text-[10px] sm:text-sm">{p.info.name}</td>
-                                    {heatmapData.categories.map(cat => {
-                                        const val = parseFloat(p.avg[cat.key]) || 0;
-                                        const min = heatmapData.minValues[cat.key], max = heatmapData.maxValues[cat.key], range = max - min || 1;
-                                        const intensity = cat.inverse ? 1 - ((val - min) / range) : (val - min) / range;
-                                        return <td key={cat.key} className="p-1.5 sm:p-2 text-center font-bold text-white text-[10px] sm:text-sm" style={{ backgroundColor: `rgba(${cat.inverse ? '59, 130, 246' : '249, 115, 22'}, ${intensity * 0.8})` }}>{p.avg[cat.key]}</td>;
-                                    })}
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+            <Modal isOpen={showTeamTrends} onClose={() => setShowTeamTrends(false)} title={<><Icon path={Icons.TrendingUp} /> Tendances Équipe</>}>
+                <div className="h-64"><ResponsiveContainer width="100%" height="100%"><BarChart data={teamTrendsData}><CartesianGrid strokeDasharray="3 3" stroke="#334155" /><XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} /><YAxis stroke="#94a3b8" fontSize={10} /><Tooltip contentStyle={{backgroundColor:'#1e293b',border:'none'}} /><Bar dataKey="NetRtg" name="Net Rating" fill="#22c55e" /></BarChart></ResponsiveContainer></div>
+            </Modal>
+            
+            <Modal isOpen={showHeatmap} onClose={() => setShowHeatmap(false)} title={<><Icon path={Icons.Target} /> Heatmap Performance</>}>
+                <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-slate-400 text-xs uppercase"><th className="p-2 text-left sticky left-0 bg-slate-800">Joueur</th>{heatmapData.categories.map(c => <th key={c.key} className="p-2 text-center">{c.label}</th>)}</tr></thead><tbody>{heatmapData.players.map(p => (<tr key={p.info.id} className="border-t border-slate-700"><td className="p-2 font-bold text-white sticky left-0 bg-slate-800">{p.info.name}</td>{heatmapData.categories.map(cat => { const val = parseFloat(p.avg[cat.key])||0; const min = heatmapData.minValues[cat.key], max = heatmapData.maxValues[cat.key], range = max-min||1; const intensity = cat.inverse ? 1-((val-min)/range) : (val-min)/range; return <td key={cat.key} className="p-2 text-center font-bold text-white" style={{backgroundColor:`rgba(${cat.inverse?'59, 130, 246':'249, 115, 22'}, ${intensity*0.8})`}}>{p.avg[cat.key]}</td> })}</tr>))}</tbody></table></div>
             </Modal>
         </div>
     );
