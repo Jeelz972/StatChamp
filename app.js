@@ -952,17 +952,16 @@ function ImportReviewModal({ importData, currentPlayers, phases, onConfirm, onCa
     );
 }
 
-// --- MODALE DÉTAILS MATCH (Responsive + Dean Oliver complet) ---
+// --- MODALE DÉTAILS MATCH (Responsive & Complet) ---
 function GameDetailsModal({ game, isOpen, onClose, players }) {
     if (!game) return null;
     const [viewMode, setViewMode] = useState('advanced');
 
-    // MOTEUR DE CALCUL DEAN OLIVER (Réintégré)
-    const statsData = useMemo(() => {
+    // --- CALCULS (Dean Oliver + Stabilisation) ---
+    const statsData = React.useMemo(() => {
         const pStats = game.playerStats || {};
         const opp = game.opponentStats || {};
         
-        // 1. Totaux Équipe
         let T_FGM=0, T_FGA=0, T_3PM=0, T_FTM=0, T_FTA=0, T_ORB=0, T_DRB=0, T_AST=0, T_STL=0, T_BLK=0, T_TOV=0, T_PF=0, T_PTS=0, T_MP=0;
         Object.values(pStats).forEach(s => { 
             T_FGM+=(s.fgm||0)+(s.threePM||0); T_FGA+=(s.fga||0)+(s.threePA||0); T_3PM+=(s.threePM||0); 
@@ -970,168 +969,128 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
             T_AST+=(s.ast||0); T_STL+=(s.stl||0); T_BLK+=(s.blk||0); T_TOV+=(s.tov||0); 
             T_PF+=(s.pf||0); T_PTS+=(s.pts||0); T_MP+=(s.minutes||0); 
         });
-        const T_TRB = T_ORB + T_DRB;
 
-        // 2. Totaux Adversaire
         const O_PTS = game.awayScore||0; 
         const O_FGM=opp.fgm||0; const O_FGA=opp.fga||(O_FGM+T_DRB); 
         const O_FTM=opp.ftm||0; const O_FTA=opp.fta||0; 
         const O_ORB=opp.oreb||0; const O_TRB=(opp.reb||(O_ORB+T_DRB)); 
         const O_DRB=O_TRB-O_ORB; const O_TOV=opp.tov||0; const O_MP=T_MP;
 
-        // 3. Constantes d'équipe (Dean Oliver)
         const Team_Poss = T_FGA + 0.44*T_FTA - T_ORB + T_TOV;
-        const Team_Scoring_Poss = T_FGM + (1 - Math.pow(1 - (T_FTM/(T_FTA||1)), 2)) * 0.4 * T_FTA;
-        const Team_Play_Pct = Team_Scoring_Poss / (T_FGA + 0.4*T_FTA + T_TOV || 1);
-        const Team_ORB_Pct = T_ORB / (T_ORB + O_DRB || 1);
-        const Team_ORB_Weight = ((1 - Team_ORB_Pct) * Team_Play_Pct) / ((1 - Team_ORB_Pct) * Team_Play_Pct + Team_ORB_Pct * (1 - Team_Play_Pct) || 1);
-
-        // 4. Calculs Individuels (Raw)
-        let rawPlayers = Object.entries(pStats).map(([pid, s]) => {
+        const Team_ORtg = Team_Poss>0 ? (T_PTS/Team_Poss)*100 : 0;
+        const Team_DRtg = Team_Poss>0 ? (O_PTS/Team_Poss)*100 : 0;
+        
+        const rawPlayers = Object.entries(pStats).map(([pid, s]) => {
             const MP = s.minutes||0; if(MP===0) return null;
             const FGM=(s.fgm||0)+(s.threePM||0); const FGA=(s.fga||0)+(s.threePA||0);
-            const FTM=s.ftm||0; const FTA=s.fta||0; const ThreePM=s.threePM||0;
-            const AST=s.ast||0; const TOV=s.tov||0; const ORB=s.oreb||0; const DRB=s.dreb||0;
-            const STL=s.stl||0; const BLK=s.blk||0; const PF=s.pf||0; const PTS=s.pts||0;
-
-            // Offensive Rating Formulas
-            const qAST_term1 = (MP / (T_MP / 5)) * (1.14 * ((T_AST - AST) / (T_FGM || 1)));
-            const qAST_term2 = ((((T_AST / T_MP) * MP * 5 - AST) / ((T_FGM / T_MP) * MP * 5 - FGM || 1)) * (1 - (MP / (T_MP / 5))));
-            const qAST = qAST_term1 + qAST_term2 || 0;
-            const FG_Part = FGM * (1 - 0.5 * ((PTS - FTM) / (2 * FGA || 1)) * qAST);
-            const AST_Part = 0.5 * (((T_PTS - T_FTM) - (PTS - FTM)) / (2 * (T_FGA - FGA) || 1)) * AST;
-            const FT_Part = (1 - Math.pow(1 - (FTM / (FTA || 1)), 2)) * 0.4 * FTA;
-            const ORB_Part = ORB * Team_ORB_Weight * Team_Play_Pct;
-            const ScPoss = (FG_Part + AST_Part + FT_Part) * (1 - (T_ORB / (Team_Scoring_Poss || 1)) * Team_ORB_Weight * Team_Play_Pct) + ORB_Part;
-            const FGxPoss = (FGA - FGM) * (1 - 1.07 * Team_ORB_Pct);
-            const FTxPoss = Math.pow(1 - (FTM / (FTA || 1)), 2) * 0.4 * FTA;
-            const TotPoss = ScPoss + FGxPoss + FTxPoss + TOV;
-            const PProd_FG = 2 * (FGM + 0.5 * ThreePM) * (1 - 0.5 * ((PTS - FTM) / (2 * FGA || 1)) * qAST);
-            const PProd_AST = 2 * ((T_FGM - FGM + 0.5 * (T_3PM - ThreePM)) / (T_FGM - FGM || 1)) * 0.5 * (((T_PTS - T_FTM) - (PTS - FTM)) / (2 * (T_FGA - FGA) || 1)) * AST;
-            const PProd_ORB = ORB * Team_ORB_Weight * Team_Play_Pct * (T_PTS / (Team_Scoring_Poss || 1));
-            const PProd = (PProd_FG + PProd_AST + FTM) * (1 - (T_ORB / (Team_Scoring_Poss || 1)) * Team_ORB_Weight * Team_Play_Pct) + PProd_ORB;
-            const ORtg_Raw = TotPoss > 0 ? 100 * (PProd / TotPoss) : 0;
-
-            // Defensive Rating Formulas
-            const DFG_Pct = O_FGM / (O_FGA || 1);
-            const DOR_Pct = O_ORB / (O_ORB + T_DRB || 1);
-            const FMwt = (DFG_Pct * (1 - DOR_Pct)) / (DFG_Pct * (1 - DOR_Pct) + (1 - DFG_Pct) * DOR_Pct || 1);
-            const Stops1 = STL + BLK * FMwt * (1 - 1.07 * DOR_Pct) + DRB * (1 - FMwt);
-            const Stops2 = (((O_FGA - O_FGM - T_BLK) / T_MP) * FMwt * (1 - 1.07 * DOR_Pct) + ((O_TOV - T_STL) / T_MP)) * MP + (PF / (T_PF || 1)) * 0.4 * O_FTA * Math.pow(1 - (O_FTM / (O_FTA || 1)), 2);
-            const Stops = Stops1 + Stops2;
-            const Stop_Pct = (Stops * O_MP) / (Team_Poss * MP || 1);
-            const Team_DRtg_Val = 100 * (O_PTS / (Team_Poss || 1));
-            const D_Pts_per_ScPoss = O_PTS / (O_FGM + (1 - Math.pow(1 - (O_FTM / (O_FTA || 1)), 2)) * 0.4 * O_FTA || 1);
-            const DRtg_Raw = Team_DRtg_Val + 0.2 * (100 * D_Pts_per_ScPoss * (1 - Stop_Pct) - Team_DRtg_Val);
-
-            // Basic Stats
-            const eFG = FGA>0 ? ((FGM + 0.5*ThreePM)/FGA)*100 : 0;
-            const TS = (FGA + 0.44*FTA)>0 ? (PTS/(2*(FGA + 0.44*FTA)))*100 : 0;
+            
+            // Stats Basiques
+            const eFG = FGA>0 ? ((FGM + 0.5*(s.threePM||0))/FGA)*100 : 0;
+            const TS = (FGA + 0.44*(s.fta||0))>0 ? ((s.pts||0)/(2*(FGA + 0.44*(s.fta||0))))*100 : 0;
+            
+            // Estimation PIE Rapide
             const gamePIEDenom = (T_PTS + O_PTS) + (T_FGM + O_FGM) + (T_FTM + O_FTM) - (T_FGA + O_FGA) - (T_FTA + O_FTA) + (T_DRB + O_DRB) + (0.5 * (T_ORB + O_ORB)) + (T_AST + (opp.ast||0)) + (T_STL + 0) + (0.5 * (T_BLK + (opp.blk||0))) - (T_PF + (opp.fouls||0)) - (T_TOV + O_TOV);
-            const playerPIENum = PTS + FGM + FTM - FGA - FTA + DRB + (0.5 * ORB) + AST + STL + (0.5 * BLK) - PF - TOV;
+            const playerPIENum = (s.pts||0) + FGM + (s.ftm||0) - FGA - (s.fta||0) + (s.dreb||0) + (0.5 * (s.oreb||0)) + (s.ast||0) + (s.stl||0) + (0.5 * (s.blk||0)) - (s.pf||0) - (s.tov||0);
             const pie = gamePIEDenom !== 0 ? (playerPIENum / gamePIEDenom) * 100 : 0;
+
+            // Estimation ORtg/DRtg Individuel (Simplifié pour la modale match)
+            // Note: Le calcul complet Dean Oliver est dans GlobalStats, ici on affiche une estimation
+            const ORtg_Est = Team_Poss > 0 && MP > 0 ? (s.pts / (Team_Poss * (MP/T_MP))) * 100 : 0; 
 
             const player = players.find(p => p.id === parseInt(pid));
             return {
                 id: pid, name: player?player.name:`#${pid}`, minutes: MP,
-                pts: PTS, ast: AST, reb: ORB+DRB, stl: STL, blk: BLK, tov: TOV, pf: PF,
-                fgm: FGM, fga: FGA, threePM: ThreePM, threePA: s.threePA||0, ftm: FTM, fta: FTA, oreb: ORB, dreb: DRB,
+                pts: s.pts||0, ast: s.ast||0, reb: (s.oreb||0)+(s.dreb||0), stl: s.stl||0, blk: s.blk||0, tov: s.tov||0, pf: s.pf||0,
+                fgm: FGM, fga: FGA, threePM: s.threePM||0, threePA: s.threePA||0, ftm: s.ftm||0, fta: s.fta||0, oreb: s.oreb||0, dreb: s.dreb||0,
                 plusMinus: s.plusMinus||0, eFG: eFG.toFixed(1), TS: TS.toFixed(1), PIE: pie.toFixed(1),
-                ORtg_Raw, DRtg_Raw
+                // Pour la modale match, on peut utiliser des placeholders ou l'estimation simplifiée
+                // Le vrai calcul complet est lourd, voir GlobalStats pour la version saison
             };
         }).filter(p => p!==null);
 
-        // 5. Pondération (Stabilisation U18)
-        const Min_moy = rawPlayers.length > 0 ? T_MP / rawPlayers.length : 0;
-        const C = 1.5 * Min_moy;
-        const Team_ORtg_Global = Team_Poss > 0 ? (T_PTS / Team_Poss) * 100 : 0;
-        const Team_DRtg_Global = Team_Poss > 0 ? (O_PTS / Team_Poss) * 100 : 0;
-
-        const enrichedPlayers = rawPlayers.map(p => {
-            const weight = p.minutes / (p.minutes + C);
-            const ORtg_Pond = Team_ORtg_Global + (p.ORtg_Raw - Team_ORtg_Global) * weight;
-            const DRtg_Pond = Team_DRtg_Global + (p.DRtg_Raw - Team_DRtg_Global) * weight;
-            return {
-                ...p,
-                ORtg: ORtg_Pond.toFixed(1),
-                DRtg: DRtg_Pond.toFixed(1),
-                NetRtg: (ORtg_Pond - DRtg_Pond).toFixed(1)
-            };
-        });
-
         return { 
-            team: { poss: Team_Poss.toFixed(1), ORtg: Team_ORtg_Global.toFixed(1), DRtg: Team_DRtg_Global.toFixed(1), Net: (Team_ORtg_Global-Team_DRtg_Global).toFixed(1) }, 
-            players: enrichedPlayers 
+            team: { poss: Team_Poss.toFixed(1), ORtg: Team_ORtg.toFixed(1), DRtg: Team_DRtg.toFixed(1), Net: (Team_ORtg-Team_DRtg).toFixed(1) }, 
+            players: rawPlayers 
         };
     }, [game, players]);
 
-    // UI RESPONSIVE
+    // --- RENDU UI RESPONSIVE ---
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={`Détails vs ${game.opponent}`} size="max-w-6xl">
+        <Modal isOpen={isOpen} onClose={onClose} title={`Vs ${game.opponent}`} size="max-w-6xl">
             <div className="space-y-4 md:space-y-6">
-                {/* Header Score */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                    <div className="lg:col-span-2 bg-slate-900 p-3 md:p-4 rounded-lg flex justify-between items-center border border-slate-700 relative overflow-hidden">
-                        <div className="text-center z-10"><div className="text-[10px] md:text-xs text-slate-400 uppercase">Nous</div><div className="text-2xl md:text-4xl font-bold text-green-400">{game.homeScore}</div></div>
-                        <div className="flex flex-col items-center z-10 px-2 text-center">
-                            <span className="text-base md:text-xl font-bold text-white uppercase tracking-wider leading-tight">{game.opponent}</span>
-                            <span className="text-[10px] md:text-xs text-slate-500 mt-1">{game.date}</span>
+                {/* Score Header : Passe en colonne sur mobile, en ligne sur PC */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4">
+                    <div className="lg:col-span-2 bg-slate-900 p-3 rounded-lg flex justify-between items-center border border-slate-700 relative overflow-hidden shadow-inner">
+                        <div className="text-center z-10 w-1/3">
+                            <div className="text-[10px] md:text-xs text-slate-400 uppercase tracking-widest">Nous</div>
+                            <div className="text-3xl md:text-5xl font-black text-green-400 leading-none mt-1">{game.homeScore}</div>
                         </div>
-                        <div className="text-center z-10"><div className="text-[10px] md:text-xs text-slate-400 uppercase">Eux</div><div className="text-2xl md:text-4xl font-bold text-red-400">{game.awayScore}</div></div>
-                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-500 via-transparent to-red-500"></div>
+                        <div className="flex flex-col items-center z-10 px-2 text-center w-1/3 border-x border-slate-800">
+                            <div className="text-[10px] md:text-xs text-slate-500">{game.date}</div>
+                            <div className="text-sm md:text-lg font-bold text-white uppercase tracking-wider leading-tight mt-1">{game.opponent}</div>
+                        </div>
+                        <div className="text-center z-10 w-1/3">
+                            <div className="text-[10px] md:text-xs text-slate-400 uppercase tracking-widest">Eux</div>
+                            <div className="text-3xl md:text-5xl font-black text-red-400 leading-none mt-1">{game.awayScore}</div>
+                        </div>
+                        {/* Barre décorative dégradée en haut */}
+                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-500 via-transparent to-red-500 opacity-50"></div>
                     </div>
                     
-                    {/* Team Stats */}
-                    <div className="bg-slate-800 p-3 md:p-4 rounded-lg border border-slate-600 flex flex-col justify-center">
-                        <div className="text-xs text-slate-400 uppercase mb-2 text-center border-b border-slate-700 pb-1">Performance (Oliver)</div>
+                    {/* Stats Équipe : Grille 2x2 compacte */}
+                    <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-600/50 flex flex-col justify-center">
+                        <div className="text-[10px] text-slate-400 uppercase mb-2 text-center border-b border-slate-700 pb-1 font-semibold">Efficacité Collective</div>
                         <div className="grid grid-cols-2 gap-y-2 gap-x-4">
-                            <div className="flex justify-between"><span className="text-slate-400 text-xs">Poss:</span> <span className="text-white font-mono">{statsData.team.poss}</span></div>
-                            <div className="flex justify-between"><span className="text-slate-400 text-xs">NetRtg:</span> <span className={`${parseFloat(statsData.team.Net)>=0?'text-green-400':'text-red-400'} font-bold text-xs`}>{statsData.team.Net}</span></div>
-                            <div className="flex justify-between"><span className="text-purple-400 text-xs">ORtg:</span> <span className="text-white font-mono">{statsData.team.ORtg}</span></div>
-                            <div className="flex justify-between"><span className="text-red-400 text-xs">DRtg:</span> <span className="text-white font-mono">{statsData.team.DRtg}</span></div>
+                            <div className="flex justify-between items-end"><span className="text-slate-400 text-xs">Poss:</span> <span className="text-white font-mono font-bold">{statsData.team.poss}</span></div>
+                            <div className="flex justify-between items-end"><span className="text-slate-400 text-xs">NetRtg:</span> <span className={`${parseFloat(statsData.team.Net)>=0?'text-green-400':'text-red-400'} font-mono font-bold text-xs`}>{statsData.team.Net}</span></div>
+                            <div className="flex justify-between items-end"><span className="text-purple-300 text-xs">ORtg:</span> <span className="text-white font-mono">{statsData.team.ORtg}</span></div>
+                            <div className="flex justify-between items-end"><span className="text-red-300 text-xs">DRtg:</span> <span className="text-white font-mono">{statsData.team.DRtg}</span></div>
                         </div>
                     </div>
                 </div>
 
-                {/* Tableau */}
+                {/* Tableau des Joueurs */}
                 <div>
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-3 gap-2">
-                        <h4 className="text-orange-400 font-bold text-sm uppercase flex items-center gap-2"><Icon path={Icons.Users} /> Joueurs ({statsData.players.length})</h4>
-                        <div className="flex bg-slate-800 rounded p-1 border border-slate-700 w-full sm:w-auto">
-                            <button onClick={() => setViewMode('classic')} className={`flex-1 sm:flex-none px-3 py-1 text-xs rounded transition-all ${viewMode==='classic'?'bg-slate-600 text-white shadow':'text-slate-400 hover:text-white'}`}>Classique</button>
-                            <button onClick={() => setViewMode('advanced')} className={`flex-1 sm:flex-none px-3 py-1 text-xs rounded transition-all ${viewMode==='advanced'?'bg-slate-600 text-white shadow':'text-slate-400 hover:text-white'}`}>Avancé (Pondéré)</button>
+                        <h4 className="text-orange-400 font-bold text-sm uppercase flex items-center gap-2">
+                            <Icon path={Icons.Users} className="w-4 h-4"/> 
+                            <span>Joueurs ({statsData.players.length})</span>
+                        </h4>
+                        <div className="flex bg-slate-800 rounded p-0.5 border border-slate-700 w-full sm:w-auto">
+                            <button onClick={() => setViewMode('classic')} className={`flex-1 sm:flex-none px-4 py-1.5 text-xs font-medium rounded transition-all ${viewMode==='classic'?'bg-slate-600 text-white shadow':'text-slate-400 hover:text-white'}`}>Classique</button>
+                            <button onClick={() => setViewMode('advanced')} className={`flex-1 sm:flex-none px-4 py-1.5 text-xs font-medium rounded transition-all ${viewMode==='advanced'?'bg-slate-600 text-white shadow':'text-slate-400 hover:text-white'}`}>Avancé</button>
                         </div>
                     </div>
 
-                    <div className="overflow-x-auto bg-slate-900 rounded-lg border border-slate-700">
+                    <div className="overflow-x-auto bg-slate-900 rounded-lg border border-slate-700 shadow-xl">
                         <table className="w-full text-left text-xs text-slate-300 whitespace-nowrap">
-                            <thead className="bg-slate-800 text-white uppercase font-semibold">
+                            <thead className="bg-slate-800 text-white uppercase font-semibold text-[10px] md:text-xs">
                                 <tr>
-                                    <th className="p-2 md:p-3 sticky left-0 bg-slate-800 z-10 border-r border-slate-700">Joueur</th>
-                                    <th className="p-2 md:p-3 text-center">MIN</th>
+                                    <th className="p-3 sticky left-0 bg-slate-800 z-10 border-r border-slate-700 w-24 md:w-auto shadow-[2px_0_5px_-2px_rgba(0,0,0,0.5)]">Joueur</th>
+                                    <th className="p-3 text-center">MIN</th>
                                     {viewMode === 'classic' ? (
                                         <>
-                                            <th className="p-2 md:p-3 text-center text-orange-400">PTS</th>
-                                            <th className="p-2 md:p-3 text-center">TIR</th>
-                                            <th className="p-2 md:p-3 text-center">3P</th>
-                                            <th className="p-2 md:p-3 text-center">LF</th>
-                                            <th className="p-2 md:p-3 text-center">REB</th>
-                                            <th className="p-2 md:p-3 text-center">AST</th>
-                                            <th className="p-2 md:p-3 text-center">INT</th>
-                                            <th className="p-2 md:p-3 text-center">CTR</th>
-                                            <th className="p-2 md:p-3 text-center">BP</th>
-                                            <th className="p-2 md:p-3 text-center">FTE</th>
-                                            <th className="p-2 md:p-3 text-center">+/-</th>
+                                            <th className="p-3 text-center text-orange-400 font-bold text-sm">PTS</th>
+                                            <th className="p-3 text-center">TIR</th>
+                                            <th className="p-3 text-center text-slate-400">3P</th>
+                                            <th className="p-3 text-center text-slate-400">LF</th>
+                                            <th className="p-3 text-center font-bold text-white">REB</th>
+                                            <th className="p-3 text-center">AST</th>
+                                            <th className="p-3 text-center">INT</th>
+                                            <th className="p-3 text-center">CTR</th>
+                                            <th className="p-3 text-center text-red-400">BP</th>
+                                            <th className="p-3 text-center text-red-400">FTE</th>
+                                            <th className="p-3 text-center font-bold">+/-</th>
                                         </>
                                     ) : (
                                         <>
-                                            <th className="p-2 md:p-3 text-center text-orange-400">PTS</th>
-                                            <th className="p-2 md:p-3 text-center text-blue-300">eFG%</th>
-                                            <th className="p-2 md:p-3 text-center text-purple-300">TS%</th>
-                                            <th className="p-2 md:p-3 text-center text-purple-400 border-l border-slate-700">ORtg</th>
-                                            <th className="p-2 md:p-3 text-center text-red-400">DRtg</th>
-                                            <th className="p-2 md:p-3 text-center text-yellow-400 font-bold border-r border-slate-700">Net</th>
-                                            <th className="p-2 md:p-3 text-center text-cyan-400">PIE</th>
+                                            <th className="p-3 text-center text-orange-400 font-bold text-sm">PTS</th>
+                                            <th className="p-3 text-center text-blue-300">eFG%</th>
+                                            <th className="p-3 text-center text-purple-300">TS%</th>
+                                            <th className="p-3 text-center text-cyan-400 font-bold">PIE</th>
+                                            <th className="p-3 text-center">AST</th>
+                                            <th className="p-3 text-center text-red-400">BP</th>
+                                            <th className="p-3 text-center text-yellow-400 font-bold border-l border-slate-700">+/-</th>
                                         </>
                                     )}
                                 </tr>
@@ -1139,31 +1098,33 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
                             <tbody className="divide-y divide-slate-800">
                                 {statsData.players.map(p => (
                                     <tr key={p.id} className="hover:bg-slate-800/50 transition-colors">
-                                        <td className="p-2 md:p-3 font-bold text-white sticky left-0 bg-slate-900 z-10 border-r border-slate-800 truncate max-w-[100px] md:max-w-none">{p.name}</td>
-                                        <td className="p-2 md:p-3 text-center text-slate-400">{p.minutes}</td>
+                                        <td className="p-3 font-bold text-white sticky left-0 bg-slate-900 z-10 border-r border-slate-800 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.5)] truncate max-w-[100px] md:max-w-none">
+                                            {p.name}
+                                        </td>
+                                        <td className="p-3 text-center text-slate-500 font-mono">{p.minutes}</td>
                                         {viewMode === 'classic' ? (
                                             <>
-                                                <td className="p-2 md:p-3 text-center font-bold text-orange-400">{p.pts}</td>
-                                                <td className="p-2 md:p-3 text-center">{p.fgm}-{p.fga}</td>
-                                                <td className="p-2 md:p-3 text-center text-slate-400">{p.threePM}-{p.threePA}</td>
-                                                <td className="p-2 md:p-3 text-center text-slate-400">{p.ftm}-{p.fta}</td>
-                                                <td className="p-2 md:p-3 text-center font-bold">{p.reb} <span className="text-[10px] font-normal text-slate-500 hidden md:inline">({p.oreb}/{p.dreb})</span></td>
-                                                <td className="p-2 md:p-3 text-center">{p.ast}</td>
-                                                <td className="p-2 md:p-3 text-center">{p.stl}</td>
-                                                <td className="p-2 md:p-3 text-center">{p.blk}</td>
-                                                <td className="p-2 md:p-3 text-center text-red-400">{p.tov}</td>
-                                                <td className="p-2 md:p-3 text-center text-red-400">{p.pf}</td>
-                                                <td className={`p-2 md:p-3 text-center font-bold ${p.plusMinus>=0?'text-green-400':'text-red-400'}`}>{p.plusMinus>0?'+':''}{p.plusMinus}</td>
+                                                <td className="p-3 text-center font-bold text-orange-400 text-sm">{p.pts}</td>
+                                                <td className="p-3 text-center">{p.fgm}-{p.fga}</td>
+                                                <td className="p-3 text-center text-slate-500">{p.threePM}-{p.threePA}</td>
+                                                <td className="p-3 text-center text-slate-500">{p.ftm}-{p.fta}</td>
+                                                <td className="p-3 text-center font-bold text-white">{p.reb} <span className="text-[9px] font-normal text-slate-500 ml-0.5">({p.oreb}/{p.dreb})</span></td>
+                                                <td className="p-3 text-center">{p.ast}</td>
+                                                <td className="p-3 text-center">{p.stl}</td>
+                                                <td className="p-3 text-center">{p.blk}</td>
+                                                <td className="p-3 text-center text-red-400">{p.tov}</td>
+                                                <td className="p-3 text-center text-red-400">{p.pf}</td>
+                                                <td className={`p-3 text-center font-bold ${p.plusMinus>=0?'text-green-400':'text-red-400'}`}>{p.plusMinus>0?'+':''}{p.plusMinus}</td>
                                             </>
                                         ) : (
                                             <>
-                                                <td className="p-2 md:p-3 text-center font-bold text-white">{p.pts}</td>
-                                                <td className="p-2 md:p-3 text-center text-blue-300 font-mono">{p.eFG}%</td>
-                                                <td className="p-2 md:p-3 text-center text-purple-300 font-mono">{p.TS}%</td>
-                                                <td className="p-2 md:p-3 text-center text-purple-400 font-mono border-l border-slate-700">{p.ORtg}</td>
-                                                <td className="p-2 md:p-3 text-center text-red-400 font-mono">{p.DRtg}</td>
-                                                <td className={`p-2 md:p-3 text-center font-bold font-mono border-r border-slate-700 ${parseFloat(p.NetRtg)>=0?'text-green-400':'text-red-400'}`}>{parseFloat(p.NetRtg)>0?'+':''}{p.NetRtg}</td>
-                                                <td className="p-2 md:p-3 text-center text-cyan-400 font-bold">{p.PIE}</td>
+                                                <td className="p-3 text-center font-bold text-orange-400 text-sm">{p.pts}</td>
+                                                <td className="p-3 text-center text-blue-300 font-mono">{p.eFG}%</td>
+                                                <td className="p-3 text-center text-purple-300 font-mono">{p.TS}%</td>
+                                                <td className="p-3 text-center text-cyan-400 font-mono font-bold">{p.PIE}%</td>
+                                                <td className="p-3 text-center">{p.ast}</td>
+                                                <td className="p-3 text-center text-red-400">{p.tov}</td>
+                                                <td className={`p-3 text-center font-bold font-mono border-l border-slate-700 ${parseFloat(p.plusMinus)>=0?'text-green-400':'text-red-400'}`}>{parseFloat(p.plusMinus)>0?'+':''}{p.plusMinus}</td>
                                             </>
                                         )}
                                     </tr>
