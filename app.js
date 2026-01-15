@@ -385,7 +385,7 @@ function LiveTracker({ players, onSaveGame, initialGame, phases, selectedPhase }
     );
 }
 
-// --- GLOBAL STATS (Complet : Responsive + Dean Oliver + Sécurité Admin) ---
+// --- GLOBAL STATS (CORRIGÉ : Records + Ratings Matchs + Design) ---
 function GlobalStats({ players, games, phases, isAdmin }) {
     const [selectedPlayer, setSelectedPlayer] = useState(null);
     const [viewMode, setViewMode] = useState('classic');
@@ -398,30 +398,33 @@ function GlobalStats({ players, games, phases, isAdmin }) {
 
     const filteredGames = useMemo(() => phaseFilter === 'all' ? games : games.filter(g => g.phase === phaseFilter), [games, phaseFilter]);
 
-    // --- CŒUR DU CALCUL (DEAN OLIVER + STABILISATION) ---
+    // --- CŒUR DU CALCUL (DEAN OLIVER + LOGS DÉTAILLÉS) ---
     const aggregated = useMemo(() => {
         const stats = {};
+        // Initialisation
         players.forEach(p => { 
             stats[p.id] = { 
                 info: p, gamesPlayed: 0, 
                 total: { pts: 0, reb: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, tov: 0, min: 0, eff: 0, fgm: 0, fga: 0, threePM: 0, threePA: 0, ftm: 0, fta: 0, pf: 0, plusMinus: 0, pie: 0 }, 
                 totalMinPlayed: 0, weightedORtg: 0, weightedDRtg: 0, 
                 logs: [], 
-                records: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, eff: 0 } 
+                records: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, eff: 0, threePM: 0 } 
             }; 
         });
 
-        // Accumulateurs Saison (Grand Totals)
+        // Accumulateurs Saison
         const GT = { FGM: 0, FGA: 0, ThreePM: 0, FTM: 0, FTA: 0, ORB: 0, DRB: 0, TRB: 0, AST: 0, STL: 0, BLK: 0, TOV: 0, PF: 0, PTS: 0, MP: 0, Opp_PTS: 0, Opp_FGM: 0, Opp_FGA: 0, Opp_FTM: 0, Opp_FTA: 0, Opp_ORB: 0, Opp_TRB: 0, Opp_TOV: 0 };
 
         filteredGames.forEach(g => {
             let gamePTS=0, gameFGM=0, gameFTM=0, gameFGA=0, gameFTA=0;
             let gameDRB=0, gameORB=0, gameAST=0, gameSTL=0, gameBLK=0, gamePF=0, gameTO=0;
             
-            // 1. Accumulation Stats Joueurs & Équipe
+            // 1. Accumulation Stats Joueurs & Équipe pour ce match
             Object.values(g.playerStats).forEach(s => {
                 const min = s.minutes||0;
+                // Grand Totals Saison
                 GT.FGM+=(s.fgm||0)+(s.threePM||0); GT.FGA+=(s.fga||0)+(s.threePA||0); GT.ThreePM+=(s.threePM||0); GT.FTM+=(s.ftm||0); GT.FTA+=(s.fta||0); GT.ORB+=(s.oreb||0); GT.DRB+=(s.dreb||0); GT.AST+=(s.ast||0); GT.STL+=(s.stl||0); GT.BLK+=(s.blk||0); GT.TOV+=(s.tov||0); GT.PF+=(s.pf||0); GT.PTS+=(s.pts||0); GT.MP+=min;
+                // Totaux Match Courant
                 gamePTS+=s.pts||0; gameFGM+=(s.fgm||0)+(s.threePM||0); gameFTM+=s.ftm||0; gameFGA+=(s.fga||0)+(s.threePA||0); gameFTA+=s.fta||0; gameDRB+=s.dreb||0; gameORB+=s.oreb||0; gameAST+=s.ast||0; gameSTL+=s.stl||0; gameBLK+=s.blk||0; gamePF+=s.pf||0; gameTO+=s.tov||0;
             });
 
@@ -435,18 +438,21 @@ function GlobalStats({ players, games, phases, isAdmin }) {
             // PIE Dénominateur (Game)
             const gamePIEDenom = gamePTS + gameFGM + gameFTM - gameFGA - gameFTA + gameDRB + (0.5 * gameORB) + gameAST + gameSTL + (0.5 * gameBLK) - gamePF - gameTO;
             
-            // Estimations Rapides pour les logs quotidiens (Le vrai calcul Dean Oliver se fait sur la saison)
+            // Calculs Team Match (pour le contexte)
             const teamPoss = (gameFGA-oppFGA) + 0.44*(gameFTA-oppFTA) - (gameORB-oppORB) + (gameTO-oppTOV);
-            const teamORtg = teamPoss>0 ? ((gamePTS-oppPTS)/teamPoss)*100 : 100;
-            const teamDRtg = teamPoss>0 ? (oppPTS/teamPoss)*100 : 100;
+            const teamORtg_Game = teamPoss>0 ? ((gamePTS-oppPTS)/teamPoss)*100 : 0;
+            const teamDRtg_Game = teamPoss>0 ? (oppPTS/teamPoss)*100 : 0;
 
-            // 3. Traitement Individuel par match
+            // 3. Traitement Individuel par match (LOGS & RECORDS)
             Object.entries(g.playerStats).forEach(([pid, s]) => {
                 const id = parseInt(pid);
                 if ((s.minutes||0) > 0 && stats[id]) {
                     const t = stats[id].total; const playerMin = s.minutes||0;
                     stats[id].gamesPlayed += 1; stats[id].totalMinPlayed += playerMin;
-                    stats[id].weightedORtg += teamORtg * playerMin; stats[id].weightedDRtg += teamDRtg * playerMin; // Pour fallback si needed
+                    // On pondère les ratings de saison par les minutes jouées
+                    stats[id].weightedORtg += teamORtg_Game * playerMin; 
+                    stats[id].weightedDRtg += teamDRtg_Game * playerMin; 
+                    
                     t.pts += (s.pts||0); t.reb += (s.reb||0); t.oreb += (s.oreb||0); t.dreb += (s.dreb||0);
                     t.ast += (s.ast||0); t.stl += (s.stl||0); t.blk += (s.blk||0); t.tov += (s.tov||0); t.min += playerMin;
                     t.fgm += (s.fgm||0); t.fga += (s.fga||0); t.threePM += (s.threePM||0); t.threePA += (s.threePA||0);
@@ -456,33 +462,52 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                     const evalStat = (s.pts+s.reb+s.ast+s.stl+s.blk) - ((playerFGA-playerFGM) + ((s.fta||0)-(s.ftm||0)) + s.tov);
                     t.eff += evalStat;
                     
+                    // PIE Joueur Match
                     const playerPIENum = (s.pts||0) + playerFGM + (s.ftm||0) - playerFGA - (s.fta||0) + (s.dreb||0) + (0.5*(s.oreb||0)) + (s.ast||0) + (s.stl||0) + (0.5*(s.blk||0)) - (s.pf||0) - (s.tov||0);
                     const playerPIE = gamePIEDenom !== 0 ? (playerPIENum / gamePIEDenom) * 100 : 0;
                     t.pie += playerPIE;
 
-                    if(s.pts>stats[id].records.pts) stats[id].records.pts=s.pts; 
-                    if(s.reb>stats[id].records.reb) stats[id].records.reb=s.reb; 
-                    if(s.ast>stats[id].records.ast) stats[id].records.ast=s.ast; 
-                    if(s.stl>stats[id].records.stl) stats[id].records.stl=s.stl; 
-                    if(s.blk>stats[id].records.blk) stats[id].records.blk=s.blk; 
-                    if(evalStat>stats[id].records.eff) stats[id].records.eff=evalStat;
+                    // --- MISE A JOUR DES RECORDS ---
+                    const rec = stats[id].records;
+                    if(s.pts > rec.pts) rec.pts = s.pts;
+                    if(s.reb > rec.reb) rec.reb = s.reb;
+                    if(s.ast > rec.ast) rec.ast = s.ast;
+                    if(s.stl > rec.stl) rec.stl = s.stl;
+                    if(s.blk > rec.blk) rec.blk = s.blk;
+                    if(evalStat > rec.eff) rec.eff = evalStat;
+                    if(s.threePM > rec.threePM) rec.threePM = s.threePM;
 
-                    const gameEFG = playerFGA>0?((playerFGM+0.5*(s.threePM||0))/playerFGA)*100:0;
-                    const gameTS = (playerFGA+0.44*(s.fta||0))>0?((s.pts||0)/(2*(playerFGA+0.44*(s.fta||0))))*100:0;
+                    // --- CALCULS AVANCÉS POUR CE MATCH SPÉCIFIQUE (Logs) ---
+                    const gameEFG = playerFGA>0 ? ((playerFGM+0.5*(s.threePM||0))/playerFGA)*100 : 0;
+                    const gameTS = (playerFGA+0.44*(s.fta||0))>0 ? ((s.pts||0)/(2*(playerFGA+0.44*(s.fta||0))))*100 : 0;
+                    
+                    // Estimation ORtg Match (Simple : Pts produits / Poss Estimées)
+                    // Poss Estimée Joueur = FGA + 0.44*FTA + TOV
+                    const pPoss = playerFGA + 0.44*(s.fta||0) + (s.tov||0);
+                    const game_ORtg = pPoss > 0 ? ((s.pts||0) / pPoss) * 100 : 0;
+                    
+                    // DRtg Match : Difficile individuellement, on prend le DRtg équipe pondéré ou une estimation
+                    // Ici on utilise le DRtg Equipe du match comme base contextuelle
+                    const game_DRtg = teamDRtg_Game;
 
-                    // Ajout au Log pour tableau détaillé
+                    // Ajout au Log avec TOUTES les stats calculées
                     stats[id].logs.push({ 
                         date: g.date, opponent: g.opponent, phase: g.phase, min: s.minutes,
                         pts: s.pts||0, reb: s.reb||0, oreb: s.oreb||0, dreb: s.dreb||0, ast: s.ast||0, stl: s.stl||0, blk: s.blk||0, tov: s.tov||0, pf: s.pf||0, plusMinus: s.plusMinus||0,
                         fgm: playerFGM, fga: playerFGA, threePM: s.threePM||0, threePA: s.threePA||0, ftm: s.ftm||0, fta: s.fta||0,
-                        eff: evalStat, eFG: gameEFG.toFixed(1), TS: gameTS.toFixed(1), PIE: playerPIE.toFixed(1),
-                        ORtg: "0", DRtg: "0" // Sera rempli par la moyenne saison pour le contexte du graphe
+                        eff: evalStat, 
+                        eFG: gameEFG.toFixed(1), 
+                        TS: gameTS.toFixed(1), 
+                        PIE: playerPIE.toFixed(1),
+                        ORtg: game_ORtg.toFixed(1), // Valeur calculée pour ce match
+                        DRtg: game_DRtg.toFixed(1)  // Valeur calculée pour ce match
                     });
                 }
             });
         });
 
-        // 4. Calculs Saisonniers Avancés (Dean Oliver)
+        // 4. Calculs Saisonniers Avancés (Dean Oliver Aggregates)
+        // ... (Code identique aux versions précédentes pour les totaux saison)
         GT.TRB = GT.ORB + GT.DRB;
         const Team_Poss = GT.FGA + 0.44 * GT.FTA - GT.ORB + GT.TOV;
         const Team_Scoring_Poss = GT.FGM + (1 - Math.pow(1 - (GT.FTM / (GT.FTA || 1)), 2)) * 0.4 * GT.FTA;
@@ -494,12 +519,12 @@ function GlobalStats({ players, games, phases, isAdmin }) {
         
         const activePlayers = Object.values(stats).filter(p => p.gamesPlayed > 0);
         const Min_moy = activePlayers.length > 0 ? GT.MP / activePlayers.length : 0;
-        const C = 1.5 * Min_moy; // Facteur Stabilisation
+        const C = 1.5 * Min_moy;
 
         return activePlayers.map(p => {
             const t = p.total; const gp = p.gamesPlayed || 1;
             
-            // --- OFFENSIVE RATING (INDIVIDUAL) ---
+            // Dean Oliver Formulas (Saison)
             const qAST_term1 = (t.min / (GT.MP / 5)) * (1.14 * ((GT.AST - t.ast) / (GT.FGM || 1)));
             const qAST_term2 = ((((GT.AST / GT.MP) * t.min * 5 - t.ast) / ((GT.FGM / GT.MP) * t.min * 5 - t.fgm || 1)) * (1 - (t.min / (GT.MP / 5))));
             const qAST = qAST_term1 + qAST_term2 || 0;
@@ -517,7 +542,6 @@ function GlobalStats({ players, games, phases, isAdmin }) {
             const PProd = (PProd_FG + PProd_AST + t.ftm) * (1 - (GT.ORB / (Team_Scoring_Poss || 1)) * Team_ORB_Weight * Team_Play_Pct) + PProd_ORB;
             const ORtg_Raw = TotPoss > 0 ? 100 * (PProd / TotPoss) : 0;
             
-            // --- DEFENSIVE RATING (INDIVIDUAL) ---
             const DFG_Pct = GT.Opp_FGM / (GT.Opp_FGA || 1);
             const DOR_Pct = GT.Opp_ORB / (GT.Opp_ORB + GT.DRB || 1);
             const FMwt = (DFG_Pct * (1 - DOR_Pct)) / (DFG_Pct * (1 - DOR_Pct) + (1 - DFG_Pct) * DOR_Pct || 1);
@@ -528,19 +552,13 @@ function GlobalStats({ players, games, phases, isAdmin }) {
             const D_Pts_per_ScPoss = GT.Opp_PTS / (GT.Opp_FGM + (1 - Math.pow(1 - (GT.Opp_FTM / (GT.Opp_FTA || 1)), 2)) * 0.4 * GT.Opp_FTA || 1);
             const DRtg_Raw = Team_DRtg + 0.2 * (100 * D_Pts_per_ScPoss * (1 - Stop_Pct) - Team_DRtg);
 
-            // --- STABILISATION (WEIGHTED) ---
+            // Stabilisation
             const weight = t.min / (t.min + C);
             const ORtg = Team_ORtg + (ORtg_Raw - Team_ORtg) * weight;
             const DRtg = Team_DRtg + (DRtg_Raw - Team_DRtg) * weight;
 
-            // Update Logs for Graphs (Propagate Season Rating for Context)
             p.logs.sort((a, b) => parseDate(a.date) - parseDate(b.date));
-            p.logs.forEach(l => { 
-                l.ORtg = ORtg.toFixed(1); 
-                l.DRtg = DRtg.toFixed(1); 
-            });
 
-            // Basic Stats Calculations
             const totalFGA = t.fga + t.threePA; const totalFGM = t.fgm + t.threePM;
             const eFG = totalFGA > 0 ? (((totalFGM + 0.5 * t.threePM) / totalFGA) * 100).toFixed(1) : "0.0";
             const ts = (totalFGA + 0.44 * t.fta) > 0 ? ((t.pts / (2 * (totalFGA + 0.44 * t.fta))) * 100).toFixed(1) : "0.0";
@@ -560,7 +578,6 @@ function GlobalStats({ players, games, phases, isAdmin }) {
         }).filter(p => p.gamesPlayed > 0);
     }, [players, filteredGames]);
 
-    // Data for Graphs
     const teamTrendsData = useMemo(() => {
         const data = filteredGames.map(g => {
             let totalPts=0, totalFGA=0, totalFTA=0, totalTOV=0, totalORB=0;
@@ -599,11 +616,8 @@ function GlobalStats({ players, games, phases, isAdmin }) {
             <Card className="p-2 md:p-4 flex-1 overflow-hidden flex flex-col">
                 <div className="flex flex-wrap justify-between items-center gap-3 mb-4 no-print">
                     <div className="flex gap-2 flex-wrap">
-                        {/* BOUTONS PUBLICS */}
                         <Button size="sm" variant={viewMode === 'classic' ? 'primary' : 'secondary'} onClick={() => setViewMode('classic')}>📊 Classique</Button>
                         <Button size="sm" variant="secondary" onClick={() => setShowComparison(true)}><Icon path={Icons.Users} /> <span className="hidden md:inline">Comparer</span></Button>
-
-                        {/* BOUTONS RESTREINTS (ADMIN SEULEMENT) */}
                         {isAdmin && (
                             <>
                                 <Button size="sm" variant={viewMode === 'advanced' ? 'primary' : 'secondary'} onClick={() => setViewMode('advanced')}>🧠 Avancé</Button>
@@ -620,7 +634,6 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                         </select>
                     </div>
                 </div>
-                
                 <div className="text-xs text-slate-400 mb-2">{filteredGames.length} match(s)</div>
                 <div className="overflow-auto flex-1">
                     <table className="w-full text-left text-sm text-slate-300 whitespace-nowrap">
@@ -646,6 +659,7 @@ function GlobalStats({ players, games, phases, isAdmin }) {
             <Modal isOpen={!!selectedPlayer} onClose={() => setSelectedPlayer(null)} title={<><Icon path={Icons.Trophy} className="text-yellow-400" /> {selectedPlayer?.info.name}</>}>
                 {selectedPlayer && (
                     <div className="space-y-6">
+                        {/* EN-TÊTE STATS CLÉS */}
                         <div className="grid grid-cols-2 md:grid-cols-5 gap-2 bg-slate-900 p-4 rounded-lg">
                             <div className="text-center"><div className="text-xs text-slate-500">Points</div><div className="text-xl md:text-2xl font-bold text-white">{selectedPlayer.avg.pts}</div></div>
                             <div className="text-center"><div className="text-xs text-slate-500">Rebonds</div><div className="text-xl md:text-2xl font-bold text-white">{selectedPlayer.avg.reb}</div></div>
@@ -654,6 +668,28 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                             <div className="text-center col-span-2 md:col-span-1"><div className="text-xs text-slate-500">PIE</div><div className="text-xl md:text-2xl font-bold text-cyan-400">{selectedPlayer.avg.PIE}%</div></div>
                         </div>
 
+                        {/* EN-TÊTE STATS AVANCÉES (RAPPORTS) */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                            <div className="bg-slate-800 p-2 rounded text-center"><div className="text-xs text-slate-400">eFG%</div><div className="text-lg font-bold text-blue-300">{selectedPlayer.avg.eFG}%</div></div>
+                            <div className="bg-slate-800 p-2 rounded text-center"><div className="text-xs text-slate-400">TS%</div><div className="text-lg font-bold text-blue-300">{selectedPlayer.avg.TS}%</div></div>
+                            <div className="bg-slate-800 p-2 rounded text-center"><div className="text-xs text-slate-400">ORtg</div><div className="text-lg font-bold text-purple-400">{selectedPlayer.avg.ORtg}</div></div>
+                            <div className="bg-slate-800 p-2 rounded text-center"><div className="text-xs text-slate-400">DRtg</div><div className="text-lg font-bold text-red-400">{selectedPlayer.avg.DRtg}</div></div>
+                        </div>
+
+                        {/* RECORDS */}
+                        <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-700">
+                            <h4 className="text-xs text-slate-400 mb-2 uppercase font-bold flex items-center gap-2"><Icon path={Icons.Trophy} className="w-3 h-3"/> Records Saison</h4>
+                            <div className="grid grid-cols-3 md:grid-cols-6 gap-2 text-center text-sm">
+                                <div><span className="block text-[10px] text-slate-500">PTS</span><span className="font-bold text-white">{selectedPlayer.records.pts}</span></div>
+                                <div><span className="block text-[10px] text-slate-500">REB</span><span className="font-bold text-white">{selectedPlayer.records.reb}</span></div>
+                                <div><span className="block text-[10px] text-slate-500">AST</span><span className="font-bold text-white">{selectedPlayer.records.ast}</span></div>
+                                <div><span className="block text-[10px] text-slate-500">INT</span><span className="font-bold text-white">{selectedPlayer.records.stl}</span></div>
+                                <div><span className="block text-[10px] text-slate-500">CTR</span><span className="font-bold text-white">{selectedPlayer.records.blk}</span></div>
+                                <div><span className="block text-[10px] text-slate-500">3PM</span><span className="font-bold text-white">{selectedPlayer.records.threePM}</span></div>
+                            </div>
+                        </div>
+
+                        {/* GRAPHIQUES */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <h4 className="text-xs text-slate-400 mb-2 uppercase">Scoring & Éval</h4>
@@ -687,6 +723,7 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                             </div>
                         </div>
 
+                        {/* TABLEAU COMPLET */}
                         <div>
                             <h4 className="text-xs text-slate-400 mb-2 uppercase">Historique Complet</h4>
                             <div className="overflow-x-auto max-h-64 border border-slate-700 rounded-lg">
