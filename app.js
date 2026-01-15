@@ -11,6 +11,24 @@ const PRECONFIGURED_FIREBASE = {
     appId: "1:862850988986:web:47a2b48477015506f6fb83"
 };
 
+const parseDate = (dateStr) => {
+    if (!dateStr) return new Date(0);
+    const months = { 'janv': 0, 'jan': 0, 'janvier': 0, 'févr': 1, 'fév': 1, 'fevr': 1, 'fev': 1, 'février': 1, 'mars': 2, 'mar': 2, 'avr': 3, 'avril': 3, 'mai': 4, 'juin': 5, 'juil': 6, 'jul': 6, 'juillet': 6, 'août': 7, 'aout': 7, 'sept': 8, 'sep': 8, 'septembre': 8, 'oct': 9, 'octobre': 9, 'nov': 10, 'novembre': 10, 'déc': 11, 'dec': 11, 'décembre': 11 };
+    
+    // Format texte : "16 nov. 2025"
+    const match = dateStr.match(/(\d{1,2})\s+([a-zéûô]+)\.?\s+(\d{4})/i);
+    if (match) { 
+        const m = months[match[2].toLowerCase().replace('.', '')]; 
+        if (m !== undefined) return new Date(match[3], m, match[1]); 
+    }
+    
+    // Format slash : "16/11/2025"
+    const slash = dateStr.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (slash) return new Date(slash[3], slash[2] - 1, slash[1]);
+    
+    return new Date(dateStr);
+};
+
 // ===========================================
 // FONCTIONS DE CALCUL DES RATINGS AVANCÉS
 // ===========================================
