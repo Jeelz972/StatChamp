@@ -1039,41 +1039,67 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
     );
 }
 
-// --- HISTORY ---
+// --- HISTORY (Trié + Responsive) ---
 function History({ games, players, setGames, phases, onEditGame, onImportClick, onMultiImport, isAdmin }) {
     const [selectedGame, setSelectedGame] = useState(null);
+
+    // Tri du plus récent au plus ancien
+    const sortedGames = useMemo(() => {
+        return [...games].sort((a, b) => parseDate(b.date) - parseDate(a.date));
+    }, [games]);
+
     return (
-        <div className="space-y-4">
+        <div className="space-y-4 pb-20 md:pb-0">
             {isAdmin && (
                 <div className="flex justify-end gap-2 no-print">
                     <Button variant="secondary" onClick={onMultiImport}><Icon path={Icons.Upload} /> Multi-Import</Button>
                     <Button variant="primary" onClick={onImportClick}><Icon path={Icons.Upload} /> Importer</Button>
                 </div>
             )}
-            {games.length === 0 && <div className="text-center text-slate-500 py-10">Aucun match enregistré</div>}
-            {games.map(g => (
+            
+            {sortedGames.length === 0 && <div className="text-center text-slate-500 py-10">Aucun match enregistré</div>}
+            
+            {sortedGames.map(g => (
                 <Card key={g.id} className="p-0 overflow-hidden group hover:border-orange-500/50 transition-colors">
                     <div className="flex justify-between items-stretch">
-                        <div className="flex-1 p-4 cursor-pointer group-hover:bg-slate-800/80 transition-colors" onClick={() => setSelectedGame(g)}>
+                        <div 
+                            className="flex-1 p-3 md:p-4 cursor-pointer group-hover:bg-slate-800/80 transition-colors"
+                            onClick={() => setSelectedGame(g)}
+                        >
                             <div className="flex items-center gap-2 text-sm text-slate-400">
                                 <span>{g.date}</span>
                                 {g.phase && <span className="px-2 py-0.5 bg-orange-600/20 text-orange-400 rounded text-xs">{phases.find(p => p.id === g.phase)?.name}</span>}
                             </div>
-                            <div className="text-xl font-bold text-white mt-1">
-                                <span className="text-green-400">{g.homeScore}</span> - <span className="text-red-400">{g.awayScore}</span>
-                                <span className="text-slate-300 ml-2 text-base font-normal">vs {g.opponent}</span>
+                            <div className="text-lg md:text-xl font-bold text-white mt-1">
+                                <span className="text-green-400">{g.homeScore}</span> - <span className="text-red-400">{g.awayScore}</span> 
+                                <span className="text-slate-300 ml-2 text-base font-normal truncate max-w-[150px] md:max-w-none inline-block align-bottom">vs {g.opponent}</span>
                             </div>
-                            <div className="text-xs text-orange-500/0 group-hover:text-orange-500 transition-all mt-2 flex items-center gap-1"><Icon path={Icons.Eye} className="w-3 h-3" /> Voir stats &rarr;</div>
+                            <div className="text-xs text-orange-500/0 group-hover:text-orange-500 transition-all mt-2 flex items-center gap-1">
+                                <Icon path={Icons.Eye} className="w-3 h-3"/> Voir stats &rarr;
+                            </div>
                         </div>
+
                         {isAdmin && (
                             <div className="flex flex-col justify-center gap-2 p-2 bg-slate-900/50 border-l border-slate-700">
-                                <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); onEditGame(g); }}><Icon path={Icons.Edit} /></Button>
-                                <Button variant="danger" size="sm" onClick={(e) => { e.stopPropagation(); if (confirm("Supprimer ?")) { const newG = games.filter(x => x.id !== g.id); setGames(newG); if (window.db) saveDataToCloud(window.db, "games", newG); } }}><Icon path={Icons.Trash} /></Button>
+                                <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); onEditGame(g); }}>
+                                    <Icon path={Icons.Edit} />
+                                </Button>
+                                <Button variant="danger" size="sm" onClick={(e) => { 
+                                    e.stopPropagation(); 
+                                    if (confirm("Supprimer ?")) { 
+                                        const newG = games.filter(x => x.id !== g.id); 
+                                        setGames(newG); 
+                                        if (window.db) saveDataToCloud(window.db, "games", newG); 
+                                    } 
+                                }}>
+                                    <Icon path={Icons.Trash} />
+                                </Button>
                             </div>
                         )}
                     </div>
                 </Card>
             ))}
+
             <GameDetailsModal game={selectedGame} isOpen={!!selectedGame} onClose={() => setSelectedGame(null)} players={players} />
         </div>
     );
