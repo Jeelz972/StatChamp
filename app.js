@@ -1,7 +1,6 @@
 // ==========================================
 // 🛠️ ZONE DE CONFIGURATION AUTOMATIQUE 🛠️
 // ==========================================
-
 const PRECONFIGURED_FIREBASE = {
     apiKey: "AIzaSyBaA99che1oz9BHc23IhiFoY-nK0xvg4q4",
     authDomain: "statu18elite.firebaseapp.com",
@@ -170,7 +169,7 @@ const calculateAverageMinutes = (playerStats) => {
 
 // ==========================================
 const { useState, useEffect, useMemo } = React;
-const { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Legend, AreaChart, Area } = window.Recharts || {};
+const { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Legend, AreaChart, Area, ComposedChart, ReferenceLine, Cell } = window.Recharts || {};
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 const defaultPlayers = [{ id: 1, name: "Joueur 1", number: 4, pos: "PG" }, { id: 2, name: "Joueur 2", number: 5, pos: "SG" }];
@@ -252,8 +251,8 @@ const Button = ({ onClick, children, variant = "primary", className = "", size =
 // ✅ MODAL RESPONSIVE
 const Modal = ({ isOpen, onClose, title, children, size = "max-w-4xl" }) => {
     if (!isOpen) return null;
-    return (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/80 backdrop-blur-sm p-2 sm:p-4" style={{ zIndex: 99999 }}>
+    return ReactDOM.createPortal(
+        <div className="fixed inset-0 flex items-center justify-center bg-black/80 backdrop-blur-sm p-2 sm:p-4" style={{ zIndex: 999999 }}>
             <div className={`bg-slate-800 rounded-xl border border-slate-600 w-full ${size} shadow-2xl max-h-[95vh] sm:max-h-[90vh] flex flex-col`}>
                 <div className="flex justify-between items-center p-3 sm:p-4 border-b border-slate-700 shrink-0">
                     <h3 className="text-base sm:text-xl font-bold text-white flex items-center gap-2 truncate pr-2">{title}</h3>
@@ -261,7 +260,8 @@ const Modal = ({ isOpen, onClose, title, children, size = "max-w-4xl" }) => {
                 </div>
                 <div className="p-3 sm:p-4 overflow-y-auto flex-1 overscroll-contain">{children}</div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 
@@ -460,13 +460,14 @@ function GlobalStats({ players, games, phases, isAdmin }) {
 
                     // Records
                     const rec = stats[id].records;
-                    if(s.pts > rec.pts) rec.pts = s.pts;
-                    if(s.reb > rec.reb) rec.reb = s.reb;
-                    if(s.ast > rec.ast) rec.ast = s.ast;
-                    if(s.stl > rec.stl) rec.stl = s.stl;
-                    if(s.blk > rec.blk) rec.blk = s.blk;
-                    if(evalStat > rec.eff) rec.eff = evalStat;
-                    if(s.threePM > rec.threePM) rec.threePM = s.threePM;
+if(s.pts > rec.pts) { rec.pts = s.pts; rec.ptsDate = g.date; rec.ptsOpp = g.opponent; }
+if(s.reb > rec.reb) { rec.reb = s.reb; rec.rebDate = g.date; rec.rebOpp = g.opponent; }
+if(s.ast > rec.ast) { rec.ast = s.ast; rec.astDate = g.date; rec.astOpp = g.opponent; }
+if(s.stl > rec.stl) { rec.stl = s.stl; rec.stlDate = g.date; rec.stlOpp = g.opponent; }
+if(s.blk > rec.blk) { rec.blk = s.blk; rec.blkDate = g.date; rec.blkOpp = g.opponent; }
+if(evalStat > rec.eff) { rec.eff = evalStat; rec.effDate = g.date; rec.effOpp = g.opponent; }
+if(s.threePM > rec.threePM) { rec.threePM = s.threePM; rec.threePMDate = g.date; rec.threePMOpp = g.opponent; }
+
 
                     // --- CALCULS SPÉCIFIQUES POUR LE MATCH (Graphiques) ---
                     const gameEFG = playerFGA>0 ? ((playerFGM+0.5*(s.threePM||0))/playerFGA)*100 : 0;
@@ -568,16 +569,47 @@ function GlobalStats({ players, games, phases, isAdmin }) {
     }, [players, filteredGames]);
 
     const teamTrendsData = useMemo(() => {
-        const data = filteredGames.map(g => {
-            let totalPts=0, totalFGA=0, totalFTA=0, totalTOV=0, totalORB=0;
-            Object.values(g.playerStats).forEach(s => { totalPts+=s.pts||0; totalFGA+=(s.fga||0)+(s.threePA||0); totalFTA+=s.fta||0; totalTOV+=s.tov||0; totalORB+=s.oreb||0; });
-            const totalPoss = totalFGA + 0.44*totalFTA - totalORB + totalTOV;
-            const ortg = totalPoss>0?(totalPts/totalPoss)*100:0;
-            const drtg = totalPoss>0?((g.awayScore||0)/totalPoss)*100:0;
-            return { date: g.date, timestamp: parseDate(g.date).getTime(), opponent: g.opponent, ORtg: parseFloat(ortg.toFixed(1)), DRtg: parseFloat(drtg.toFixed(1)), NetRtg: parseFloat((ortg-drtg).toFixed(1)), score: g.homeScore, conceded: g.awayScore };
+    const sorted = [...filteredGames].sort((a, b) => parseDate(a.date) - parseDate(b.date));
+    
+    let wins = 0, losses = 0, streak = 0, streakType = '';
+    const data = sorted.map((g, idx) => {
+        let totalPts=0, totalFGA=0, totalFTA=0, totalTOV=0, totalORB=0, totalAST=0, totalREB=0, totalSTL=0, totalBLK=0, total3PM=0, total3PA=0;
+        Object.values(g.playerStats).forEach(s => { 
+            totalPts+=s.pts||0; totalFGA+=(s.fga||0)+(s.threePA||0); totalFTA+=s.fta||0; totalTOV+=s.tov||0; 
+            totalORB+=s.oreb||0; totalAST+=s.ast||0; totalREB+=(s.reb||0); totalSTL+=s.stl||0; totalBLK+=s.blk||0;
+            total3PM+=s.threePM||0; total3PA+=s.threePA||0;
         });
-        return data.sort((a,b) => a.timestamp - b.timestamp);
-    }, [filteredGames]);
+        const totalPoss = totalFGA + 0.44*totalFTA - totalORB + totalTOV;
+        const ortg = totalPoss>0?(totalPts/totalPoss)*100:0;
+        const drtg = totalPoss>0?((g.awayScore||0)/totalPoss)*100:0;
+        
+        const isWin = g.homeScore > g.awayScore;
+        if (isWin) { wins++; streak = streakType === 'W' ? streak + 1 : 1; streakType = 'W'; }
+        else { losses++; streak = streakType === 'L' ? streak + 1 : 1; streakType = 'L'; }
+
+        return { 
+            date: g.date, opponent: g.opponent, 
+            ORtg: parseFloat(ortg.toFixed(1)), DRtg: parseFloat(drtg.toFixed(1)), NetRtg: parseFloat((ortg-drtg).toFixed(1)), 
+            score: g.homeScore, conceded: g.awayScore,
+            ast: totalAST, tov: totalTOV, 
+            threePct: total3PA > 0 ? parseFloat(((total3PM/total3PA)*100).toFixed(1)) : 0,
+            isWin
+        };
+    });
+    
+    const totalGames = data.length;
+    const avgPts = totalGames > 0 ? (data.reduce((s, d) => s + d.score, 0) / totalGames).toFixed(1) : 0;
+    const avgConceded = totalGames > 0 ? (data.reduce((s, d) => s + d.conceded, 0) / totalGames).toFixed(1) : 0;
+    const avgNetRtg = totalGames > 0 ? (data.reduce((s, d) => s + d.NetRtg, 0) / totalGames).toFixed(1) : 0;
+    
+    const recent5 = data.slice(-5);
+    const recent5Wins = recent5.filter(d => d.isWin).length;
+    
+    const bestGame = data.reduce((best, d) => d.NetRtg > (best?.NetRtg || -999) ? d : best, null);
+    const worstGame = data.reduce((worst, d) => d.NetRtg < (worst?.NetRtg || 999) ? d : worst, null);
+
+    return { data, wins, losses, streak, streakType, avgPts, avgConceded, avgNetRtg, recent5Wins, recent5Total: recent5.length, bestGame, worstGame };
+}, [filteredGames]);
 
     const heatmapData = useMemo(() => {
         const categories = [{ key: 'pts', label: 'PTS' }, { key: 'reb', label: 'REB' }, { key: 'ast', label: 'AST' }, { key: 'stl', label: 'INT' }, { key: 'blk', label: 'CTR' }, { key: 'tov', label: 'BP', inverse: true }, { key: 'fgPct', label: 'FG%' }, { key: 'threePct', label: '3P%' }, { key: 'ftPct', label: 'LF%' }, { key: 'eFG', label: 'eFG%' }, { key: 'TS', label: 'TS%' }, { key: 'plusMinus', label: '+/-' }, { key: 'eff', label: 'ÉVAL' }, { key: 'ORtg', label: 'ORtg' }, { key: 'DRtg', label: 'DRtg', inverse: true }, { key: 'netRtg', label: 'NetRtg' }, { key: 'PIE', label: 'PIE' }];
@@ -666,17 +698,38 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                         </div>
 
                         {/* RECORDS SAISON */}
-                        <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-700">
-                            <h4 className="text-xs text-slate-400 mb-2 uppercase font-bold flex items-center gap-2"><Icon path={Icons.Trophy} className="w-3 h-3"/> Records Saison</h4>
-                            <div className="grid grid-cols-3 md:grid-cols-6 gap-2 text-center text-sm">
-                                <div><span className="block text-[10px] text-slate-500">PTS</span><span className="font-bold text-white">{selectedPlayer.records.pts}</span></div>
-                                <div><span className="block text-[10px] text-slate-500">REB</span><span className="font-bold text-white">{selectedPlayer.records.reb}</span></div>
-                                <div><span className="block text-[10px] text-slate-500">AST</span><span className="font-bold text-white">{selectedPlayer.records.ast}</span></div>
-                                <div><span className="block text-[10px] text-slate-500">INT</span><span className="font-bold text-white">{selectedPlayer.records.stl}</span></div>
-                                <div><span className="block text-[10px] text-slate-500">CTR</span><span className="font-bold text-white">{selectedPlayer.records.blk}</span></div>
-                                <div><span className="block text-[10px] text-slate-500">3PM</span><span className="font-bold text-white">{selectedPlayer.records.threePM}</span></div>
-                            </div>
+                       <div className="space-y-3">
+    <h4 className="text-sm text-slate-400 uppercase font-bold flex items-center gap-2">
+        <span className="text-yellow-400">🏆</span> Records Personnels
+    </h4>
+    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        {[
+            { key: 'pts', label: 'Points', icon: '🔥', color: 'from-orange-500 to-red-600' },
+            { key: 'reb', label: 'Rebonds', icon: '💪', color: 'from-blue-500 to-cyan-600' },
+            { key: 'ast', label: 'Passes', icon: '🎯', color: 'from-purple-500 to-pink-600' },
+            { key: 'stl', label: 'Interceptions', icon: '⚡', color: 'from-yellow-500 to-orange-600' },
+            { key: 'blk', label: 'Contres', icon: '🛡️', color: 'from-red-500 to-rose-600' },
+            { key: 'threePM', label: '3-Points', icon: '🎱', color: 'from-green-500 to-emerald-600' },
+        ].map(item => (
+            <div key={item.key} className={`relative overflow-hidden rounded-xl bg-gradient-to-br ${item.color} p-0.5`}>
+                <div className="bg-slate-900 rounded-xl p-3 h-full">
+                    <div className="flex items-center gap-2 mb-1">
+                        <span className="text-lg">{item.icon}</span>
+                        <span className="text-[10px] text-slate-400 uppercase tracking-wider">{item.label}</span>
+                    </div>
+                    <div className="text-2xl font-black text-white">{selectedPlayer.records[item.key]}</div>
+                    {selectedPlayer.records[`${item.key}Opp`] && (
+                        <div className="text-[9px] text-slate-500 mt-1 truncate leading-tight">
+                            vs {selectedPlayer.records[`${item.key}Opp`]}<br/>
+                            <span className="text-slate-600">{selectedPlayer.records[`${item.key}Date`]}</span>
                         </div>
+                    )}
+                </div>
+            </div>
+        ))}
+    </div>
+</div>
+
 
                         {/* GRAPHIQUES */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -809,9 +862,156 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                 </div>
             </Modal>
 
-            <Modal isOpen={showTeamTrends} onClose={() => setShowTeamTrends(false)} title={<><Icon path={Icons.TrendingUp} /> Tendances Équipe</>}>
-                <div className="h-64"><ResponsiveContainer width="100%" height="100%"><BarChart data={teamTrendsData}><CartesianGrid strokeDasharray="3 3" stroke="#334155" /><XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} /><YAxis stroke="#94a3b8" fontSize={10} /><Tooltip contentStyle={{backgroundColor:'#1e293b',border:'none'}} /><Bar dataKey="NetRtg" name="Net Rating" fill="#22c55e" /></BarChart></ResponsiveContainer></div>
-            </Modal>
+            <Modal isOpen={showTeamTrends} onClose={() => setShowTeamTrends(false)} title={<><Icon path={Icons.TrendingUp} /> Analyse Équipe</>} size="max-w-5xl">
+    <div className="space-y-6">
+        {/* RÉSUMÉ SAISON */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-gradient-to-br from-green-600 to-green-800 p-4 rounded-xl text-center">
+                <div className="text-3xl font-black text-white">{teamTrendsData.wins}</div>
+                <div className="text-xs text-green-200 uppercase">Victoires</div>
+            </div>
+            <div className="bg-gradient-to-br from-red-600 to-red-800 p-4 rounded-xl text-center">
+                <div className="text-3xl font-black text-white">{teamTrendsData.losses}</div>
+                <div className="text-xs text-red-200 uppercase">Défaites</div>
+            </div>
+            <div className="bg-slate-800 p-4 rounded-xl text-center border border-slate-700">
+                <div className="text-2xl font-bold text-white">{teamTrendsData.avgPts}</div>
+                <div className="text-xs text-slate-400">Pts/Match</div>
+            </div>
+            <div className="bg-slate-800 p-4 rounded-xl text-center border border-slate-700">
+                <div className="text-2xl font-bold text-white">{teamTrendsData.avgConceded}</div>
+                <div className="text-xs text-slate-400">Encaissés/Match</div>
+            </div>
+        </div>
+
+        {/* FORME ACTUELLE */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-slate-900 p-4 rounded-xl border border-slate-700">
+                <div className="text-xs text-slate-400 uppercase mb-2">Série en cours</div>
+                <div className={`text-3xl font-black ${teamTrendsData.streakType === 'W' ? 'text-green-400' : 'text-red-400'}`}>
+                    {teamTrendsData.streak} {teamTrendsData.streakType === 'W' ? 'V' : 'D'}
+                </div>
+            </div>
+            <div className="bg-slate-900 p-4 rounded-xl border border-slate-700">
+                <div className="text-xs text-slate-400 uppercase mb-2">Forme (5 derniers)</div>
+                <div className="text-3xl font-black text-white">
+                    {teamTrendsData.recent5Wins}/{teamTrendsData.recent5Total}
+                </div>
+            </div>
+            <div className="bg-slate-900 p-4 rounded-xl border border-slate-700">
+                <div className="text-xs text-slate-400 uppercase mb-2">Net Rating Moyen</div>
+                <div className={`text-3xl font-black ${parseFloat(teamTrendsData.avgNetRtg) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {teamTrendsData.avgNetRtg > 0 ? '+' : ''}{teamTrendsData.avgNetRtg}
+                </div>
+            </div>
+        </div>
+
+        {/* MEILLEURE / PIRE PERFORMANCE */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {teamTrendsData.bestGame && (
+                <div className="bg-gradient-to-r from-green-900/50 to-slate-900 p-4 rounded-xl border border-green-700/50">
+                    <div className="flex items-center gap-2 mb-2">
+                        <span className="text-green-400 text-lg">🏆</span>
+                        <span className="text-xs text-green-400 uppercase font-bold">Meilleure Performance</span>
+                    </div>
+                    <div className="text-white font-bold">vs {teamTrendsData.bestGame.opponent}</div>
+                    <div className="text-sm text-slate-400">{teamTrendsData.bestGame.score} - {teamTrendsData.bestGame.conceded}</div>
+                    <div className="text-lg font-bold text-green-400">Net: +{teamTrendsData.bestGame.NetRtg}</div>
+                </div>
+            )}
+            {teamTrendsData.worstGame && (
+                <div className="bg-gradient-to-r from-red-900/50 to-slate-900 p-4 rounded-xl border border-red-700/50">
+                    <div className="flex items-center gap-2 mb-2">
+                        <span className="text-red-400 text-lg">📉</span>
+                        <span className="text-xs text-red-400 uppercase font-bold">À Améliorer</span>
+                    </div>
+                    <div className="text-white font-bold">vs {teamTrendsData.worstGame.opponent}</div>
+                    <div className="text-sm text-slate-400">{teamTrendsData.worstGame.score} - {teamTrendsData.worstGame.conceded}</div>
+                    <div className="text-lg font-bold text-red-400">Net: {teamTrendsData.worstGame.NetRtg}</div>
+                </div>
+            )}
+        </div>
+
+        {/* GRAPHIQUE NET RATING */}
+        <div>
+            <h4 className="text-xs text-slate-400 uppercase mb-2">Évolution Net Rating</h4>
+            <div className="h-64 bg-slate-900 rounded-lg p-2">
+                <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={teamTrendsData.data}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                        <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} angle={-45} textAnchor="end" height={60} />
+                        <YAxis stroke="#94a3b8" fontSize={10} />
+                        <ReferenceLine y={0} stroke="#64748b" strokeDasharray="3 3" />
+                        <Tooltip contentStyle={{backgroundColor:'#1e293b',border:'none',borderRadius:'8px'}} />
+                        <Bar dataKey="NetRtg" name="Net Rating" fill={(entry) => entry.NetRtg >= 0 ? '#22c55e' : '#ef4444'}>
+                            {teamTrendsData.data.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.NetRtg >= 0 ? '#22c55e' : '#ef4444'} />
+                            ))}
+                        </Bar>
+                    </ComposedChart>
+                </ResponsiveContainer>
+            </div>
+        </div>
+
+        {/* GRAPHIQUE SCORE */}
+        <div>
+            <h4 className="text-xs text-slate-400 uppercase mb-2">Points marqués vs encaissés</h4>
+            <div className="h-48 bg-slate-900 rounded-lg p-2">
+                <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={teamTrendsData.data}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                        <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} hide />
+                        <YAxis stroke="#94a3b8" fontSize={10} />
+                        <Tooltip contentStyle={{backgroundColor:'#1e293b',border:'none'}} />
+                        <Area type="monotone" dataKey="score" name="Marqués" stroke="#22c55e" fill="#22c55e" fillOpacity={0.3} />
+                        <Area type="monotone" dataKey="conceded" name="Encaissés" stroke="#ef4444" fill="#ef4444" fillOpacity={0.3} />
+                    </AreaChart>
+                </ResponsiveContainer>
+            </div>
+        </div>
+
+        {/* STATS DÉTAILLÉES PAR MATCH */}
+        <div>
+            <h4 className="text-xs text-slate-400 uppercase mb-2">Détail par match</h4>
+            <div className="overflow-x-auto max-h-64 border border-slate-700 rounded-lg">
+                <table className="w-full text-xs text-slate-300">
+                    <thead className="bg-slate-800 sticky top-0">
+                        <tr>
+                            <th className="p-2 text-left">Adversaire</th>
+                            <th className="p-2 text-center">Score</th>
+                            <th className="p-2 text-center">ORtg</th>
+                            <th className="p-2 text-center">DRtg</th>
+                            <th className="p-2 text-center">Net</th>
+                            <th className="p-2 text-center">AST</th>
+                            <th className="p-2 text-center">BP</th>
+                            <th className="p-2 text-center">3P%</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-700">
+                        {teamTrendsData.data.map((d, i) => (
+                            <tr key={i} className={d.isWin ? 'bg-green-900/10' : 'bg-red-900/10'}>
+                                <td className="p-2 font-bold text-white">{d.opponent}</td>
+                                <td className="p-2 text-center">
+                                    <span className="text-green-400">{d.score}</span>
+                                    <span className="text-slate-500"> - </span>
+                                    <span className="text-red-400">{d.conceded}</span>
+                                </td>
+                                <td className="p-2 text-center text-purple-400">{d.ORtg}</td>
+                                <td className="p-2 text-center text-red-400">{d.DRtg}</td>
+                                <td className={`p-2 text-center font-bold ${d.NetRtg >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                    {d.NetRtg > 0 ? '+' : ''}{d.NetRtg}
+                                </td>
+                                <td className="p-2 text-center">{d.ast}</td>
+                                <td className="p-2 text-center text-red-400">{d.tov}</td>
+                                <td className="p-2 text-center">{d.threePct}%</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</Modal>
             
             <Modal isOpen={showHeatmap} onClose={() => setShowHeatmap(false)} title={<><Icon path={Icons.Target} /> Heatmap Performance</>}>
                 <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-slate-400 text-xs uppercase"><th className="p-2 text-left sticky left-0 bg-slate-800">Joueur</th>{heatmapData.categories.map(c => <th key={c.key} className="p-2 text-center">{c.label}</th>)}</tr></thead><tbody>{heatmapData.players.map(p => (<tr key={p.info.id} className="border-t border-slate-700"><td className="p-2 font-bold text-white sticky left-0 bg-slate-800">{p.info.name}</td>{heatmapData.categories.map(cat => { const val = parseFloat(p.avg[cat.key])||0; const min = heatmapData.minValues[cat.key], max = heatmapData.maxValues[cat.key], range = max-min||1; const intensity = cat.inverse ? 1-((val-min)/range) : (val-min)/range; return <td key={cat.key} className="p-2 text-center font-bold text-white" style={{backgroundColor:`rgba(${cat.inverse?'59, 130, 246':'249, 115, 22'}, ${intensity*0.8})`}}>{p.avg[cat.key]}</td> })}</tr>))}</tbody></table></div>
