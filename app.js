@@ -1083,8 +1083,7 @@ function ImportReviewModal({ importData, currentPlayers, phases, onConfirm, onCa
         </div>
     );
 }
-
-// --- MODALE DÉTAILS MATCH (Responsive & Complet) ---
+// --- MODALE DÉTAILS MATCH (Responsive & Complet avec PBP) ---
 function GameDetailsModal({ game, isOpen, onClose, players }) {
     if (!game) return null;
     const [viewMode, setViewMode] = useState('advanced');
@@ -1116,18 +1115,12 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
             const MP = s.minutes||0; if(MP===0) return null;
             const FGM=(s.fgm||0)+(s.threePM||0); const FGA=(s.fga||0)+(s.threePA||0);
             
-            // Stats Basiques
             const eFG = FGA>0 ? ((FGM + 0.5*(s.threePM||0))/FGA)*100 : 0;
             const TS = (FGA + 0.44*(s.fta||0))>0 ? ((s.pts||0)/(2*(FGA + 0.44*(s.fta||0))))*100 : 0;
             
-            // Estimation PIE Rapide
             const gamePIEDenom = (T_PTS + O_PTS) + (T_FGM + O_FGM) + (T_FTM + O_FTM) - (T_FGA + O_FGA) - (T_FTA + O_FTA) + (T_DRB + O_DRB) + (0.5 * (T_ORB + O_ORB)) + (T_AST + (opp.ast||0)) + (T_STL + 0) + (0.5 * (T_BLK + (opp.blk||0))) - (T_PF + (opp.fouls||0)) - (T_TOV + O_TOV);
             const playerPIENum = (s.pts||0) + FGM + (s.ftm||0) - FGA - (s.fta||0) + (s.dreb||0) + (0.5 * (s.oreb||0)) + (s.ast||0) + (s.stl||0) + (0.5 * (s.blk||0)) - (s.pf||0) - (s.tov||0);
             const pie = gamePIEDenom !== 0 ? (playerPIENum / gamePIEDenom) * 100 : 0;
-
-            // Estimation ORtg/DRtg Individuel (Simplifié pour la modale match)
-            // Note: Le calcul complet Dean Oliver est dans GlobalStats, ici on affiche une estimation
-            const ORtg_Est = Team_Poss > 0 && MP > 0 ? (s.pts / (Team_Poss * (MP/T_MP))) * 100 : 0; 
 
             const player = players.find(p => p.id === parseInt(pid));
             return {
@@ -1135,8 +1128,6 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
                 pts: s.pts||0, ast: s.ast||0, reb: (s.oreb||0)+(s.dreb||0), stl: s.stl||0, blk: s.blk||0, tov: s.tov||0, pf: s.pf||0,
                 fgm: FGM, fga: FGA, threePM: s.threePM||0, threePA: s.threePA||0, ftm: s.ftm||0, fta: s.fta||0, oreb: s.oreb||0, dreb: s.dreb||0,
                 plusMinus: s.plusMinus||0, eFG: eFG.toFixed(1), TS: TS.toFixed(1), PIE: pie.toFixed(1),
-                // Pour la modale match, on peut utiliser des placeholders ou l'estimation simplifiée
-                // Le vrai calcul complet est lourd, voir GlobalStats pour la version saison
             };
         }).filter(p => p!==null);
 
@@ -1150,7 +1141,7 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={`Vs ${game.opponent}`} size="max-w-6xl">
             <div className="space-y-4 md:space-y-6">
-                {/* Score Header : Passe en colonne sur mobile, en ligne sur PC */}
+                {/* Score Header */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4">
                     <div className="lg:col-span-2 bg-slate-900 p-3 rounded-lg flex justify-between items-center border border-slate-700 relative overflow-hidden shadow-inner">
                         <div className="text-center z-10 w-1/3">
@@ -1165,11 +1156,10 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
                             <div className="text-[10px] md:text-xs text-slate-400 uppercase tracking-widest">Eux</div>
                             <div className="text-3xl md:text-5xl font-black text-red-400 leading-none mt-1">{game.awayScore}</div>
                         </div>
-                        {/* Barre décorative dégradée en haut */}
                         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-500 via-transparent to-red-500 opacity-50"></div>
                     </div>
                     
-                    {/* Stats Équipe : Grille 2x2 compacte */}
+                    {/* Stats Équipe */}
                     <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-600/50 flex flex-col justify-center">
                         <div className="text-[10px] text-slate-400 uppercase mb-2 text-center border-b border-slate-700 pb-1 font-semibold">Efficacité Collective</div>
                         <div className="grid grid-cols-2 gap-y-2 gap-x-4">
@@ -1265,11 +1255,139 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
                         </table>
                     </div>
                 </div>
+
+                {/* PLAY-BY-PLAY */}
+                {game.actions && game.actions.length > 0 ? (
+                    <div className="mt-6">
+                        <div className="flex items-center justify-between mb-3">
+                            <h4 className="text-sm text-orange-400 uppercase font-bold flex items-center gap-2">
+                                <span>📝</span> Play-by-Play
+                            </h4>
+                            <span className="text-xs text-slate-500">{game.actions.length} actions</span>
+                        </div>
+                        <div className="max-h-80 overflow-y-auto bg-slate-900 rounded-lg border border-slate-700">
+                            {game.actions.slice().reverse().map((a, i) => {
+                                const isHome = a.pid < 1000;
+                                const timeMin = Math.floor((a.time || 0) / 60);
+                                const timeSec = (a.time || 0) % 60;
+                                const timeStr = `Q${a.q || 1} ${timeMin}:${timeSec.toString().padStart(2, '0')}`;
+                                
+                                // Récupérer les infos du joueur
+                                let playerNum = '?';
+                                let playerName = '';
+                                
+                                if (isHome) {
+                                    const player = players.find(p => p.id === a.pid);
+                                    if (player) {
+                                        playerNum = player.number;
+                                        playerName = player.name;
+                                    }
+                                } else {
+                                    if (game.opponentPlayerStats && game.opponentPlayerStats[a.pid]) {
+                                        const oppPlayer = game.opponentPlayerStats[a.pid];
+                                        playerNum = oppPlayer.number || (a.pid - 1000);
+                                        playerName = oppPlayer.name || `Adv ${playerNum}`;
+                                    } else {
+                                        playerNum = a.pid - 1000;
+                                        playerName = `Adversaire`;
+                                    }
+                                }
+                                
+                                // Icône et description selon le type
+                                let icon = '📋';
+                                let desc = a.type;
+                                let color = 'text-slate-300';
+                                
+                                if (a.type === 'SHOT') {
+                                    icon = a.made ? '✅' : '❌';
+                                    desc = `Tir ${a.val}pts ${a.made ? 'réussi' : 'raté'}`;
+                                    if (a.astId) {
+                                        let passerName = '';
+                                        let passerNum = '';
+                                        if (a.astId < 1000) {
+                                            const passer = players.find(p => p.id === a.astId);
+                                            if (passer) {
+                                                passerNum = passer.number;
+                                                passerName = passer.name;
+                                            }
+                                        }
+                                        desc += passerName ? ` (passe #${passerNum} ${passerName})` : ` (passe #${a.astId})`;
+                                    }
+                                    color = a.made ? 'text-green-400' : 'text-red-400';
+                                }
+                                else if (a.type === 'OREB') { icon = '🔄'; desc = 'Rebond offensif'; color = 'text-purple-400'; }
+                                else if (a.type === 'DREB') { icon = '🛡️'; desc = 'Rebond défensif'; color = 'text-blue-400'; }
+                                else if (a.type === 'STL') { icon = '⚡'; desc = 'Interception'; color = 'text-yellow-400'; }
+                                else if (a.type === 'BLK') { icon = '✋'; desc = 'Contre'; color = 'text-orange-400'; }
+                                else if (a.type === 'TOV') { icon = '💨'; desc = 'Perte de balle'; color = 'text-red-400'; }
+                                else if (a.type === 'FOUL') {
+                                    icon = '🚨';
+                                    let victimInfo = '';
+                                    if (a.victim) {
+                                        if (a.victim < 1000) {
+                                            const victim = players.find(p => p.id === a.victim);
+                                            if (victim) victimInfo = `sur #${victim.number} ${victim.name}`;
+                                        } else {
+                                            if (game.opponentPlayerStats && game.opponentPlayerStats[a.victim]) {
+                                                const v = game.opponentPlayerStats[a.victim];
+                                                victimInfo = `sur #${v.number || (a.victim - 1000)} ${v.name || 'Adv'}`;
+                                            } else {
+                                                victimInfo = `sur #${a.victim - 1000}`;
+                                            }
+                                        }
+                                    }
+                                    desc = `Faute ${victimInfo}`;
+                                    color = 'text-red-400';
+                                }
+                                else if (a.type === 'FT') {
+                                    icon = '🎯';
+                                    desc = `Lancers francs: ${a.ftMade || 0}/${a.ftAtt || 0}`;
+                                    color = a.ftMade > 0 ? 'text-green-400' : 'text-slate-400';
+                                }
+                                else if (a.type === 'SUB') {
+                                    icon = '🔁';
+                                    let inPlayerInfo = '';
+                                    if (a.inId < 1000) {
+                                        const inPlayer = players.find(p => p.id === a.inId);
+                                        if (inPlayer) inPlayerInfo = `#${inPlayer.number} ${inPlayer.name}`;
+                                    } else {
+                                        if (game.opponentPlayerStats && game.opponentPlayerStats[a.inId]) {
+                                            const inp = game.opponentPlayerStats[a.inId];
+                                            inPlayerInfo = `#${inp.number || (a.inId - 1000)} ${inp.name || 'Adv'}`;
+                                        } else {
+                                            inPlayerInfo = `#${a.inId - 1000}`;
+                                        }
+                                    }
+                                    desc = `Sort → ${inPlayerInfo} entre`;
+                                    color = 'text-cyan-400';
+                                }
+                                
+                                return (
+                                    <div 
+                                        key={i} 
+                                        className={`flex items-center gap-3 px-3 py-2 border-b border-slate-800 text-xs hover:bg-slate-800/50 ${isHome ? 'border-l-2 border-l-blue-500' : 'border-l-2 border-l-red-500'}`}
+                                    >
+                                        <span className="text-slate-500 font-mono w-16 shrink-0 text-[10px]">{timeStr}</span>
+                                        <span className="text-base w-6 text-center">{icon}</span>
+                                        <span className={`font-bold shrink-0 ${isHome ? 'text-blue-400' : 'text-red-400'}`}>
+                                            #{playerNum} <span className="font-normal text-slate-300">{playerName}</span>
+                                        </span>
+                                        <span className={`flex-1 ${color} text-right`}>{desc}</span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                ) : (
+                    <div className="mt-6 text-center text-slate-500 text-sm py-6 bg-slate-900/50 rounded-lg border border-slate-700/50">
+                        <span className="text-2xl block mb-2">📊</span>
+                        Match importé sans play-by-play détaillé
+                    </div>
+                )}
             </div>
         </Modal>
     );
 }
-
 // --- HISTORY (Trié + Responsive) ---
 function History({ games, players, setGames, phases, onEditGame, onImportClick, onMultiImport, isAdmin }) {
     const [selectedGame, setSelectedGame] = useState(null);
@@ -1282,12 +1400,15 @@ function History({ games, players, setGames, phases, onEditGame, onImportClick, 
     return (
         <div className="space-y-4 pb-20 md:pb-0">
             {isAdmin && (
-                <div className="flex justify-end gap-2 no-print">
+                <div className="flex justify-end gap-2 no-print flex-wrap">
+                    <a href="live.html" className="font-semibold rounded transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer bg-green-600 hover:bg-green-700 text-white px-4 py-2 text-sm">
+                        <Icon path={Icons.Play} /> Nouveau Match
+                    </a>
                     <Button variant="secondary" onClick={onMultiImport}><Icon path={Icons.Upload} /> Multi-Import</Button>
                     <Button variant="primary" onClick={onImportClick}><Icon path={Icons.Upload} /> Importer</Button>
                 </div>
             )}
-            
+                        
             {sortedGames.length === 0 && <div className="text-center text-slate-500 py-10">Aucun match enregistré</div>}
             
             {sortedGames.map(g => (
@@ -1403,7 +1524,7 @@ function LoginModal({ isOpen, onLogin, onClose }) {
 function App() {
     const [isAdmin, setIsAdmin] = useState(localStorage.getItem('statchamp_admin') === 'true');
     const [showLogin, setShowLogin] = useState(false);
-    const [view, setView] = useState(isAdmin ? "live" : "global_stats");
+    const [view, setView] = useState("global_stats");
     const [players, setPlayers] = useState([]);
     const [games, setGames] = useState([]);
     const [phases, setPhases] = useState(DEFAULT_PHASES);
@@ -1481,9 +1602,8 @@ function App() {
             <nav className="bg-slate-900 border-r border-slate-800 w-full md:w-20 flex md:flex-col items-center justify-between md:pt-6 p-2 shrink-0" style={{ zIndex: 40 }}>
                 <div className="flex md:flex-col items-center gap-2 md:gap-4 w-full justify-evenly md:justify-start">
                     <div className="mb-0 md:mb-4 p-2 bg-orange-600 rounded-xl text-white font-black text-xl cursor-default">BP</div>
-                    {isAdmin && <button onClick={() => setView("live")} className={`p-3 rounded-xl transition-all ${view === "live" ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`} title="Live"><Icon path={Icons.Play} /></button>}
                     <button onClick={() => setView("global_stats")} className={`p-3 rounded-xl transition-all ${view === "global_stats" ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`} title="Stats"><Icon path={Icons.Chart} /></button>
-                    <button onClick={() => setView("history")} className={`p-3 rounded-xl transition-all ${view === "history" ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`} title="Historique"><Icon path={Icons.Clipboard} /></button>
+                    {isAdmin && <button onClick={() => window.location.href = 'live.html'} className="p-3 rounded-xl transition-all text-slate-500 hover:text-orange-500 hover:bg-slate-800" title="Live Tracker V5.4"><Icon path={Icons.Play} /></button>}                 <button onClick={() => setView("history")} className={`p-3 rounded-xl transition-all ${view === "history" ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`} title="Historique"><Icon path={Icons.Clipboard} /></button>
                     {isAdmin && <button onClick={() => setView("settings")} className={`p-3 rounded-xl transition-all ${view === "settings" ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`} title="Config"><Icon path={Icons.Settings} /></button>}
                 </div>
                 <div className="mt-auto hidden md:block pb-4">
@@ -1502,7 +1622,6 @@ function App() {
                     </div>
                 </header>
                 <div className="flex-1 p-4 overflow-y-auto" style={{ zIndex: 10 }}>
-                    {view === 'live' && isAdmin && <LiveTracker players={players} onSaveGame={handleSaveGame} initialGame={activeGame} phases={phases} selectedPhase={phases[0]?.id} />}
                     {view === 'global_stats' && <GlobalStats players={players} games={games} phases={phases} isAdmin={isAdmin}/>}
                     {view === 'history' && <History games={games} players={players} setGames={setGames} phases={phases} isAdmin={isAdmin} onEditGame={(g) => { setActiveGame(g); setView('live'); }} onImportClick={() => document.getElementById('html-upload').click()} onMultiImport={() => document.getElementById('multi-upload').click()} />}
                     {view === 'settings' && isAdmin && <Settings players={players} onUpdatePlayers={handleSettingsUpdate} phases={phases} onUpdatePhases={handleUpdatePhases} firebaseConfig={firebaseConfig} setFirebaseConfig={setFirebaseConfig} />}
