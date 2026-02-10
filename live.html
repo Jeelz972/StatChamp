@@ -223,7 +223,7 @@ canvas { max-width: 100%; max-height: 100%; cursor: crosshair; }
 .overlay-msg.show { opacity: 1; }
 
 .court-popup { 
-    position: absolute; background: rgba(15, 23, 42, 0.95); 
+    position: fixed; top: 50%; left: 50%; background: rgba(15, 23, 42, 0.95); 
     border: 1px solid var(--accent); 
     border-radius: 12px; padding: 10px; display: none; 
     flex-direction: column; gap: 8px; z-index: 150; 
@@ -412,6 +412,28 @@ canvas { max-width: 100%; max-height: 100%; cursor: crosshair; }
 .stats-summary-item { background: rgba(255,255,255,0.03); padding: 12px; border-radius: 10px; text-align: center; border: 1px solid var(--border); }
 .stats-summary-value { font-size: 1.6rem; font-weight: 800; color: var(--accent); margin-bottom: 4px; }
 .stats-summary-label { font-size: 0.6rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* PLAYER PICKER OVERLAY — centré plein écran */
+.player-picker { position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(4px); z-index: 300; display: none; align-items: center; justify-content: center; padding: 20px; }
+.player-picker.show { display: flex; }
+.player-picker-box { background: var(--bg-card); border-radius: 14px; border: 1px solid var(--border); padding: 16px; max-width: 420px; width: 100%; }
+.player-picker-title { text-align: center; font-weight: 700; margin-bottom: 12px; font-size: 0.95rem; color: var(--accent); }
+.player-picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 10px; }
+.player-picker-btn { padding: 14px 8px; border-radius: 10px; border: 2px solid var(--border); background: var(--bg-elevated); color: white; font-weight: 700; cursor: pointer; text-align: center; transition: all 0.15s; }
+.player-picker-btn:active { transform: scale(0.95); }
+.player-picker-btn:hover { border-color: var(--accent); background: rgba(249,115,22,0.15); }
+.player-picker-btn .pp-num { font-size: 1.4rem; display: block; font-weight: 800; }
+.player-picker-btn .pp-name { font-size: 0.55rem; color: var(--text-secondary); display: block; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.player-picker-cancel { display: block; width: 100%; margin-top: 12px; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text-muted); cursor: pointer; font-weight: 600; text-align: center; }
+
+/* TIMER EDIT BUTTON */
+.timer-edit-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.75rem; padding: 2px 6px; opacity: 0.6; transition: 0.2s; }
+.timer-edit-btn:hover { color: var(--accent); opacity: 1; }
+
+/* EXPORT CSV BUTTON (PBP header) */
+.pbp-export-btn { background: none; border: 1px solid var(--border); border-radius: 4px; color: var(--text-muted); font-size: 0.6rem; padding: 2px 6px; cursor: pointer; transition: 0.2s; }
+.pbp-export-btn:hover { color: var(--accent); border-color: var(--accent); }
+
 </style>
 </head>
 <body>
@@ -424,6 +446,7 @@ canvas { max-width: 100%; max-height: 100%; cursor: crosshair; }
             <div class="setup-section"><h3>☁️ Firebase</h3><div class="firebase-status"><div class="status-dot" id="fbDot"></div><span id="fbStatus">Vérification...</span></div></div>
             <div class="setup-section"><h3>🆚 Adversaire</h3><input type="text" id="oppName" class="inp" placeholder="Nom équipe adverse"></div>
             <div class="setup-section"><h3>📍 Lieu</h3><div class="toggle-btns"><button class="toggle-btn active" id="btnHome" onclick="Setup.setLoc('home')">🏠 Dom</button><button class="toggle-btn" id="btnAway" onclick="Setup.setLoc('away')">✈️ Ext</button></div></div>
+            <div class="setup-section"><h3>📅 Date de la rencontre</h3><input type="date" id="matchDate" class="inp"></div>
             <div class="setup-section"><h3>📅 Phase</h3><div class="phase-btns" id="phaseSelect"></div></div>
             <div class="setup-section"><h3>👥 Mon Effectif</h3><div id="rosterList" style="max-height:160px;overflow-y:auto;">Chargement...</div></div>
             <div class="setup-section"><h3>👥 Adversaire</h3><div id="oppRosterList"></div><button class="add-btn" onclick="Setup.addOpp()">+ Ajouter</button></div>
@@ -441,7 +464,9 @@ canvas { max-width: 100%; max-height: 100%; cursor: crosshair; }
                 <div class="score-display"><span class="score home" id="scH">0</span><span style="color:var(--text-muted)">-</span><span class="score away" id="scA">0</span></div>
                 <div class="game-meta">
                     <span class="q-badge" id="qTag" onclick="GameEngine.showQuarterModal()">Q1</span>
-                    <span class="timer" id="timerBtn" onclick="GameEngine.toggleTimer()">10:00</span>
+<span class="timer" id="timerBtn" onclick="GameEngine.toggleTimer()">10:00</span>
+<button class="timer-edit-btn" onclick="GameEngine.showTimerEdit()" title="Modifier chrono">✏️</button>
+
                     <span class="context-badge attack" id="contextBadge" onclick="ContextManager.toggle()">🏀 ATT</span>
                     <button class="btn-subs" onclick="SubsModal.show()">🔁 Chgmts</button>
                     <div class="sync-indicator"><div class="sync-dot" id="syncDot"></div><span id="syncStatus">OK</span></div>
@@ -485,8 +510,9 @@ canvas { max-width: 100%; max-height: 100%; cursor: crosshair; }
                         <button class="btn-act c-purple" id="btnOREB" onclick="GameEngine.action('OREB')"><span class="icon">🔄</span>RebO</button>
                         <button class="btn-act c-purple" id="btnDREB" onclick="GameEngine.action('DREB')"><span class="icon">🛡️</span>RebD</button>
                         <button class="btn-act c-orange" onclick="GameEngine.action('STL')"><span class="icon">⚡</span>Int</button>
-                        <button class="btn-act c-red" onclick="GameEngine.startFoul()"><span class="icon">🚨</span>Faute</button>
-                        <button class="btn-act c-orange" onclick="GameEngine.action('TOV')"><span class="icon">💨</span>BP</button>
+                        <button class="btn-act c-red" onclick="GameEngine.startFoul('personal')"><span class="icon">🚨</span>Faute</button>
+                        <button class="btn-act c-yellow" onclick="GameEngine.startFoul('technical')"><span class="icon">🟡</span>Tech</button>
+                        <button class="btn-act c-red" onclick="GameEngine.startFoul('unsportsmanlike')" style="background:linear-gradient(135deg,#dc2626,#7f1d1d);"><span class="icon">🟥</span>Anti</button> <button class="btn-act c-orange" onclick="GameEngine.action('TOV')"><span class="icon">💨</span>BP</button>
                         <button class="btn-act c-blue" onclick="GameEngine.startBlock()"><span class="icon">✋</span>Ctr</button>
                         <button class="btn-act c-gray" onclick="GameEngine.undo()"><span class="icon">↩️</span>Undo</button>
                         <button class="btn-act c-blue" onclick="StatsModal.show()"><span class="icon">📊</span>Stats</button>
@@ -495,7 +521,13 @@ canvas { max-width: 100%; max-height: 100%; cursor: crosshair; }
                 </div>
             </div>
             <div class="pbp-panel">
-                <div class="pbp-header"><span class="pbp-title">📝 PBP</span><span class="pbp-count" id="pbpCount">0</span></div>
+<div class="pbp-header">
+    <span class="pbp-title">📝 Play-by-Play</span>
+    <div style="display:flex;gap:6px;align-items:center;">
+        <button class="pbp-export-btn" onclick="GameEngine.exportCSV()" title="Export CSV">📋 CSV</button>
+        <span class="pbp-count" id="pbpCount">0 actions</span>
+    </div>
+</div>
                 <div class="pbp-list" id="pbpList"></div>
             </div>
         </div>
@@ -553,6 +585,14 @@ canvas { max-width: 100%; max-height: 100%; cursor: crosshair; }
             <div class="modal-grid" id="mActions"></div>
         </div>
     </div>
+
+<div id="playerPicker" class="player-picker" onclick="GameEngine.closePlayerPicker()">
+    <div class="player-picker-box" onclick="event.stopPropagation()">
+        <div class="player-picker-title" id="pickerTitle">Qui tire ?</div>
+        <div class="player-picker-grid" id="pickerGrid"></div>
+        <button class="player-picker-cancel" onclick="GameEngine.closePlayerPicker()">Annuler</button>
+    </div>
+</div>
 
     <div id="conflictAlert" class="conflict-alert">⚠️ Trop rapide !</div>
     <div id="toastBox"></div>
@@ -760,22 +800,43 @@ const CourtFirst = {
 const FoulPanel = {
     ctx: {},
     show(foulerId, victimId) {
-        this.ctx = { foulerId, victimId, foulType: null, ftResults: [], ftCount: 0, currentFt: 0 };
+        const presetType = State.ui.ctx.foulType || null;
+        this.ctx = { foulerId, victimId, foulType: presetType, ftResults: [], ftCount: 0, currentFt: 0 };
         const fouler = State.players[foulerId], victim = State.players[victimId];
-        document.getElementById('foulTitle').textContent = `Faute #${fouler.number} sur #${victim.number}`;
-        document.getElementById('foulTypes').innerHTML = `
-            <button class="foul-type-btn" onclick="FoulPanel.selectType('normal')">🏃 Normale</button>
-            <button class="foul-type-btn shooting" onclick="FoulPanel.selectType('shooting')">🎯 Sur Tir</button>
-            <button class="foul-type-btn tech" onclick="FoulPanel.selectType('technical')">📋 Technique</button>
-            <button class="foul-type-btn unsport" onclick="FoulPanel.selectType('unsportsmanlike')">⚠️ Antisportive</button>
-            <button class="foul-type-btn offensive" onclick="FoulPanel.selectType('offensive')">🔄 Offensive</button>
-        `;
-        document.getElementById('foulTypes').style.display = 'flex';
-        document.getElementById('ftSequence').innerHTML = '';
-        document.getElementById('foulPanel').classList.add('show');
+        const typeLabel = presetType === 'technical' ? '🟡 Tech' : presetType === 'unsportsmanlike' ? '🟥 Anti' : null;
+        if (presetType && presetType !== 'personal') {
+            // Type déjà choisi via bouton dédié → skip le choix, aller direct au flow
+            document.getElementById('foulTitle').textContent = `${typeLabel} #${fouler.number} sur #${victim.number}`;
+            document.getElementById('foulTypes').style.display = 'flex';
+            // Tech = 1 LF + possession, Anti = 2 LF + possession
+            if (presetType === 'technical') {
+                document.getElementById('foulTypes').innerHTML = `
+                    <button class="foul-type-btn" onclick="FoulPanel.selectType('technical')">🎯 1 Lancer + Possession</button>
+                `;
+            } else {
+                document.getElementById('foulTypes').innerHTML = `
+                    <button class="foul-type-btn shooting" onclick="FoulPanel.selectType('unsportsmanlike')">🎯 2 Lancers + Possession</button>
+                `;
+            }
+            document.getElementById('ftSequence').innerHTML = '';
+            document.getElementById('foulPanel').classList.add('show');
+        } else {
+            // Flow classique : choix du type
+            document.getElementById('foulTitle').textContent = `Faute #${fouler.number} sur #${victim.number}`;
+            document.getElementById('foulTypes').innerHTML = `
+                <button class="foul-type-btn" onclick="FoulPanel.selectType('normal')">🏃 Normale</button>
+                <button class="foul-type-btn shooting" onclick="FoulPanel.selectType('shooting')">🎯 Sur Tir</button>
+                <button class="foul-type-btn tech" onclick="FoulPanel.selectType('technical')">📋 Technique</button>
+                <button class="foul-type-btn unsport" onclick="FoulPanel.selectType('unsportsmanlike')">⚠️ Antisportive</button>
+                <button class="foul-type-btn offensive" onclick="FoulPanel.selectType('offensive')">🔄 Offensive</button>
+            `;
+            document.getElementById('foulTypes').style.display = 'flex';
+            document.getElementById('ftSequence').innerHTML = '';
+            document.getElementById('foulPanel').classList.add('show');
+        }
     },
     selectType(type) {
-        this.ctx.foulType = type;
+        if (!this.ctx.foulType) this.ctx.foulType = type;
         document.getElementById('foulTypes').style.display = 'none';
         
         if (type === 'technical') { this.ctx.ftCount = 1; this.showFtSequence(); }
@@ -820,7 +881,7 @@ const FoulPanel = {
         else if (foulType === 'unsportsmanlike') State.specialFouls.unsportsmanlike.push({ playerId: foulerId, quarter: State.match.quarter, time: State.match.time, victimId });
         else if (foulType === 'offensive') State.specialFouls.offensive.push({ playerId: foulerId, quarter: State.match.quarter, time: State.match.time });
         
-        GameEngine.log('FOUL', foulerId, { victim: victimId, foulType });
+        GameEngine.log('FOUL', this.ctx.foulerId, { victim: this.ctx.victimId, foulType: this.ctx.foulType || 'personal' });
         
         if (and1) {
             const x = victim.team === 'home' ? 26.425 : 1.575;
@@ -932,7 +993,7 @@ const StatsModal = {
        
 
         // Calculs équipe
-        let teamStats = { pts: 0, fgm: 0, fga: 0, fg3m: 0, fg3a: 0, ftm: 0, fta: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, tov: 0, fouls: 0 };
+        let teamStats = { pts: 0, fgm: 0, fga: 0, fg3m: 0, fg3a: 0, ftm: 0, fta: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, blkAgainst: 0,tov: 0, fouls: 0, foulDrawn:0 };
         players.forEach(p => {
             teamStats.pts += p.stats.pts;
             teamStats.fgm += p.stats.fgm + p.stats.fg3m;
@@ -1098,6 +1159,7 @@ const Setup = {
         if (db && firebaseRoster.length > 0) { dot.classList.add('ok'); status.textContent = `✅ ${firebaseRoster.length} joueurs`; }
         else { dot.classList.add('err'); status.textContent = '❌ Erreur'; }
         document.getElementById('phaseSelect').innerHTML = firebasePhases.map((p, i) => `<button class="phase-btn ${i === 0 ? 'active' : ''}" onclick="Setup.setPhase('${p.id}', this)">${p.name}</button>`).join('');
+        document.getElementById('matchDate').value = new Date().toISOString().split('T')[0];
         State.match.phase = firebasePhases[0]?.id || 'phase1';
         this.renderRoster(); this.renderOpp(); this.checkResume();
     },
@@ -1130,6 +1192,13 @@ const Setup = {
     setPhase(id, btn) { document.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); State.match.phase = id; },
     setLoc(loc) { State.match.isHome = loc === 'home'; document.getElementById('btnHome').classList.toggle('active', loc === 'home'); document.getElementById('btnAway').classList.toggle('active', loc === 'away'); },
     startMatch() {
+    const customDate = document.getElementById('matchDate').value;
+    State.match.id = Date.now();
+    // Formatage de la date saisie (AAAA-MM-JJ -> JJ/MM/AAAA)
+    const dateParts = customDate.split('-');
+    State.match.date = dateParts.length === 3 ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}` : new Date().toLocaleDateString('fr-FR');
+    
+    State.match.opponent = document.getElementById('oppName').value || 'Adversaire';
         State.match.id = Date.now(); State.match.date = new Date().toLocaleDateString('fr-FR');
         State.match.opponent = document.getElementById('oppName').value || 'Adversaire';
         document.getElementById('lblAway').textContent = State.match.opponent;
@@ -1207,12 +1276,59 @@ const GameEngine = {
         if (!State.ui.sel) { PendingAction.set(type); return; }
         if (!this.checkConflict()) return;
         const p = State.players[State.ui.sel];
+        if (type === 'TOV') {
+            p.stats.tov++;
+            this.log('TOV', State.ui.sel);
+            UI.toast('Perte de balle');
+            this.askForConsequence('STL', p.team === 'home' ? 'away' : 'home');
+            UI.renderRoster();
+            return;
+        }
+        
+        if (type === 'STL') {
+            p.stats.stl++;
+            this.log('STL', State.ui.sel);
+            UI.toast('Interception');
+            this.askForConsequence('TOV', p.team === 'home' ? 'away' : 'home');
+            UI.renderRoster();
+            return;
+        }
         const map = { OREB: 'oreb', DREB: 'dreb', STL: 'stl', TOV: 'tov' };
         if (map[type]) { p.stats[map[type]]++; this.log(type, State.ui.sel); ContextManager.update(type, p.team); UI.renderRoster(); UI.renderPBP(); TimelineFloat.render(); UI.toast(type); }
     },
-    
-    startFoul() { if (State.match.running) { this.toggleTimer(); UI.toast('⏸️ Timer stoppé'); } State.ui.pending = 'FOUL_WHO'; State.ui.ctx = {}; UI.toast('Qui fait la faute ?'); },
-    
+    askForConsequence(type, team) {
+        const teamPlayers = Object.values(State.players).filter(p => p.team === team);
+        const title = type === 'STL' ? 'Qui a intercepté ?' : 'Qui a perdu la balle ?';
+        
+        let html = `<div class="player-select-grid">`;
+        teamPlayers.forEach(p => {
+            const onCourt = State.onCourt[team].includes(p.id) ? 'oncourt' : '';
+            html += `<div class="player-select-btn ${team} ${onCourt}" onclick="GameEngine.confirmChainAction('${type}', ${p.id})">
+                        <div class="num">${p.number}</div>
+                        <div class="name">${p.name}</div>
+                    </div>`;
+        });
+        html += `</div>`;
+        
+        UI.showModal(title, html, [{ text: 'Passer', action: 'UI.closeModal()', class: '' }], 'g-1');
+    },
+
+    confirmChainAction(type, pid) {
+        const p = State.players[pid];
+        if (type === 'STL') p.stats.stl++;
+        else p.stats.tov++;
+        
+        this.log(type, pid);
+        UI.closeModal();
+        UI.renderRoster();
+        UI.toast(type + ' #' + p.number);
+    },
+    startFoul(foulType = 'personal') {
+        if (State.match.running) { this.toggleTimer(); UI.toast('⏸️ Timer stoppé'); }
+        State.ui.pending = 'FOUL_WHO';
+        State.ui.ctx = { foulType };
+        UI.toast(foulType === 'technical' ? 'Qui fait la tech ?' : foulType === 'unsportsmanlike' ? 'Qui fait l\'anti ?' : 'Qui fait la faute ?');
+    },
     startBlock() { UI.toast('Qui a contré ?'); State.ui.pending = 'BLK_WHO'; State.ui.ctx = {}; },
     
     finishBlock(x, y, val) {
@@ -1229,19 +1345,144 @@ const GameEngine = {
     
     undo() { if (!State.actions.length) return UI.toast('Rien', 'error'); State.actions.pop(); this.recalc(); UI.renderRoster(); UI.updateHeader(); UI.renderPBP(); TimelineFloat.render(); Court.draw(); WormChart.draw(); UI.toast('Annulé'); },
     
-    recalc() {
-        Object.values(State.players).forEach(p => { p.stats = { pts: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, tov: 0, fouls: 0, foulDrawn: 0, fgm: 0, fga: 0, fg3m: 0, fg3a: 0, ftm: 0, fta: 0, min: p.stats.min, plusMinus: 0, blkAgainst: 0 }; });
-        State.teamFouls = { home: [0,0,0,0], away: [0,0,0,0] }; State.scoreHistory = [{ time: 600, q: 1, home: 0, away: 0 }];
+       recalc() {
+        Object.values(State.players).forEach(p => {
+            p.stats = { pts: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, tov: 0, fouls: 0, foulDrawn: 0, fgm: 0, fga: 0, fg3m: 0, fg3a: 0, ftm: 0, fta: 0, min: p.stats.min, plusMinus: 0, blkAgainst: 0, shotChart: [] };
+        });
+        State.teamFouls = { home: [0,0,0,0], away: [0,0,0,0] };
+        State.scoreHistory = [{ time: 600, q: 1, home: 0, away: 0 }];
         State.actions.forEach(a => {
-            const p = State.players[a.pid]; if (!p) return;
-            if (a.type === 'SHOT') { if (a.val === 3) { p.stats.fg3a++; if (a.made) { p.stats.fg3m++; p.stats.pts += 3; } } else { p.stats.fga++; if (a.made) { p.stats.fgm++; p.stats.pts += a.val; } } if (a.astId && a.made && State.players[a.astId]) State.players[a.astId].stats.ast++; if (a.made && a.onCourt) { a.onCourt.forEach(id => { if (State.players[id]) State.players[id].stats.plusMinus += (State.players[id].team === p.team ? a.val : -a.val); }); const sc = this.getScoreFromActions(State.actions.indexOf(a)); State.scoreHistory.push({ time: a.time, q: a.q, ...sc }); } }
-            if (a.type === 'OREB') p.stats.oreb++; if (a.type === 'DREB') p.stats.dreb++; if (a.type === 'STL') p.stats.stl++;
-            if (a.type === 'BLK') { p.stats.blk++; if (a.victim && State.players[a.victim]) { State.players[a.victim].stats.blkAgainst++; if (a.val === 3) State.players[a.victim].stats.fg3a++; else State.players[a.victim].stats.fga++; } }
+            const p = State.players[a.pid];
+            if (!p) return;
+            if (a.type === 'SHOT') {
+                if (a.val === 3) { p.stats.fg3a++; if (a.made) { p.stats.fg3m++; p.stats.pts += 3; } }
+                else { p.stats.fga++; if (a.made) { p.stats.fgm++; p.stats.pts += a.val; } }
+                if (a.astId && a.made && State.players[a.astId]) State.players[a.astId].stats.ast++;
+                if (a.made && a.onCourt) {
+                    a.onCourt.forEach(id => {
+                        if (State.players[id]) State.players[id].stats.plusMinus += (State.players[id].team === p.team ? a.val : -a.val);
+                    });
+                    const sc = this.getScoreFromActions(State.actions.indexOf(a));
+                    State.scoreHistory.push({ time: a.time, q: a.q, ...sc });
+                }
+            }
+            if (a.type === 'OREB') p.stats.oreb++;
+            if (a.type === 'DREB') p.stats.dreb++;
+            if (a.type === 'STL') p.stats.stl++;
+            if (a.type === 'BLK') {
+                p.stats.blk++;
+                if (a.victim && State.players[a.victim]) {
+                    State.players[a.victim].stats.blkAgainst++;
+                    if (a.val === 3) State.players[a.victim].stats.fg3a++; else State.players[a.victim].stats.fga++;
+                }
+            }
             if (a.type === 'TOV') p.stats.tov++;
-            if (a.type === 'FOUL') { p.stats.fouls++; State.teamFouls[p.team][a.q - 1]++; if (a.victim && State.players[a.victim]) State.players[a.victim].stats.foulDrawn++; }
-            if (a.type === 'FT') { p.stats.ftm += a.ftMade || 0; p.stats.fta += a.ftAtt || 0; p.stats.pts += a.ftMade || 0; if (a.ftMade > 0 && a.onCourt) { a.onCourt.forEach(id => { if (State.players[id]) State.players[id].stats.plusMinus += (State.players[id].team === p.team ? a.ftMade : -a.ftMade); }); } }
+            if (a.type === 'FOUL') {
+                p.stats.fouls++;
+                State.teamFouls[p.team][a.q - 1]++;
+                if (a.victim && State.players[a.victim]) State.players[a.victim].stats.foulDrawn++;
+            }
+            if (a.type === 'FT') {
+                p.stats.ftm += a.ftMade || 0;
+                p.stats.fta += a.ftAtt || 0;
+                p.stats.pts += a.ftMade || 0;
+                if (a.ftMade > 0 && a.onCourt) {
+                    a.onCourt.forEach(id => {
+                        if (State.players[id]) State.players[id].stats.plusMinus += (State.players[id].team === p.team ? a.ftMade : -a.ftMade);
+                    });
+                    const sc = this.getScoreFromActions(State.actions.indexOf(a));
+                    State.scoreHistory.push({ time: a.time, q: a.q, ...sc });
+                }
+            }
         });
         UI.updateFoulsDisplay();
+    },
+            // === PATCH: Timer Edit ===
+    showTimerEdit() {
+        if (State.match.running) return UI.toast('Pausez le timer d\'abord', 'warning');
+        const m = Math.floor(State.match.time / 60);
+        const s = State.match.time % 60;
+        const html = `
+            <div style="text-align:center;margin-bottom:16px;">
+                <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:8px;">Temps actuel: ${m}:${s < 10 ? '0' + s : s}</div>
+                <div style="display:flex;gap:8px;justify-content:center;align-items:center;">
+                    <input type="number" id="editMin" class="inp" value="${m}" min="0" max="10" style="width:70px;text-align:center;font-size:1.2rem;">
+                    <span style="font-size:1.5rem;font-weight:800;">:</span>
+                    <input type="number" id="editSec" class="inp" value="${s}" min="0" max="59" style="width:70px;text-align:center;font-size:1.2rem;">
+                </div>
+            </div>
+        `;
+        UI.showModal('⏱️ Modifier Chrono', html, [
+            { text: 'Annuler', action: 'UI.closeModal()', class: '' },
+            { text: '✔ Appliquer', action: 'GameEngine.applyTimerChange()', class: 'prim' }
+        ], 'g-2');
+    },
+
+    applyTimerChange() {
+        const newMin = parseInt(document.getElementById('editMin').value) || 0;
+        const newSec = parseInt(document.getElementById('editSec').value) || 0;
+        const newTime = Math.max(0, Math.min(600, newMin * 60 + newSec));
+        const oldTime = State.match.time;
+        const delta = oldTime - newTime;
+        if (delta !== 0) {
+            [...State.onCourt.home, ...State.onCourt.away].forEach(id => {
+                if (State.players[id]) {
+                    State.players[id].stats.min += delta;
+                    if (State.players[id].stats.min < 0) State.players[id].stats.min = 0;
+                }
+            });
+        }
+        State.match.time = newTime;
+        UI.closeModal();
+        UI.updateHeader();
+        UI.renderRoster();
+        OfflineManager.save();
+        UI.toast(`Chrono → ${newMin}:${newSec < 10 ? '0' + newSec : newSec}`);
+    },
+
+    // === PATCH: Export CSV ===
+    exportCSV() {
+        if (!State.actions.length) return UI.toast('Aucune action', 'error');
+        const quarterDuration = 600;
+        const descMap = (a) => {
+            const p = State.players[a.pid];
+            const num = p ? `#${p.number}` : '#?';
+            switch (a.type) {
+                case 'SHOT':
+                    if (a.made) return `Tir ${a.val}pts ${num}`;
+                    return `Tir Rate ${a.val}pts ${num}`;
+                case 'OREB': return `Rebond Off ${num}`;
+                case 'DREB': return `Rebond Def ${num}`;
+                case 'STL': return `Interception ${num}`;
+                case 'BLK': return `Contre ${num}`;
+                case 'TOV': return `Ballon Perdu ${num}`;
+                case 'FOUL': return `Faute ${num}`;
+                case 'FT': return `Tir Rate ${a.ftMade || 0}/${a.ftAtt || 0} ${num}`;
+                case 'SUB': return `Chgmt ${num} -> #${State.players[a.inId]?.number || '?'}`;
+                default: return `${a.type} ${num}`;
+            }
+        };
+        const toElapsed = (a) => {
+            const qOffset = ((a.q || 1) - 1) * quarterDuration;
+            const elapsed = qOffset + (quarterDuration - (a.time || 0));
+            const m = Math.floor(elapsed / 60);
+            const s = elapsed % 60;
+            return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        };
+        let csv = 'Temps,Action\n';
+        State.actions.forEach(a => {
+            const time = toElapsed(a);
+            const desc = descMap(a).replace(/,/g, ';');
+            csv += `${time},${desc}\n`;
+        });
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `match_logs_${State.match.opponent}_${State.match.date || 'live'}.csv`;
+        link.click();
+        URL.revokeObjectURL(url);
+        UI.toast('CSV exporté');
     },
     
     getScoreFromActions(upToIndex) { let home = 0, away = 0; for (let i = 0; i <= upToIndex; i++) { const a = State.actions[i], p = State.players[a.pid]; if (!p) continue; if (a.type === 'SHOT' && a.made) { if (p.team === 'home') home += a.val; else away += a.val; } if (a.type === 'FT' && a.ftMade > 0) { if (p.team === 'home') home += a.ftMade; else away += a.ftMade; } } return { home, away }; },
@@ -1250,6 +1491,49 @@ const GameEngine = {
     
     showQuarterModal() { UI.showModal('Période', '', [1, 2, 3, 4, 5].map(q => ({ text: q < 5 ? `Q${q}` : 'OT', action: `GameEngine.setQ(${q})`, class: State.match.quarter === q ? 'prim' : '' })), 'g-5'); },
     setQ(q) { State.match.quarter = q; UI.closeModal(); UI.updateHeader(); UI.updateFoulsDisplay(); },
+    showInsertAction(insertIdx) {
+        const all = Object.values(State.players);
+        let defTime = State.match.time, defQ = State.match.quarter;
+        if (insertIdx < State.actions.length) { defTime = State.actions[insertIdx].time; defQ = State.actions[insertIdx].q; }
+        else if (State.actions.length > 0) { defTime = State.actions[State.actions.length - 1].time; defQ = State.actions[State.actions.length - 1].q; }
+        const defM = Math.floor(defTime / 60), defS = defTime % 60;
+        let html = `<div style="margin-bottom:10px;"><label style="font-size:0.75rem;color:var(--text-muted);display:block;margin-bottom:4px;">Joueur</label><select id="insP" class="inp">${all.map(x => `<option value="${x.id}">#${x.number} ${x.name}</option>`).join('')}</select></div>`;
+        html += `<div style="margin-bottom:10px;"><label style="font-size:0.75rem;color:var(--text-muted);display:block;margin-bottom:4px;">Type</label><select id="insT" class="inp" onchange="GameEngine.toggleInsertFields()"><option value="SHOT">Tir</option><option value="OREB">Reb Off</option><option value="DREB">Reb Def</option><option value="STL">Interception</option><option value="TOV">Perte</option><option value="FOUL">Faute</option><option value="FT">Lancers Francs</option><option value="BLK">Contre</option></select></div>`;
+        html += `<div id="insShot" style="margin-bottom:10px;"><div style="display:flex;gap:8px;"><div style="flex:1;"><label style="font-size:0.75rem;color:var(--text-muted);">Valeur</label><select id="insV" class="inp"><option value="2">2pts</option><option value="3">3pts</option></select></div><div style="flex:1;"><label style="font-size:0.75rem;color:var(--text-muted);">Résultat</label><select id="insM" class="inp"><option value="1">Réussi</option><option value="0">Raté</option></select></div></div></div>`;
+        html += `<div id="insFT" style="margin-bottom:10px;display:none;"><div style="display:flex;gap:8px;"><div style="flex:1;"><label style="font-size:0.75rem;color:var(--text-muted);">Réussis</label><input type="number" id="insFTM" class="inp" value="0" min="0" max="3"></div><div style="flex:1;"><label style="font-size:0.75rem;color:var(--text-muted);">Tentés</label><input type="number" id="insFTA" class="inp" value="2" min="0" max="3"></div></div></div>`;
+        html += `<div id="insFoulVic" style="margin-bottom:10px;display:none;"><label style="font-size:0.75rem;color:var(--text-muted);">Type de faute</label><select id="insFoulType" class="inp"><option value="personal">🚨 Personnelle</option><option value="shooting">🎯 Sur tir</option><option value="technical">🟡 Technique</option><option value="unsportsmanlike">🟥 Antisportive</option><option value="offensive">🔄 Offensive</option></select>`;
+        html += `<div style="margin-bottom:10px;"><label style="font-size:0.75rem;color:var(--text-muted);display:block;margin-bottom:4px;">Temps (Q${defQ})</label><div style="display:flex;gap:8px;align-items:center;"><input type="number" id="insMin" class="inp" value="${defM}" min="0" max="10" style="width:60px;text-align:center;"><span style="font-weight:800;">:</span><input type="number" id="insSec" class="inp" value="${defS}" min="0" max="59" style="width:60px;text-align:center;"></div></div>`;
+        html += `<input type="hidden" id="insQ" value="${defQ}">`;
+        UI.showModal('➕ Insérer action', html, [
+            { text: 'Annuler', action: 'UI.closeModal()', class: '' },
+            { text: '✔ Insérer', action: `GameEngine.confirmInsert(${insertIdx})`, class: 'prim' }
+        ], 'g-2');
+    },
+
+    toggleInsertFields() {
+        const type = document.getElementById('insT').value;
+        document.getElementById('insShot').style.display = type === 'SHOT' ? 'block' : 'none';
+        document.getElementById('insFT').style.display = type === 'FT' ? 'block' : 'none';
+    },
+
+    confirmInsert(insertIdx) {
+        const pid = parseInt(document.getElementById('insP').value);
+        const type = document.getElementById('insT').value;
+        const q = parseInt(document.getElementById('insQ').value);
+        const time = Math.max(0, (parseInt(document.getElementById('insMin').value) || 0) * 60 + (parseInt(document.getElementById('insSec').value) || 0));
+        const action = { id: Date.now(), type, pid, time, q, onCourt: [...State.onCourt.home, ...State.onCourt.away] };
+        if (type === 'SHOT') { action.val = parseInt(document.getElementById('insV').value); action.made = document.getElementById('insM').value === '1'; }
+        if (type === 'FT') { action.ftMade = parseInt(document.getElementById('insFTM').value) || 0; action.ftAtt = parseInt(document.getElementById('insFTA').value) || 0; }
+        State.actions.splice(insertIdx, 0, action);
+        this.recalc();
+        UI.closeModal();
+        UI.renderRoster();
+        UI.updateHeader();
+        UI.renderPBP();
+        Court.draw();
+        WormChart.draw();
+        UI.toast('Action insérée');
+    },
     
     async saveToFirebase() {
         if (!db) return UI.toast('Non connecté', 'error');
@@ -1316,23 +1600,44 @@ const UI = {
             const sel = State.ui.sel === p.id ? 'active' : '', on = State.onCourt[p.team].includes(p.id) ? 'oncourt' : '', fat = getFatigue(p), mins = Math.round(p.stats.min / 60);
             return `<div class="p-card ${sel} ${on} ${fat}" data-pid="${p.id}" onpointerdown="SwipeManager.start(${p.id},event)" onpointermove="SwipeManager.move(${p.id},event)" onpointerup="SwipeManager.end(${p.id},event)"><span class="p-num">${p.number}</span><span class="p-name">${p.name}</span><div class="p-stats"><span class="p-pts">${p.stats.pts}p</span><span class="p-time">${mins}'</span></div><div class="p-fls">${Array(Math.min(5, p.stats.fouls)).fill('<div class="f-dot"></div>').join('')}</div></div>`;
         };
-        document.getElementById('rosterHome').innerHTML = Object.values(State.players).filter(p => p.team === 'home').map(p => renderCard(p)).join('');
-        document.getElementById('rosterAway').innerHTML = Object.values(State.players).filter(p => p.team === 'away').map(p => renderCard(p)).join('');
-    },
+        const sortRoster = (team) => Object.values(State.players).filter(p => p.team === team).sort((a, b) => {
+    const aOn = State.onCourt[team].includes(a.id) ? 0 : 1;
+    const bOn = State.onCourt[team].includes(b.id) ? 0 : 1;
+    if (aOn !== bOn) return aOn - bOn;
+    return parseInt(a.number) - parseInt(b.number);
+});
+document.getElementById('rosterHome').innerHTML = sortRoster('home').map(p => renderCard(p)).join('');
+document.getElementById('rosterAway').innerHTML = sortRoster('away').map(p => renderCard(p, true)).join('');   },
     renderPBP() {
-        const list = document.getElementById('pbpList'); document.getElementById('pbpCount').textContent = State.actions.length;
-        if (!State.actions.length) { list.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-muted)">Aucune action</div>'; return; }
-        list.innerHTML = State.actions.slice().reverse().slice(0, 30).map((a, ri) => {
-            const idx = State.actions.length - 1 - ri, p = State.players[a.pid]; if (!p) return '';
+        const list = document.getElementById('pbpList');
+        document.getElementById('pbpCount').textContent = `${State.actions.length} actions`;
+        if (!State.actions.length) { list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted)">Aucune action</div>'; return; }
+        const N = State.actions.length;
+        const insBtn = (at) => `<div style="text-align:center;padding:2px 0;"><button style="background:none;border:1px dashed var(--border);border-radius:4px;color:var(--text-muted);font-size:0.55rem;padding:1px 8px;cursor:pointer;opacity:0.3;transition:0.2s;" onmouseover="this.style.opacity=1;this.style.color='var(--accent)';this.style.borderColor='var(--accent)'" onmouseout="this.style.opacity=0.3;this.style.color='var(--text-muted)';this.style.borderColor='var(--border)'" onclick="event.stopPropagation();GameEngine.showInsertAction(${at})">+ insérer</button></div>`;
+        let html = insBtn(N);
+        State.actions.slice().reverse().slice(0, 50).forEach((a, ri) => {
+            const idx = N - 1 - ri;
+            const p = State.players[a.pid];
+            if (!p) return;
             const t = `Q${a.q} ${Math.floor(a.time / 60)}:${(a.time % 60).toString().padStart(2, '0')}`;
             let icon = '📋', desc = a.type;
-            if (a.type === 'SHOT') { icon = a.made ? '✅' : '❌'; desc = `${a.val}p${a.astId ? ` 🎯#${State.players[a.astId]?.number}` : ''}`; }
-            else if (a.type === 'OREB') { icon = '🔄'; desc = 'RO'; } else if (a.type === 'DREB') { icon = '🛡️'; desc = 'RD'; }
-            else if (a.type === 'STL') { icon = '⚡'; desc = 'Int'; } else if (a.type === 'BLK') { icon = '✋'; desc = 'Ctr'; }
-            else if (a.type === 'TOV') { icon = '💨'; desc = 'BP'; } else if (a.type === 'FOUL') { icon = '🚨'; desc = a.foulType || 'Fte'; }
-            else if (a.type === 'FT') { icon = '🎯'; desc = `LF ${a.ftMade}/${a.ftAtt}`; } else if (a.type === 'SUB') { icon = '🔁'; desc = 'Sub'; }
-            return `<div class="pbp-item ${p.team}" onclick="UI.editAction(${idx})"><span class="pbp-time">${t}</span><span class="pbp-icon">${icon}</span><span class="pbp-player ${p.team}">#${p.number}</span><span class="pbp-desc">${desc}</span></div>`;
-        }).join('');
+            if (a.type === 'SHOT') { icon = a.made ? '✅' : '❌'; desc = `${a.val}pts ${a.made ? '' : 'raté'}${a.astId ? ` (🎯#${State.players[a.astId]?.number})` : ''}`; }
+            else if (a.type === 'OREB') { icon = '🔄'; desc = 'Reb Off'; }
+            else if (a.type === 'DREB') { icon = '🛡️'; desc = 'Reb Def'; }
+            else if (a.type === 'STL') { icon = '⚡'; desc = 'Interc'; }
+            else if (a.type === 'BLK') { icon = '✋'; desc = `Contre${a.victim ? ` #${State.players[a.victim]?.number}` : ''}`; }
+            else if (a.type === 'TOV') { icon = '💨'; desc = 'Perte'; }
+           else if (a.type === 'FOUL') {
+                const ft = a.foulType || 'personal';
+                icon = ft === 'technical' ? '🟡' : ft === 'unsportsmanlike' ? '🟥' : ft === 'offensive' ? '🔄' : '🚨';
+                const ftLabel = ft === 'technical' ? 'Tech' : ft === 'unsportsmanlike' ? 'Anti' : ft === 'offensive' ? 'Off' : ft === 'shooting' ? 'Faute tir' : 'Faute';
+                desc = `${ftLabel}${a.victim ? ` sur #${State.players[a.victim]?.number}` : ''}`;
+            }            else if (a.type === 'FT') { icon = '🎯'; desc = `LF ${a.ftMade}/${a.ftAtt}`; }
+            else if (a.type === 'SUB') { icon = '🔁'; desc = `→ #${State.players[a.inId]?.number}`; }
+            html += `<div class="pbp-item ${p.team}" onclick="UI.editAction(${idx})"><span class="pbp-time">${t}</span><span class="pbp-icon">${icon}</span><span class="pbp-player ${p.team}">#${p.number}</span><span class="pbp-desc">${desc}</span><span class="pbp-edit">✏️</span></div>`;
+            html += insBtn(idx);
+        });
+        list.innerHTML = html;
     },
     editAction(idx) {
         const a = State.actions[idx]; if (!a) return;
@@ -1340,9 +1645,13 @@ const UI = {
         let html = `<div style="margin-bottom:8px;"><label style="font-size:0.65rem;color:var(--text-muted);">Joueur</label><select id="edP" class="inp">${all.map(x => `<option value="${x.id}" ${x.id === a.pid ? 'selected' : ''}>#${x.number} ${x.name}</option>`).join('')}</select></div>`;
         html += `<div style="margin-bottom:8px;"><label style="font-size:0.65rem;color:var(--text-muted);">Type</label><select id="edT" class="inp">${types.map(t => `<option value="${t}" ${t === a.type ? 'selected' : ''}>${t}</option>`).join('')}</select></div>`;
         if (a.type === 'SHOT') { html += `<div style="margin-bottom:8px;"><select id="edV" class="inp"><option value="2" ${a.val === 2 ? 'selected' : ''}>2pts</option><option value="3" ${a.val === 3 ? 'selected' : ''}>3pts</option></select></div><div><select id="edM" class="inp"><option value="1" ${a.made ? 'selected' : ''}>✅</option><option value="0" ${!a.made ? 'selected' : ''}>❌</option></select></div>`; }
+         if (a.type === 'FOUL') {
+            html += `<div style="margin-bottom:12px;"><label style="font-size:0.75rem;color:var(--text-muted);display:block;margin-bottom:4px;">Type de faute</label><select id="edFoulType" class="inp"><option value="personal" ${(a.foulType || 'personal') === 'personal' ? 'selected' : ''}>🚨 Personnelle</option><option value="shooting" ${a.foulType === 'shooting' ? 'selected' : ''}>🎯 Sur tir</option><option value="technical" ${a.foulType === 'technical' ? 'selected' : ''}>🟡 Technique</option><option value="unsportsmanlike" ${a.foulType === 'unsportsmanlike' ? 'selected' : ''}>🟥 Antisportive</option><option value="offensive" ${a.foulType === 'offensive' ? 'selected' : ''}>🔄 Offensive</option></select></div>`;
+        }
         this.showModal('✏️ Modifier', html, [{ text: '🗑️', action: `UI.delAction(${idx})`, class: 'danger' }, { text: '✔', action: `UI.saveAction(${idx})`, class: 'prim' }], 'g-2');
     },
-    saveAction(idx) { const a = State.actions[idx]; a.pid = parseInt(document.getElementById('edP').value); a.type = document.getElementById('edT').value; const vEl = document.getElementById('edV'), mEl = document.getElementById('edM'); if (vEl) a.val = parseInt(vEl.value); if (mEl) a.made = mEl.value === '1'; GameEngine.recalc(); this.closeModal(); this.renderRoster(); this.updateHeader(); this.renderPBP(); TimelineFloat.render(); Court.draw(); WormChart.draw(); },
+    saveAction(idx) { const a = State.actions[idx]; a.pid = parseInt(document.getElementById('edP').value); a.type = document.getElementById('edT').value; const vEl = document.getElementById('edV'), mEl = document.getElementById('edM'); if (vEl) a.val = parseInt(vEl.value); if (mEl) a.made = mEl.value === '1';const ftEl = document.getElementById('edFoulType');
+        if (ftEl) a.foulType = ftEl.value; GameEngine.recalc(); this.closeModal(); this.renderRoster(); this.updateHeader(); this.renderPBP(); TimelineFloat.render(); Court.draw(); WormChart.draw(); },
     delAction(idx) { State.actions.splice(idx, 1); GameEngine.recalc(); this.closeModal(); this.renderRoster(); this.updateHeader(); this.renderPBP(); TimelineFloat.render(); Court.draw(); WormChart.draw(); },
     showModal(title, body, actions, grid = 'g-2') { document.getElementById('mTitle').textContent = title; document.getElementById('mBody').innerHTML = body; const div = document.getElementById('mActions'); div.className = `modal-grid ${grid}`; div.innerHTML = actions.map(a => `<button class="btn-mod ${a.class}" onclick="${a.action}">${a.text}</button>`).join(''); document.getElementById('modalWrap').classList.add('show'); },
     closeModal() { document.getElementById('modalWrap').classList.remove('show'); },
@@ -1362,7 +1671,7 @@ const Court = {
             const cx = e.touches ? e.touches[0].clientX : e.clientX, cy = e.touches ? e.touches[0].clientY : e.clientY;
             const canvasX = (cx - r.left) * (this.cvs.width / r.width), canvasY = (cy - r.top) * (this.cvs.height / r.height);
             const mx = (canvasX - this.offset.x) / this.scale, my = (canvasY - this.offset.y) / this.scale;
-            if (mx < 0 || mx > 28 || my < 0 || my > 15) return;
+            if (mx < -0.5 || mx > 28.5 || my < -0.5 || my > 15.5) return;
             const d1 = Math.sqrt(Math.pow(mx - 1.575, 2) + Math.pow(my - 7.5, 2)), d2 = Math.sqrt(Math.pow(mx - 26.425, 2) + Math.pow(my - 7.5, 2));
             const val = Math.min(d1, d2) > 6.75 ? 3 : 2;
             GameEngine.handleCourtClick(mx, my, val, cx, cy);

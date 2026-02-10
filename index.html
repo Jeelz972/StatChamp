@@ -66,6 +66,21 @@
     <div id="root"></div>
     
     <!-- Chargement du fichier JS externe avec Babel -->
+     <script>
+            fetch('PlayByPlayEditor.js')
+            .then(response => response.text())
+            .then(code => {
+                const transformed = Babel.transform(code, { presets: ['react'] }).code;
+                const script = document.createElement('script');
+                script.textContent = transformed;
+                document.body.appendChild(script);
+            })
+            .catch(err => {
+                console.error('Erreur chargement PlayByPlayEditor.js:', err);
+                document.getElementById('root').innerHTML = '<div style="color:red;padding:20px;">Erreur: Impossible de charger PlayByPlayEditor.js. Assurez-vous que le fichier existe et que vous utilisez un serveur local (pas file://).</div>';
+            });
+
+     </script>
     <script>
         // Babel standalone ne supporte pas src="", on doit charger manuellement
         fetch('app.js')
