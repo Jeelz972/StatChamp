@@ -253,10 +253,279 @@ const calculateDeanOliverRatings = ({
     };
 };
 
+
+const _isHomePlayer = (pid, homePlayers) => homePlayers.some(p => p.id === pid);
+
+const _reconstructScoreAtIndex = (actions, idx, homePlayers) => {
+    let home = 0, away = 0;
+    for (let i = 0; i <= idx; i++) {
+        const a = actions[i];
+        if (!a) continue;
+        const isHome = _isHomePlayer(a.pid, homePlayers);
+        if (a.type === 'SHOT' && a.made) {
+            if (isHome) home += a.val; else away += a.val;
+        }
+        if (a.type === 'FT' && (a.ftMade || 0) > 0) {
+            if (isHome) home += a.ftMade; else away += a.ftMade;
+        }
+    }
+    return { home, away, diff: home - away };
+};
+
+const _getPointsFromAction = (action) => {
+    if (action.type === 'SHOT' && action.made) return action.val || 0;
+    if (action.type === 'FT') return action.ftMade || 0;
+    return 0;
+};
+
+const _isScoringAction = (action) => _getPointsFromAction(action) > 0;
+
+const _isFieldGoalAttempt = (action) => action.type === 'SHOT';
+const _isFieldGoalMade = (action) => action.type === 'SHOT' && action.made;
+const _isFreeThrowAttempt = (action) => action.type === 'FT';
+const _isFreeThrowMade = (action) => action.type === 'FT' && (action.ftMade || 0) > 0;
+const _isTurnover = (action) => action.type === 'TOV';
+const _isThreePointAttempt = (action) => action.type === 'SHOT' && action.val === 3;
+const _isThreePointMade = (action) => action.type === 'SHOT' && action.made && action.val === 3;
+
+
+// ===========================================
+// 1. CLUTCH ANALYSIS
+// ===========================================
+
+/**
+ * Filtre les actions en situation clutch.
+ * Défaut : Q4 + OT, 2 dernières minutes (≤120s), écart ≤ 5 points.
+ * Retourne null si les actions n'ont pas le format requis.
+ */
+const filterClutchActions = (actions, homePlayers, options = {}) => {
+    if (!actions?.length || !actions[0].onCourt || actions[0].time === undefined) return null;
+
+    const {
+        quarters = [4, 5],       // Q4 + OT
+        timeWindow = 120,        // 2 dernières minutes (secondes)
+        maxDiff = 5              // écart max au score
+    } = options;
+
+    const clutchActions = [];
+
+    for (let i = 0; i < actions.length; i++) {
+        const a = actions[i];
+        if (!quarters.includes(a.q)) continue;
+        if (a.time === undefined || a.time > timeWindow) continue;
+
+        // Score AVANT cette action
+        const score = i > 0 ? _reconstructScoreAtIndex(actions, i - 1, homePlayers) : { home: 0, away: 0, diff: 0 };
+        if (Math.abs(score.diff) > maxDiff) continue;
+
+        clutchActions.push({ ...a, _scoreBefore: score });
+    }
+
+    return clutchActions;
+};
+
+/**
+ * Calcule les stats clutch d'un joueur sur les actions filtrées.
+ * Retourne { pts, fga, fgm, fgPct, threePA, threePM, fta, ftm, ftPct, tov, ast, actions }
+ */
+const calcClutchStats = (clutchActions, playerId) => {
+    if (!clutchActions?.length) return null;
+
+    const pa = clutchActions.filter(a => a.pid === playerId);
+    if (!pa.length) return null;
+
+    let pts = 0, fga = 0, fgm = 0, fta = 0, ftm = 0, tov = 0, ast = 0;
+    let threePA = 0, threePM = 0;
+
+    pa.forEach(a => {
+        if (_isFieldGoalAttempt(a)) {
+            fga++;
+            if (_isThreePointAttempt(a)) threePA++;
+            if (_isFieldGoalMade(a)) {
+                fgm++;
+                pts += a.val;
+                if (_isThreePointMade(a)) threePM++;
+            }
+        }
+        if (a.type === 'FT') {
+            fta += a.ftAtt || 0;
+            ftm += a.ftMade || 0;
+            pts += a.ftMade || 0;
+        }
+        if (_isTurnover(a)) tov++;
+        if (a.type === 'OREB' || a.type === 'DREB') { /* pas comptés ici */ }
+        if (a.astId === playerId || (a.type === 'SHOT' && a.made && a.astId === playerId)) {
+            // L'assist est loggué sur l'action du tireur avec astId
+        }
+    });
+
+    // Compter les assists : le playerId apparaît comme astId sur des tirs réussis
+    clutchActions.forEach(a => {
+        if (a.astId === playerId && _isFieldGoalMade(a)) ast++;
+    });
+
+    return {
+        pts, fga, fgm,
+        fgPct: fga > 0 ? Math.round((fgm / fga) * 100) : 0,
+        threePA, threePM,
+        threePct: threePA > 0 ? Math.round((threePM / threePA) * 100) : 0,
+        fta, ftm,
+        ftPct: fta > 0 ? Math.round((ftm / fta) * 100) : 0,
+        tov, ast,
+        actions: pa.length
+    };
+};
+
+/**
+ * Clutch Rating simplifié :
+ * (PTS * 1.5 + AST * 1.2 - TOV * 1.5) / actions clutch, normalisé 0-100
+ */
+const calcClutchRating = (clutchStats) => {
+    if (!clutchStats || !clutchStats.actions) return 0;
+    const raw = (clutchStats.pts * 1.5 + clutchStats.ast * 1.2 - clutchStats.tov * 1.5) / clutchStats.actions;
+    return Math.max(0, Math.min(100, Math.round(raw * 15)));
+};
+
+
+// ===========================================
+// 2. ON/OFF IMPACT
+// ===========================================
+
+/**
+ * Calcule l'impact ON/OFF d'un joueur.
+ * Segmente toutes les actions en ON court / OFF court.
+ * Retourne { on: { pts, ptsConceded, poss, ortg, drtg }, off: { ... }, netDiff }
+ * Retourne null si données insuffisantes.
+ */
+const calcOnOffImpact = (actions, playerId, homePlayers) => {
+    if (!actions?.length || !actions[0].onCourt || actions[0].time === undefined) return null;
+
+    const homeIds = new Set(homePlayers.map(p => p.id));
+    const segments = { on: [], off: [] };
+
+    actions.forEach(a => {
+        if (!a.onCourt) return;
+        segments[a.onCourt.includes(playerId) ? 'on' : 'off'].push(a);
+    });
+
+    const calcSegment = (segActions) => {
+        let pts = 0, ptsConceded = 0;
+        let fga = 0, fgm = 0, fta = 0, tov = 0, orb = 0;
+        let oppFga = 0, oppFgm = 0, oppFta = 0, oppTov = 0, oppOrb = 0;
+        let playerStl = 0, playerBlk = 0, playerDreb = 0, playerPf = 0;
+        let playerFga = 0, playerFgm = 0, playerFta = 0, playerTov = 0, playerAst = 0;
+
+        segActions.forEach(a => {
+            const isHome = homeIds.has(a.pid);
+            const isPlayer = a.pid === playerId;
+
+            if (a.type === 'SHOT') {
+                if (isHome) {
+                    fga++; if (a.made) { fgm++; pts += a.val; }
+                    if (isPlayer) { playerFga++; if (a.made) playerFgm++; }
+                } else {
+                    oppFga++; if (a.made) { oppFgm++; ptsConceded += a.val; }
+                }
+            }
+            if (a.type === 'FT') {
+                if (isHome) {
+                    fta += a.ftAtt || 0; pts += a.ftMade || 0;
+                    if (isPlayer) playerFta += a.ftAtt || 0;
+                } else {
+                    oppFta += a.ftAtt || 0; ptsConceded += a.ftMade || 0;
+                }
+            }
+            if (a.type === 'TOV') {
+                if (isHome) { tov++; if (isPlayer) playerTov++; }
+                else oppTov++;
+            }
+            if (a.type === 'OREB') { if (isHome) orb++; else oppOrb++; }
+            if (a.type === 'DREB') { if (isHome && isPlayer) playerDreb++; }
+            if (a.type === 'STL')  { if (isHome && isPlayer) playerStl++; }
+            if (a.type === 'BLK')  { if (isHome && isPlayer) playerBlk++; }
+            if (a.type === 'FOUL') { if (isHome && isPlayer) playerPf++; }
+            if (a.astId === playerId && a.type === 'SHOT' && a.made) playerAst++;
+        });
+
+        const poss = Math.max(fga + 0.44 * fta + tov - orb, 1);
+        const oppPoss = Math.max(oppFga + 0.44 * oppFta + oppTov - oppOrb, 1);
+        const avgPoss = (poss + oppPoss) / 2 || 1;
+
+        const ortg = Math.round((pts / avgPoss) * 100);
+        const baseDrtg = Math.round((ptsConceded / avgPoss) * 100);
+
+        const defContrib = avgPoss > 0
+            ? ((playerStl * 1.8 + playerBlk * 1.2 + playerDreb * 0.4) / avgPoss) * 100
+            : 0;
+        const defPenalty = avgPoss > 0
+            ? ((playerPf * 0.7) / avgPoss) * 100
+            : 0;
+        const oppFgPct = oppFga > 0 ? oppFgm / oppFga : 0.42;
+        const oppContestAdj = (oppFgPct - 0.42) * 30;
+        const dpr = Math.max(0, Math.round(baseDrtg - defContrib + defPenalty + oppContestAdj));
+
+        const playerPoss = playerFga + 0.44 * playerFta + playerTov;
+        const usageRate = Math.round((playerPoss / avgPoss) * 100);
+
+        // Nombre total d'actions individuelles du joueur dans ce segment
+        const playerActions = playerFga + playerAst + playerStl + playerBlk + playerDreb + playerTov + playerPf;
+        const involvementRate = avgPoss > 0 ? playerActions / avgPoss : 0;
+
+        return {
+            pts, ptsConceded, poss: Math.round(avgPoss),
+            ortg, drtg: baseDrtg, dpr,
+            defContrib: Math.round(defContrib * 10) / 10,
+            defPenalty: Math.round(defPenalty * 10) / 10,
+            oppFgPct: Math.round(oppFgPct * 100),
+            playerStl, playerBlk, playerDreb, playerPf,
+            playerFga, playerFgm, playerTov, playerAst,
+            usageRate, playerActions, involvementRate,
+            actions: segActions.length
+        };
+    };
+
+    const on = calcSegment(segments.on);
+    const off = calcSegment(segments.off);
+
+    const netOn_raw = on.ortg - on.dpr;
+    const netOff_raw = off.ortg - off.dpr;
+    const netDiff_raw = netOn_raw - netOff_raw;
+
+    // --- SHRINKAGE ADAPTATIF PAR JOUEUR ---
+    // K_base = 30 (référence U18 ~65-75 poss/match)
+    // K_joueur = K_base / (1 + involvementRate × 2)
+    //   → joueur très impliqué (0.5 actions/poss) : K = 30/2 = 15 → converge vite
+    //   → joueur fantôme (0.05 actions/poss) : K = 30/1.1 = 27 → forte régression
+    const K_BASE = 30;
+    const K_on  = K_BASE / (1 + on.involvementRate * 2);
+    const K_off = K_BASE / (1 + off.involvementRate * 2);
+
+    const weightON  = on.poss  / (on.poss  + K_on);
+    const weightOFF = off.poss / (off.poss + K_off);
+
+    const netOn  = Math.round(netOn_raw  * weightON);
+    const netOff = Math.round(netOff_raw * weightOFF);
+    const netDiff = Math.round(netDiff_raw * weightON);
+
+    return {
+        on, off,
+        netOn, netOff, netDiff,
+        netOn_raw: Math.round(netOn_raw),
+        netOff_raw: Math.round(netOff_raw),
+        netDiff_raw: Math.round(netDiff_raw),
+        weightON: Math.round(weightON * 100),
+        weightOFF: Math.round(weightOFF * 100),
+        K_on: Math.round(K_on * 10) / 10,
+        K_off: Math.round(K_off * 10) / 10,
+        usageRate: on.usageRate
+    };
+};
+
+
+
 // ==========================================
 const { useState, useEffect, useMemo } = React;
-const { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Legend, AreaChart, Area, ComposedChart, ReferenceLine, Cell } = window.Recharts || {};
-
+const { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Legend, AreaChart, Area, ComposedChart, ReferenceLine, Cell, ScatterChart, Scatter, ZAxis } = window.Recharts || {};
 const generateId = () => Math.random().toString(36).substr(2, 9);
 const defaultPlayers = [{ id: 1, name: "Joueur 1", number: 4, pos: "PG" }, { id: 2, name: "Joueur 2", number: 5, pos: "SG" }];
 const DEFAULT_PHASES = [{ id: "phase1", name: "Phase 1" }, { id: "phase2", name: "Phase 2" }];
@@ -409,6 +678,413 @@ const parseHTMLStats = (html) => {
     return { meta: { date, opponent: opponentName, homeScore: myScore, awayScore: oppScore }, rawPlayers, opponentStats };
 };
 
+
+// ============================================================
+// 1. VolumeEfficiencyMatrix
+// ============================================================
+// ScatterChart : X = FGA/match (volume), Y = TS% (efficacité)
+// Taille point = minutes jouées, couleur = position
+// Quadrants délimités par ReferenceLine aux médianes
+
+function VolumeEfficiencyMatrix({ players }) {
+    const POS_COLORS = { PG: '#f97316', SG: '#3b82f6', SF: '#22c55e', PF: '#a855f7', C: '#ef4444', G: '#f97316', F: '#22c55e' };
+
+    const data = useMemo(() => {
+        // Correction de la condition de filtrage pour correspondre à l'objet 'aggregated' de app.js
+        const pts = players
+            .filter(p => p.gamesPlayed > 0 && p.avg) 
+            .map(p => {
+                const a = p.avg; // Utilisation des moyennes déjà calculées dans app.js
+                return { 
+                    name: p.info.name, 
+                    pos: p.info.pos || 'G', 
+                    fgaPg: parseFloat(a.fga) || 0, 
+                    ts: parseFloat(a.TS) || 0, 
+                    minPg: parseFloat(a.min) || 0, 
+                    color: POS_COLORS[p.info.pos] || '#94a3b8' 
+                };
+            });
+
+        if (pts.length === 0) return { points: [], medFga: 0, medTs: 0 };
+
+        const fgaVals = pts.map(d => d.fgaPg);
+        const tsVals = pts.map(d => d.ts);
+        const sortedFga = [...fgaVals].sort((a, b) => a - b);
+        const sortedTs = [...tsVals].sort((a, b) => a - b);
+        const median = arr => {
+            if (arr.length === 0) return 0;
+            const mid = Math.floor(arr.length / 2);
+            return arr.length % 2 !== 0 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
+        };
+
+        return { points: pts, medFga: median(sortedFga), medTs: median(sortedTs) };
+    }, [players]);
+
+    if (!data.points || data.points.length === 0) {
+        return <div className="text-slate-500 text-xs text-center p-8 bg-slate-900/30 rounded-lg border border-dashed border-slate-700">Données insuffisantes (nécessite au moins 1 match enregistré)</div>;
+    }
+
+    const positions = [...new Set(data.points.map(d => d.pos))];
+
+    return (
+        <div className="space-y-3">
+            <h4 className="text-xs text-slate-400 uppercase font-bold flex items-center gap-2">
+                <span className="text-orange-500">🎯</span> Volume vs Efficacité (TS%)
+            </h4>
+            <div className="flex flex-wrap gap-3 mb-2">
+                {positions.map(pos => (
+                    <span key={pos} className="flex items-center gap-1 text-[10px] text-slate-400">
+                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: POS_COLORS[pos] || '#94a3b8' }} />
+                        {pos}
+                    </span>
+                ))}
+            </div>
+            <div className="h-72 bg-slate-900/50 rounded-lg p-2 border border-slate-800">
+                <ResponsiveContainer width="100%" height="100%">
+                    <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                        <XAxis type="number" dataKey="fgaPg" name="FGA/m" stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} />
+                        <YAxis type="number" dataKey="ts" name="TS%" stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} unit="%" />
+                        <ZAxis type="number" dataKey="minPg" range={[50, 400]} />
+                        <ReferenceLine x={data.medFga} stroke="#475569" strokeDasharray="3 3" label={{ value: 'Médiane Vol.', fill: '#475569', fontSize: 8, position: 'top' }} />
+                        <ReferenceLine y={data.medTs} stroke="#475569" strokeDasharray="3 3" label={{ value: 'Médiane Eff.', fill: '#475569', fontSize: 8, position: 'right' }} />
+                        <Tooltip
+                            cursor={{ strokeDasharray: '3 3' }}
+                            content={({ active, payload }) => {
+                                if (!active || !payload || !payload.length) return null;
+                                const d = payload[0].payload;
+                                return (
+                                    <div className="bg-slate-800 border border-slate-600 p-2 rounded shadow-2xl text-[11px]">
+                                        <div className="font-bold text-white mb-1">{d.name}</div>
+                                        <div className="text-slate-400">FGA/match: <span className="text-white">{d.fgaPg}</span></div>
+                                        <div className="text-slate-400">True Shooting: <span className="text-green-400">{d.ts}%</span></div>
+                                        <div className="text-slate-400">Minutes/m: <span className="text-white">{d.minPg}</span></div>
+                                    </div>
+                                );
+                            }}
+                        />
+                        <Scatter data={data.points}>
+                            {data.points.map((entry, i) => (
+                                <Cell key={i} fill={entry.color} stroke="#0f172a" strokeWidth={1} />
+                            ))}
+                        </Scatter>
+                    </ScatterChart>
+                </ResponsiveContainer>
+            </div>
+        </div>
+    );
+}
+
+
+// ============================================================
+// 2. MomentumChart
+// ============================================================
+// AreaChart : différentiel de score (home - away) au fil du temps
+// Annotations pour runs ≥ 6-0, zones colorées home/away
+
+function MomentumChart({ scoreHistory, actions }) {
+    const chartData = useMemo(() => {
+        if (!scoreHistory || scoreHistory.length === 0) return { data: [], runs: [] };
+
+        const timeline = scoreHistory.map((sh, i) => ({
+            idx: i,
+            time: sh.time != null ? sh.time : i,
+            q: sh.q || 1,
+            diff: (sh.home || 0) - (sh.away || 0),
+            home: sh.home || 0,
+            away: sh.away || 0,
+            label: sh.q ? `Q${sh.q}` : ''
+        }));
+
+        // Détection des runs ≥ 6-0
+        const runs = [];
+        let runStart = 0, runHome = 0, runAway = 0;
+        for (let i = 1; i < timeline.length; i++) {
+            const dHome = timeline[i].home - timeline[i - 1].home;
+            const dAway = timeline[i].away - timeline[i - 1].away;
+            if (dHome > 0 && dAway === 0) {
+                if (runAway > 0) { runStart = i; runHome = 0; runAway = 0; }
+                runHome += dHome;
+            } else if (dAway > 0 && dHome === 0) {
+                if (runHome > 0) { runStart = i; runHome = 0; runAway = 0; }
+                runAway += dAway;
+            } else {
+                if (runHome >= 6) runs.push({ idx: Math.floor((runStart + i - 1) / 2), text: `${runHome}-0 run`, team: 'home' });
+                if (runAway >= 6) runs.push({ idx: Math.floor((runStart + i - 1) / 2), text: `0-${runAway} run`, team: 'away' });
+                runStart = i; runHome = 0; runAway = 0;
+            }
+        }
+        if (runHome >= 6) runs.push({ idx: Math.floor((runStart + timeline.length - 1) / 2), text: `${runHome}-0 run`, team: 'home' });
+        if (runAway >= 6) runs.push({ idx: Math.floor((runStart + timeline.length - 1) / 2), text: `0-${runAway} run`, team: 'away' });
+
+        return { data: timeline, runs };
+    }, [scoreHistory]);
+
+    if (chartData.data.length === 0) return <div className="text-slate-500 text-sm text-center p-4">Pas de données de score</div>;
+
+    const maxAbs = Math.max(...chartData.data.map(d => Math.abs(d.diff)), 5);
+
+    return (
+        <div>
+            <h4 className="text-xs text-slate-400 uppercase mb-2">Momentum — Différentiel de Score</h4>
+            {chartData.runs.length > 0 && (
+                <div className="flex flex-wrap gap-1 mb-2">
+                    {chartData.runs.map((r, i) => (
+                        <span key={i} className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${r.team === 'home' ? 'bg-blue-900/40 text-blue-400' : 'bg-red-900/40 text-red-400'}`}>
+                            {r.text}
+                        </span>
+                    ))}
+                </div>
+            )}
+            <div className="h-56 bg-slate-900/50 rounded-lg p-2">
+                <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={chartData.data} margin={{ top: 10, right: 10, bottom: 5, left: 10 }}>
+                        <defs>
+                            <linearGradient id="gradHome" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.6} />
+                                <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
+                            </linearGradient>
+                            <linearGradient id="gradAway" x1="0" y1="1" x2="0" y2="0">
+                                <stop offset="0%" stopColor="#ef4444" stopOpacity={0.6} />
+                                <stop offset="100%" stopColor="#ef4444" stopOpacity={0} />
+                            </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                        <XAxis dataKey="idx" stroke="#94a3b8" fontSize={10} tickFormatter={(v) => {
+                            const pt = chartData.data[v];
+                            return pt ? `Q${pt.q}` : '';
+                        }} />
+                        <YAxis stroke="#94a3b8" fontSize={10} domain={[-maxAbs, maxAbs]} tickFormatter={v => v > 0 ? `+${v}` : v} />
+                        <ReferenceLine y={0} stroke="#64748b" strokeWidth={2} />
+                        <Tooltip content={({ active, payload }) => {
+                            if (!active || !payload || !payload.length) return null;
+                            const d = payload[0].payload;
+                            return (
+                                <div className="bg-slate-800 border border-slate-600 p-2 rounded shadow-xl text-xs">
+                                    <div className="text-slate-400">Q{d.q}</div>
+                                    <div className="text-blue-400">Home: {d.home}</div>
+                                    <div className="text-red-400">Away: {d.away}</div>
+                                    <div className={`font-bold ${d.diff >= 0 ? 'text-blue-400' : 'text-red-400'}`}>
+                                        Diff: {d.diff > 0 ? '+' : ''}{d.diff}
+                                    </div>
+                                </div>
+                            );
+                        }} />
+                        <Area type="monotone" dataKey="diff" stroke="#3b82f6" fill="url(#gradHome)" fillOpacity={1}
+                            baseValue={0} isAnimationActive={false} />
+                    </AreaChart>
+                </ResponsiveContainer>
+            </div>
+            <div className="flex justify-between text-[10px] text-slate-500 mt-1 px-2">
+                <span className="text-blue-400">▲ Home mène</span>
+                <span className="text-red-400">▼ Adversaire mène</span>
+            </div>
+        </div>
+    );
+}
+
+
+// ============================================================
+// 3. GhostSeasonChart
+// ============================================================
+// ComposedChart : Line 1 = moyenne cumulée, Line 2 = match sélectionné
+// Area entre les deux pour visualiser l'écart
+
+function GhostSeasonChart({ logs, currentGame }) {
+    const chartData = useMemo(() => {
+        if (!logs || logs.length === 0) return [];
+
+        const categories = ['pts', 'reb', 'ast', 'stl', 'blk'];
+        let cumulative = {};
+        categories.forEach(c => cumulative[c] = 0);
+
+        return logs.map((log, i) => {
+            const entry = { game: i + 1, opponent: log.opponent || `M${i + 1}` };
+            categories.forEach(c => {
+                cumulative[c] += (log[c] || 0);
+                entry[`avg_${c}`] = Math.round((cumulative[c] / (i + 1)) * 10) / 10;
+                entry[`val_${c}`] = log[c] || 0;
+            });
+            // Score composite pour la vue principale
+            entry.avgComposite = Math.round((entry.avg_pts + entry.avg_reb * 1.2 + entry.avg_ast * 1.5 + entry.avg_stl * 2 + entry.avg_blk * 2) * 10) / 10;
+            entry.valComposite = Math.round((entry.val_pts + entry.val_reb * 1.2 + entry.val_ast * 1.5 + entry.val_stl * 2 + entry.val_blk * 2) * 10) / 10;
+            entry.isSelected = currentGame != null && i === currentGame;
+            return entry;
+        });
+    }, [logs, currentGame]);
+
+    const [metric, setMetric] = useState('composite');
+    const metrics = [
+        { key: 'composite', label: 'Global', color: '#f97316' },
+        { key: 'pts', label: 'PTS', color: '#f97316' },
+        { key: 'reb', label: 'REB', color: '#3b82f6' },
+        { key: 'ast', label: 'AST', color: '#22c55e' },
+    ];
+
+    if (chartData.length === 0) return <div className="text-slate-500 text-sm text-center p-4">Pas de données</div>;
+
+    const avgKey = metric === 'composite' ? 'avgComposite' : `avg_${metric}`;
+    const valKey = metric === 'composite' ? 'valComposite' : `val_${metric}`;
+    const activeColor = metrics.find(m => m.key === metric)?.color || '#f97316';
+
+    return (
+        <div>
+            <h4 className="text-xs text-slate-400 uppercase mb-2">Courbe Fantôme — Saison vs Match</h4>
+            <div className="flex gap-1 mb-2">
+                {metrics.map(m => (
+                    <button key={m.key} onClick={() => setMetric(m.key)}
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors ${metric === m.key ? 'text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                        style={metric === m.key ? { backgroundColor: m.color + '30', color: m.color, border: `1px solid ${m.color}` } : { border: '1px solid transparent' }}>
+                        {m.label}
+                    </button>
+                ))}
+            </div>
+            <div className="h-56 bg-slate-900/50 rounded-lg p-2">
+                <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={chartData} margin={{ top: 10, right: 10, bottom: 5, left: 10 }}>
+                        <defs>
+                            <linearGradient id="ghostGrad" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor={activeColor} stopOpacity={0.15} />
+                                <stop offset="100%" stopColor={activeColor} stopOpacity={0.02} />
+                            </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                        <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} />
+                        <YAxis stroke="#94a3b8" fontSize={10} />
+                        <Tooltip content={({ active, payload }) => {
+                            if (!active || !payload || !payload.length) return null;
+                            const d = payload[0].payload;
+                            return (
+                                <div className="bg-slate-800 border border-slate-600 p-2 rounded shadow-xl text-xs">
+                                    <div className="font-bold text-white">{d.opponent}</div>
+                                    <div style={{ color: activeColor }}>Match: {d[valKey]}</div>
+                                    <div className="text-slate-400">Moy. cumulée: {d[avgKey]}</div>
+                                    <div className={`text-[10px] ${d[valKey] >= d[avgKey] ? 'text-green-400' : 'text-red-400'}`}>
+                                        Écart: {d[valKey] >= d[avgKey] ? '+' : ''}{Math.round((d[valKey] - d[avgKey]) * 10) / 10}
+                                    </div>
+                                </div>
+                            );
+                        }} />
+                        <Area type="monotone" dataKey={avgKey} stroke="none" fill="url(#ghostGrad)" isAnimationActive={false} />
+                        <Line type="monotone" dataKey={avgKey} name="Moy. cumulée" stroke="#64748b" strokeWidth={2} strokeDasharray="6 3" dot={false} isAnimationActive={false} />
+                        <Line type="monotone" dataKey={valKey} name="Match" stroke={activeColor} strokeWidth={2}
+                            dot={(props) => {
+                                const { cx, cy, payload } = props;
+                                const above = payload[valKey] >= payload[avgKey];
+                                return <circle cx={cx} cy={cy} r={payload.isSelected ? 6 : 3} fill={above ? '#22c55e' : '#ef4444'} stroke={payload.isSelected ? '#fff' : 'none'} strokeWidth={payload.isSelected ? 2 : 0} />;
+                            }}
+                            isAnimationActive={false}
+                        />
+                    </ComposedChart>
+                </ResponsiveContainer>
+            </div>
+        </div>
+    );
+}
+
+
+// ============================================================
+// 4. ArchetypeRadar
+// ============================================================
+// RadarChart 5 axes : Scoring, Playmaking, Defense, Rebounding, Shooting
+// Notes 0-99 calculées par normalisation sur l'effectif
+
+function ArchetypeRadar({ player, allPlayers }) {
+    const radarData = useMemo(() => {
+        if (!player || !allPlayers || allPlayers.length === 0) return [];
+
+        const eligible = allPlayers.filter(p => p.gamesPlayed > 0 && p.total);
+        if (eligible.length === 0) return [];
+
+        // Calcul des raw stats par match pour chaque joueur
+        const rawStats = eligible.map(p => {
+            const gp = p.gamesPlayed;
+            const t = p.total;
+            const totalFGA = (t.fga || 0) + (t.threePA || 0);
+            const totalFGM = (t.fgm || 0) + (t.threePM || 0);
+            const tsa = totalFGA + 0.44 * (t.fta || 0);
+            return {
+                id: p.info.id,
+                scoring: (t.pts || 0) / gp,
+                playmaking: ((t.ast || 0) / gp) - ((t.tov || 0) / gp) * 0.5,
+                defense: ((t.stl || 0) / gp) * 1.5 + ((t.blk || 0) / gp) * 1.2,
+                rebounding: ((t.reb || 0) / gp),
+                shooting: tsa > 0 ? ((t.pts || 0) / (2 * tsa)) * 100 : 0
+            };
+        });
+
+        const axes = ['scoring', 'playmaking', 'defense', 'rebounding', 'shooting'];
+        const labels = { scoring: 'Scoring', playmaking: 'Playmaking', defense: 'Defense', rebounding: 'Rebounding', shooting: 'Shooting' };
+
+        const playerRaw = rawStats.find(r => r.id === player.info.id);
+        if (!playerRaw) return [];
+
+        return axes.map(axis => {
+            const vals = rawStats.map(r => r[axis]);
+            const min = Math.min(...vals);
+            const max = Math.max(...vals);
+            const range = max - min;
+            const normalized = range > 0 ? Math.round(((playerRaw[axis] - min) / range) * 99) : 50;
+            return { axis: labels[axis], score: Math.max(0, Math.min(99, normalized)), raw: Math.round(playerRaw[axis] * 10) / 10 };
+        });
+    }, [player, allPlayers]);
+
+    if (radarData.length === 0) return <div className="text-slate-500 text-sm text-center p-4">Pas de données</div>;
+
+    const avgScore = Math.round(radarData.reduce((s, d) => s + d.score, 0) / radarData.length);
+    const archetype = (() => {
+        const sorted = [...radarData].sort((a, b) => b.score - a.score);
+        const top = sorted[0].axis;
+        const second = sorted[1].axis;
+        if (top === 'Scoring' && second === 'Shooting') return 'Sniper';
+        if (top === 'Scoring') return 'Scoreur';
+        if (top === 'Playmaking') return 'Meneur créateur';
+        if (top === 'Defense') return 'Défenseur';
+        if (top === 'Rebounding') return 'Intérieur';
+        if (top === 'Shooting') return 'Shooteur';
+        return 'Polyvalent';
+    })();
+
+    return (
+        <div>
+            <div className="flex items-center justify-between mb-2">
+                <h4 className="text-xs text-slate-400 uppercase">Archétype Joueur</h4>
+                <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-orange-900/30 text-orange-400 border border-orange-800">{archetype}</span>
+                    <span className="text-xs text-slate-500">OVR {avgScore}</span>
+                </div>
+            </div>
+            <div className="h-64 bg-slate-900/50 rounded-lg p-2">
+                <ResponsiveContainer width="100%" height="100%">
+                    <RadarChart data={radarData} outerRadius="75%">
+                        <PolarGrid stroke="#334155" />
+                        <PolarAngleAxis dataKey="axis" stroke="#94a3b8" fontSize={11} />
+                        <PolarRadiusAxis stroke="#334155" fontSize={9} domain={[0, 99]} tickCount={4} />
+                        <Radar dataKey="score" stroke="#f97316" fill="#f97316" fillOpacity={0.3} strokeWidth={2} isAnimationActive={false} />
+                        <Tooltip content={({ active, payload }) => {
+                            if (!active || !payload || !payload.length) return null;
+                            const d = payload[0].payload;
+                            return (
+                                <div className="bg-slate-800 border border-slate-600 p-2 rounded shadow-xl text-xs">
+                                    <div className="font-bold text-white">{d.axis}</div>
+                                    <div className="text-orange-400">Note: <span className="font-bold">{d.score}</span>/99</div>
+                                    <div className="text-slate-400">Valeur: {d.raw}</div>
+                                </div>
+                            );
+                        }} />
+                    </RadarChart>
+                </ResponsiveContainer>
+            </div>
+            <div className="flex flex-wrap gap-2 mt-2 justify-center">
+                {radarData.map(d => (
+                    <span key={d.axis} className="text-[10px] text-slate-400">
+                        {d.axis}: <span className={`font-bold ${d.score >= 70 ? 'text-green-400' : d.score >= 40 ? 'text-orange-400' : 'text-red-400'}`}>{d.score}</span>
+                    </span>
+                ))}
+            </div>
+        </div>
+    );
+}
 // --- LIVE TRACKER ---
 function LiveTracker({ players, onSaveGame, initialGame, phases, selectedPhase }) {
     const [gameState, setGameState] = useState({ quarter: 1, opponent: "Adversaire", actions: [], phase: selectedPhase });
@@ -499,6 +1175,7 @@ function GlobalStats({ players, games, phases, isAdmin }) {
     const [filterPhase, setFilterPhase] = React.useState('all');
     const [selectedPlayer, setSelectedPlayer] = React.useState(null);
     const [showTeamTrends, setShowTeamTrends] = React.useState(false);
+    const [showVolumeMatrix, setShowVolumeMatrix] = useState(false);
     const [viewMode, setViewMode] = React.useState('classic'); // 'classic' or 'advanced'
 
     // Filtrage des matchs
@@ -674,7 +1351,8 @@ const GT = { FGM:0, FGA:0, ThreePM:0, FTM:0, FTA:0, ORB:0, DRB:0,
                 });
             });
         });
-
+        const k_formation = 1.8;
+const impact_individuel = 0.30;
        // Remplacer TOUT le bloc : return Object.values(agg).filter(...).map(...).sort(...)
 
 return Object.values(agg)
@@ -685,7 +1363,10 @@ return Object.values(agg)
 
         // ── Totaux tirs (2pts + 3pts combinés) ──
         const totalFGM = (t.fgm || 0) + (t.threePM || 0);
-        const totalFGA = (t.fga || 0) + (t.threePA || 0);
+        const totalFGA = (t.fga || 0) + (t.threePA || 0);const totalTeamMinutes = GT.MP || 1;
+        const activePlayersCount = Object.values(agg).filter(x => x.gamesPlayed > 0).length || 1;
+        const teamPossessions = (GT.FGA + 0.44 * GT.FTA - GT.ORB + GT.TOV) || 1;
+
 
         // ── Pourcentages avancés ──
         const fgPct = totalFGA > 0 ? ((totalFGM / totalFGA) * 100).toFixed(1) : "0.0";
@@ -710,10 +1391,49 @@ return Object.values(agg)
                        + 0.5 * GT.BLK - GT.PF - GT.TOV;
         const pie = pieDenom !== 0 ? ((pieNum / pieDenom) * 100) : 0;
 
-        // ── ORtg / DRtg simplifiés ──
-        const playerPoss = totalFGA + 0.44 * (t.fta || 0) + (t.tov || 0);
-        const ORtg = playerPoss > 0 ? ((t.pts || 0) / playerPoss) * 100 : 0;
-        const DRtg = 0; // Nécessite oppStats agrégées
+       // ── 2. CALCULS DEAN OLIVER (ADAPTATION FORMATION U18) ──
+        const qAST_term1 = (t.minutes / (totalTeamMinutes / 5)) * (1.14 * ((GT.AST - t.ast) / (GT.FGM || 1)));
+        const qAST_term2 = ((((GT.AST / totalTeamMinutes) * t.minutes * 5 - t.ast) / ((GT.FGM / totalTeamMinutes) * t.minutes * 5 - totalFGM || 1)) * (1 - (t.minutes / (totalTeamMinutes / 5))));
+        const qAST = Math.max(0, qAST_term1 + qAST_term2);
+        
+        const Team_ORB_Pct = GT.ORB / (GT.ORB + (GT.Opp_TRB - GT.Opp_ORB) || 1);
+        const Team_Scoring_Poss = GT.FGM + (1 - Math.pow(1 - (GT.FTM / (GT.FTA || 1)), 2)) * 0.4 * GT.FTA;
+        const Team_Play_Pct = Team_Scoring_Poss / (GT.FGA + 0.4 * GT.FTA + GT.TOV || 1);
+        const Team_ORB_Weight = ((1 - Team_ORB_Pct) * Team_Play_Pct) / ((1 - Team_ORB_Pct) * Team_Play_Pct + Team_ORB_Pct * (1 - Team_Play_Pct) || 1);
+        
+        const FG_Part = totalFGM * (1 - 0.5 * (((t.pts || 0) - (t.ftm || 0)) / (2 * totalFGA || 1)) * qAST);
+        const AST_Part = 0.5 * (((GT.PTS - GT.FTM) - ((t.pts || 0) - (t.ftm || 0))) / (2 * (GT.FGA - totalFGA) || 1)) * (t.ast || 0);
+        const FT_Part = (1 - Math.pow(1 - ((t.ftm || 0) / ((t.fta || 1) || 1)), 2)) * 0.4 * (t.fta || 0);
+        const ORB_Part = (t.oreb || 0) * Team_ORB_Weight * Team_Play_Pct;
+        
+        const ScPoss = (FG_Part + AST_Part + FT_Part) * (1 - (GT.ORB / (Team_Scoring_Poss || 1)) * Team_ORB_Weight * Team_Play_Pct) + ORB_Part;
+        const TotPoss = ScPoss + (totalFGA - totalFGM) * (1 - 1.07 * Team_ORB_Pct) + Math.pow(1 - ((t.ftm || 0) / ((t.fta || 1) || 1)), 2) * 0.4 * (t.fta || 0) + (t.tov || 0);
+        
+        const PProd_FG = 2 * (totalFGM + 0.5 * (t.threePM || 0)) * (1 - 0.5 * (((t.pts || 0) - (t.ftm || 0)) / (2 * totalFGA || 1)) * qAST);
+        const PProd_AST = 2 * ((GT.FGM - totalFGM + 0.5 * (GT.ThreePM - (t.threePM || 0))) / (GT.FGM - totalFGM || 1)) * 0.5 * (((GT.PTS - GT.FTM) - ((t.pts || 0) - (t.ftm || 0))) / (2 * (GT.FGA - totalFGA) || 1)) * (t.ast || 0);
+        const PProd_ORB = (t.oreb || 0) * Team_ORB_Weight * Team_Play_Pct * (GT.PTS / (Team_Scoring_Poss || 1));
+        const PProd = (PProd_FG + PProd_AST + (t.ftm || 0)) * (1 - (GT.ORB / (Team_Scoring_Poss || 1)) * Team_ORB_Weight * Team_Play_Pct) + PProd_ORB;
+        
+        const ORtg_Raw = TotPoss > 0 ? 100 * (PProd / TotPoss) : 0;
+
+        // DRtg avec Stops (Impact individuel renforcé à 0.30 pour la formation)
+        const DOR_Pct = GT.Opp_ORB / (GT.Opp_ORB + GT.DRB || 1);
+        const DFG_Pct = GT.Opp_FGM / (GT.Opp_FGA || 1);
+        const FMwt = (DFG_Pct * (1 - DOR_Pct)) / (DFG_Pct * (1 - DOR_Pct) + (1 - DFG_Pct) * DOR_Pct || 1);
+        const Stops1 = (t.stl || 0) + (t.blk || 0) * FMwt * (1 - 1.07 * DOR_Pct) + (t.dreb || 0) * (1 - FMwt);
+        const Stops2 = (((GT.Opp_FGA - GT.Opp_FGM - GT.BLK) / totalTeamMinutes) * FMwt * (1 - 1.07 * DOR_Pct) + ((GT.Opp_TOV - GT.STL) / totalTeamMinutes)) * t.minutes + (t.pf / (GT.PF || 1)) * 0.4 * GT.Opp_FTA * Math.pow(1 - (GT.Opp_FTM / (GT.Opp_FTA || 1)), 2);
+        
+        const Stop_Pct = ((Stops1 + Stops2) * totalTeamMinutes) / (teamPossessions * t.minutes || 1);
+        const D_Pts_per_ScPoss = GT.Opp_PTS / (GT.Opp_FGM + (1 - Math.pow(1 - (GT.Opp_FTM / (GT.Opp_FTA || 1)), 2)) * 0.4 * GT.Opp_FTA || 1);
+        const Team_DRtg = (GT.Opp_PTS / teamPossessions) * 100;
+        
+        const DRtg_Raw = Team_DRtg + 0.30 * (100 * D_Pts_per_ScPoss * (1 - Stop_Pct) - Team_DRtg);
+
+        // ── 3. PONDÉRATION "FORMATION" (k=1.8 pour lisser le déchet technique) ──
+        const weight = t.minutes / (t.minutes + (1.8 * (totalTeamMinutes / activePlayersCount)));
+        const ORtg = (GT.PTS / teamPossessions) * 100 + (ORtg_Raw - (GT.PTS / teamPossessions) * 100) * weight;
+        const DRtg = Team_DRtg + ((DRtg_Raw || Team_DRtg) - Team_DRtg) * weight;
+
 
         // ── Métriques avancées Sprint A ──
         const seasonStats = {
@@ -804,6 +1524,8 @@ return Object.values(agg)
                         >
                             {viewMode === 'classic' ? 'Vue Avancée' : 'Vue Classique'}
                         </button>
+                        <Button variant="ghost" size="sm" onClick={() => setShowVolumeMatrix(true)}><Icon path={Icons.Chart} /> Volume/Eff.</Button>
+
                     </div>
                     <div className="flex gap-2">
                          <button 
@@ -1169,6 +1891,22 @@ return Object.values(agg)
                         </ResponsiveContainer>
                     </div>
                 </div>
+                 <div className="bg-slate-900 rounded-lg p-3 border border-slate-700">
+                    <h4 className="text-xs text-slate-400 uppercase mb-2 font-bold">ORtg / DRtg par match</h4>
+                    <div className="h-48 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <GhostSeasonChart logs={selectedPlayer.logs} currentGame={null} />
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+                 <div className="bg-slate-900 rounded-lg p-3 border border-slate-700">
+                    <h4 className="text-xs text-slate-400 uppercase mb-2 font-bold">ORtg / DRtg par match</h4>
+                    <div className="h-48 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <ArchetypeRadar player={selectedPlayer} allPlayers={aggregated} />
+                        </ResponsiveContainer>
+                    </div>
+                </div>
             </div>
             )}
 
@@ -1230,6 +1968,9 @@ return Object.values(agg)
         </div>
     </Modal>
 )}
+<Modal isOpen={showVolumeMatrix} onClose={() => setShowVolumeMatrix(false)} title={<><Icon path={Icons.Chart} /> Matrice Volume / Efficacité</>} size="max-w-3xl">
+                <VolumeEfficiencyMatrix players={aggregated} />
+            </Modal>
         </div>
     );
 }
@@ -1348,6 +2089,11 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={`Vs ${game.opponent}`} size="max-w-6xl">
             <div className="space-y-4 md:space-y-6">
+                {game.scoreHistory && game.scoreHistory.length > 1 && (
+                    <Card className="p-4">
+                        <MomentumChart scoreHistory={game.scoreHistory} actions={game.actions || []} />
+                    </Card>
+                )}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4">
                     <div className="lg:col-span-2 bg-slate-900 p-3 rounded-lg flex justify-between items-center border border-slate-700 relative overflow-hidden shadow-inner">
                         <div className="text-center z-10 w-1/3"><div className="text-[10px] md:text-xs text-slate-400 uppercase tracking-widest">Nous</div><div className="text-3xl md:text-5xl font-black text-green-400 leading-none mt-1">{game.homeScore}</div></div>
@@ -1484,7 +2230,436 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
                     <div className="mt-6 text-center text-slate-500 text-sm py-6 bg-slate-900/50 rounded-lg border border-slate-700/50">Match importe sans play-by-play detaille</div>
                 )}
             </div>
+{/* CLUTCH ANALYSIS */}
+                <ClutchPanel game={game} players={players} />
+
+                {/* ON/OFF IMPACT */}
+                <OnOffPanel game={game} players={players} />
         </Modal>
+    );
+}
+
+function ClutchPanel({ game, players }) {
+    if (!game?.actions?.length || !game.actions[0].onCourt || game.actions[0].time === undefined) {
+        return React.createElement('div', { className: 'text-center text-slate-500 text-sm py-8' },
+            '⏱️ Données clutch non disponibles (match sans timeline détaillée)'
+        );
+    }
+
+    const clutchActions = filterClutchActions(game.actions, players);
+    if (!clutchActions || !clutchActions.length) {
+        return React.createElement('div', { className: 'text-center text-slate-500 text-sm py-8' },
+            'Aucune action en situation clutch détectée (Q4/OT, 2 dernières min, écart ≤5 pts)'
+        );
+    }
+
+    const clutchData = players.map(p => {
+        const stats = calcClutchStats(clutchActions, p.id);
+        if (!stats) return null;
+        const rating = calcClutchRating(stats);
+        return { player: p, stats, rating };
+    }).filter(Boolean).sort((a, b) => b.rating - a.rating);
+
+    if (!clutchData.length) {
+        return React.createElement('div', { className: 'text-center text-slate-500 text-sm py-8' },
+            'Aucun joueur actif en situation clutch'
+        );
+    }
+
+    const getRatingColor = (r) => {
+        if (r >= 70) return 'text-green-400';
+        if (r >= 40) return 'text-yellow-400';
+        return 'text-red-400';
+    };
+
+    const getRatingBg = (r) => {
+        if (r >= 70) return 'bg-green-500/20 border-green-500/40';
+        if (r >= 40) return 'bg-yellow-500/20 border-yellow-500/40';
+        return 'bg-red-500/20 border-red-500/40';
+    };
+
+    return React.createElement('div', { className: 'space-y-4' },
+        // Header
+        React.createElement('div', { className: 'flex items-center justify-between' },
+            React.createElement('h4', { className: 'text-sm text-orange-400 uppercase font-bold' }, '🔥 Clutch Performance'),
+            React.createElement('span', { className: 'text-xs text-slate-500' },
+                clutchActions.length + ' actions clutch (Q4/OT, 2 dernières min, ≤5 pts)')
+        ),
+
+        // Tableau
+        React.createElement('div', { className: 'overflow-x-auto' },
+            React.createElement('table', { className: 'w-full text-xs' },
+                React.createElement('thead', null,
+                    React.createElement('tr', { className: 'border-b border-slate-700 text-slate-400' },
+                        React.createElement('th', { className: 'p-2 text-left' }, 'Joueur'),
+                        React.createElement('th', { className: 'p-2 text-center' }, 'Rating'),
+                        React.createElement('th', { className: 'p-2 text-center' }, 'PTS'),
+                        React.createElement('th', { className: 'p-2 text-center' }, 'FG'),
+                        React.createElement('th', { className: 'p-2 text-center' }, '3PT'),
+                        React.createElement('th', { className: 'p-2 text-center' }, 'FT'),
+                        React.createElement('th', { className: 'p-2 text-center' }, 'AST'),
+                        React.createElement('th', { className: 'p-2 text-center' }, 'TOV')
+                    )
+                ),
+                React.createElement('tbody', { className: 'divide-y divide-slate-800' },
+                    clutchData.map(({ player, stats, rating }) =>
+                        React.createElement('tr', { key: player.id, className: 'hover:bg-slate-800/50' },
+                            React.createElement('td', { className: 'p-2 font-bold text-white' },
+                                '#' + player.number + ' ' + player.name
+                            ),
+                            React.createElement('td', { className: 'p-2 text-center' },
+                                React.createElement('span', {
+                                    className: `inline-block px-2 py-0.5 rounded border text-xs font-bold ${getRatingBg(rating)} ${getRatingColor(rating)}`
+                                }, rating)
+                            ),
+                            React.createElement('td', { className: 'p-2 text-center font-bold text-orange-400' }, stats.pts),
+                            React.createElement('td', { className: 'p-2 text-center' },
+                                stats.fgm + '-' + stats.fga,
+                                React.createElement('span', { className: 'text-slate-500 ml-1' }, '(' + stats.fgPct + '%)')
+                            ),
+                            React.createElement('td', { className: 'p-2 text-center text-slate-400' },
+                                stats.threePM + '-' + stats.threePA
+                            ),
+                            React.createElement('td', { className: 'p-2 text-center text-slate-400' },
+                                stats.ftm + '-' + stats.fta
+                            ),
+                            React.createElement('td', { className: 'p-2 text-center text-blue-400' }, stats.ast),
+                            React.createElement('td', { className: 'p-2 text-center text-red-400' }, stats.tov)
+                        )
+                    )
+                )
+            )
+        )
+    );
+}
+
+
+// ===========================================
+// 4. COMPOSANT OnOffPanel
+// ===========================================
+
+function OnOffPanel({ game, players }) {
+    const MIN_POSSESSIONS = 10;
+    const [sortKey, setSortKey] = useState('netDiff');
+    const [sortDir, setSortDir] = useState(-1);
+    const [expandedPlayer, setExpandedPlayer] = useState(null);
+
+    if (!game?.actions?.length || !game.actions[0].onCourt || game.actions[0].time === undefined) {
+        return React.createElement('div', { className: 'text-center text-slate-500 text-sm py-8' },
+            '📊 Données ON/OFF non disponibles (match sans lineup tracking)'
+        );
+    }
+
+    const impacts = players
+        .filter(p => {
+            const ps = game.playerStats?.[p.id];
+            return ps && (ps.minutes || 0) > 0;
+        })
+        .map(p => {
+            const impact = calcOnOffImpact(game.actions, p.id, players);
+            if (!impact) return null;
+            return { player: p, ...impact };
+        })
+        .filter(i => i && (i.on.poss + i.off.poss) >= MIN_POSSESSIONS);
+
+    if (!impacts.length) {
+        return React.createElement('div', { className: 'text-center text-slate-500 text-sm py-8' },
+            'Aucune donnée ON/OFF calculable (trop peu de possessions)'
+        );
+    }
+
+    const toggleSort = (key) => {
+        if (sortKey === key) setSortDir(d => d * -1);
+        else { setSortKey(key); setSortDir(-1); }
+    };
+
+    const sorted = [...impacts].sort((a, b) => {
+        const map = { netDiff: 'netDiff', netOn: 'netOn', netOff: 'netOff', dpr: 'on' };
+        let va, vb;
+        if (sortKey === 'dpr') { va = a.on.dpr; vb = b.on.dpr; }
+        else { va = a[sortKey]; vb = b[sortKey]; }
+        return (va - vb) * sortDir;
+    });
+
+    const maxAbsNetDiff = Math.max(1, ...impacts.map(i => Math.abs(i.netDiff)));
+
+    const SortHeader = ({ label, sortKeyVal }) =>
+        React.createElement('th', {
+            className: 'p-2 text-center cursor-pointer hover:text-orange-400 select-none',
+            onClick: () => toggleSort(sortKeyVal)
+        }, label + (sortKey === sortKeyVal ? (sortDir === -1 ? ' ▼' : ' ▲') : ''));
+
+    return React.createElement('div', { className: 'space-y-4' },
+
+        // HEADER
+        React.createElement('div', { className: 'flex items-center justify-between' },
+            React.createElement('h4', { className: 'text-sm text-orange-400 uppercase font-bold' },
+                '📈 Impact ON/OFF'),
+            React.createElement('span', { className: 'text-xs text-slate-500' },
+                'Ratings pour 100 possessions — cliquer un joueur pour le détail DPR')
+        ),
+
+        // TABLEAU
+        React.createElement('div', { className: 'overflow-x-auto' },
+            React.createElement('table', { className: 'w-full text-xs' },
+
+                // THEAD
+                React.createElement('thead', null,
+                    React.createElement('tr', { className: 'border-b border-slate-700 text-slate-400' },
+                        React.createElement('th', { className: 'p-2 text-left' }, 'Joueur'),
+                        React.createElement('th', { className: 'p-2 text-center', colSpan: 2 }, 'ON Court'),
+                        React.createElement('th', { className: 'p-2 text-center', colSpan: 2 }, 'OFF Court'),
+                        React.createElement('th', { className: 'p-2 text-center text-[10px]' }, 'Déf'),
+                        SortHeader({ label: 'Net ON', sortKeyVal: 'netOn' }),
+                        SortHeader({ label: 'Net OFF', sortKeyVal: 'netOff' }),
+                        SortHeader({ label: 'Diff', sortKeyVal: 'netDiff' })
+                    ),
+                    React.createElement('tr', { className: 'border-b border-slate-800 text-slate-500 text-[10px]' },
+                        React.createElement('th', null),
+                        React.createElement('th', { className: 'p-1 text-center' }, 'ORtg'),
+                        React.createElement('th', { className: 'p-1 text-center' }, 'DPR'),
+                        React.createElement('th', { className: 'p-1 text-center' }, 'ORtg'),
+                        React.createElement('th', { className: 'p-1 text-center' }, 'DPR'),
+                        React.createElement('th', { className: 'p-1 text-center' }, 'STL/BLK/DR'),
+                        React.createElement('th', null),
+                        React.createElement('th', null),
+                        React.createElement('th', null)
+                    )
+                ),
+
+                // TBODY
+                React.createElement('tbody', { className: 'divide-y divide-slate-800' },
+                    sorted.flatMap(({ player, on, off, netDiff, netOn, netOff, netDiff_raw, netOn_raw, netOff_raw, weightON, weightOFF, K_on }) => {
+                        const isExpanded = expandedPlayer === player.id;
+                        const rows = [];
+
+                        // Ligne principale
+                        rows.push(
+                            React.createElement('tr', {
+                                key: player.id,
+                                className: 'hover:bg-slate-800/50 cursor-pointer' + (isExpanded ? ' bg-slate-800/30' : ''),
+                                onClick: () => setExpandedPlayer(isExpanded ? null : player.id)
+                            },
+                                // Nom + poss + usage
+                                React.createElement('td', { className: 'p-2 font-bold text-white whitespace-nowrap' },
+                                    React.createElement('span', null, '#' + player.number + ' ' + player.name),
+                                    React.createElement('span', { className: 'text-[10px] text-slate-500 ml-1' },
+                                        '(' + on.poss + '/' + off.poss + ' poss • Usg ' + on.usageRate + '% • Fiab. ' + weightON + '%)'
+                                    ),
+                                    React.createElement('span', { className: 'text-[10px] text-slate-600 ml-1' },
+                                        isExpanded ? '▲' : '▼')
+                                ),
+
+                                // ON ORtg
+                                React.createElement('td', { className: 'p-2 text-center text-green-400 font-mono' }, on.ortg),
+                                // ON DPR
+                                React.createElement('td', { className: 'p-2 text-center text-red-400 font-mono' }, on.dpr),
+                                // OFF ORtg
+                                React.createElement('td', { className: 'p-2 text-center text-green-400/60 font-mono' }, off.ortg),
+                                // OFF DPR
+                                React.createElement('td', { className: 'p-2 text-center text-red-400/60 font-mono' }, off.dpr),
+
+                                // STL / BLK / DREB
+                                React.createElement('td', { className: 'p-2 text-center text-slate-300 font-mono text-[10px]' },
+                                    on.playerStl + '/' + on.playerBlk + '/' + on.playerDreb),
+
+                                // Net ON
+                                React.createElement('td', {
+                                    className: 'p-2 text-center font-bold font-mono ' + (netOn >= 0 ? 'text-green-400' : 'text-red-400')
+                                }, (netOn > 0 ? '+' : '') + netOn),
+
+                                // Net OFF
+                                React.createElement('td', {
+                                    className: 'p-2 text-center font-mono ' + (netOff >= 0 ? 'text-green-400/60' : 'text-red-400/60')
+                                }, (netOff > 0 ? '+' : '') + netOff),
+
+                                // Net Diff badge
+                                React.createElement('td', { className: 'p-2 text-center' },
+                                    React.createElement('span', {
+                                        className: 'inline-block px-2 py-0.5 rounded font-bold ' +
+                                            (netDiff > 0 ? 'bg-green-500/20 text-green-400' :
+                                             netDiff < 0 ? 'bg-red-500/20 text-red-400' :
+                                             'bg-slate-700 text-slate-400')
+                                    }, (netDiff > 0 ? '+' : '') + netDiff)
+                                )
+                            )
+                        );
+
+                        // Ligne de détail DPR (expandable)
+                        if (isExpanded) {
+                            rows.push(
+                                React.createElement('tr', {
+                                    key: player.id + '_detail',
+                                    className: 'bg-slate-900/60'
+                                },
+                                    React.createElement('td', { colSpan: 9, className: 'px-4 py-3' },
+                                        React.createElement('div', { className: 'flex flex-wrap gap-4 text-[11px]' },
+
+                                            // DPR Breakdown ON
+                                            React.createElement('div', { className: 'bg-slate-800 rounded-lg p-3 flex-1 min-w-[200px]' },
+                                                React.createElement('div', { className: 'text-orange-400 font-bold mb-2 text-xs' }, '🛡️ DPR ON Court — Décomposition'),
+                                                React.createElement('div', { className: 'space-y-1' },
+                                                    React.createElement('div', { className: 'flex justify-between' },
+                                                        React.createElement('span', { className: 'text-slate-400' }, 'Base DRtg (pts encaissés)'),
+                                                        React.createElement('span', { className: 'text-red-400 font-mono' }, on.drtg)
+                                                    ),
+                                                    React.createElement('div', { className: 'flex justify-between' },
+                                                        React.createElement('span', { className: 'text-slate-400' }, '− Contrib (STL×1.8 + BLK×1.2 + DREB×0.4)'),
+                                                        React.createElement('span', { className: 'text-green-400 font-mono' }, '−' + on.defContrib)
+                                                    ),
+                                                    React.createElement('div', { className: 'flex justify-between' },
+                                                        React.createElement('span', { className: 'text-slate-400' }, '+ Pénalité fautes (PF×0.7)'),
+                                                        React.createElement('span', { className: 'text-red-400 font-mono' }, '+' + on.defPenalty)
+                                                    ),
+                                                    React.createElement('div', { className: 'flex justify-between' },
+                                                        React.createElement('span', { className: 'text-slate-400' }, 'Adv. FG% quand ON'),
+                                                        React.createElement('span', {
+                                                            className: 'font-mono ' + (on.oppFgPct > 42 ? 'text-red-400' : 'text-green-400')
+                                                        }, on.oppFgPct + '%')
+                                                    ),
+                                                    React.createElement('div', { className: 'flex justify-between border-t border-slate-700 pt-1 mt-1' },
+                                                        React.createElement('span', { className: 'text-white font-bold' }, 'DPR final'),
+                                                        React.createElement('span', { className: 'text-white font-bold font-mono' }, on.dpr)
+                                                    )
+                                                )
+                                            ),
+
+                                            // Stats défensives individuelles
+                                            React.createElement('div', { className: 'bg-slate-800 rounded-lg p-3 min-w-[140px]' },
+                                                React.createElement('div', { className: 'text-orange-400 font-bold mb-2 text-xs' }, '📊 Actions défensives'),
+                                                React.createElement('div', { className: 'space-y-1' },
+                                                    React.createElement('div', { className: 'flex justify-between gap-4' },
+                                                        React.createElement('span', { className: 'text-slate-400' }, 'Interceptions'),
+                                                        React.createElement('span', { className: 'text-cyan-400 font-mono font-bold' }, on.playerStl)
+                                                    ),
+                                                    React.createElement('div', { className: 'flex justify-between gap-4' },
+                                                        React.createElement('span', { className: 'text-slate-400' }, 'Contres'),
+                                                        React.createElement('span', { className: 'text-cyan-400 font-mono font-bold' }, on.playerBlk)
+                                                    ),
+                                                    React.createElement('div', { className: 'flex justify-between gap-4' },
+                                                        React.createElement('span', { className: 'text-slate-400' }, 'Reb. déf.'),
+                                                        React.createElement('span', { className: 'text-cyan-400 font-mono font-bold' }, on.playerDreb)
+                                                    ),
+                                                    React.createElement('div', { className: 'flex justify-between gap-4' },
+                                                        React.createElement('span', { className: 'text-slate-400' }, 'Fautes'),
+                                                        React.createElement('span', { className: 'text-red-400 font-mono font-bold' }, on.playerPf)
+                                                    )
+                                                )
+                                            ),
+
+                                            // Usage offensif
+                                            React.createElement('div', { className: 'bg-slate-800 rounded-lg p-3 min-w-[140px]' },
+                                                React.createElement('div', { className: 'text-orange-400 font-bold mb-2 text-xs' }, '🎯 Shrinkage (fiabilité)'),
+                                                React.createElement('div', { className: 'space-y-1' },
+                                                    React.createElement('div', { className: 'flex justify-between gap-4' },
+                                                        React.createElement('span', { className: 'text-slate-400' }, 'Poss ON'),
+                                                        React.createElement('span', { className: 'font-mono text-white' }, on.poss)
+                                                    ),
+                                                    React.createElement('div', { className: 'flex justify-between gap-4' },
+                                                        React.createElement('span', { className: 'text-slate-400' }, 'Actions individuelles'),
+                                                        React.createElement('span', { className: 'font-mono text-white' }, on.playerActions)
+                                                    ),
+                                                    React.createElement('div', { className: 'flex justify-between gap-4' },
+                                                        React.createElement('span', { className: 'text-slate-400' }, 'Taux implication'),
+                                                        React.createElement('span', { className: 'font-mono ' + (on.involvementRate >= 0.3 ? 'text-green-400' : on.involvementRate >= 0.15 ? 'text-yellow-400' : 'text-red-400') },
+                                                            Math.round(on.involvementRate * 100) + '%')
+                                                    ),
+                                                    React.createElement('div', { className: 'flex justify-between gap-4' },
+                                                        React.createElement('span', { className: 'text-slate-400' }, 'K adapté (base 30)'),
+                                                        React.createElement('span', { className: 'font-mono text-cyan-400' }, K_on)
+                                                    ),
+                                                    React.createElement('div', { className: 'flex justify-between gap-4' },
+                                                        React.createElement('span', { className: 'text-slate-400' }, 'Poids final'),
+                                                        React.createElement('span', { className: 'font-mono font-bold ' + (weightON >= 50 ? 'text-green-400' : 'text-yellow-400') }, weightON + '%')
+                                                    ),
+                                                    React.createElement('div', { className: 'flex justify-between gap-4 border-t border-slate-700 pt-1 mt-1' },
+                                                        React.createElement('span', { className: 'text-slate-400' }, 'Net Diff brut'),
+                                                        React.createElement('span', { className: 'font-mono text-slate-300' }, (netDiff_raw > 0 ? '+' : '') + netDiff_raw)
+                                                    ),
+                                                    React.createElement('div', { className: 'flex justify-between gap-4' },
+                                                        React.createElement('span', { className: 'text-white font-bold' }, 'Net Diff ajusté'),
+                                                        React.createElement('span', { className: 'font-mono font-bold ' + (netDiff >= 0 ? 'text-green-400' : 'text-red-400') }, (netDiff > 0 ? '+' : '') + netDiff)
+                                                    )
+                                                )
+                                            ),
+
+                                            // Profil offensif
+                                            React.createElement('div', { className: 'bg-slate-800 rounded-lg p-3 min-w-[140px]' },
+                                                React.createElement('div', { className: 'text-orange-400 font-bold mb-2 text-xs' }, '⚡ Profil offensif ON'),
+                                                React.createElement('div', { className: 'space-y-1' },
+                                                    React.createElement('div', { className: 'flex justify-between gap-4' },
+                                                        React.createElement('span', { className: 'text-slate-400' }, 'Usage Rate'),
+                                                        React.createElement('span', { className: 'text-yellow-400 font-mono font-bold' }, on.usageRate + '%')
+                                                    ),
+                                                    React.createElement('div', { className: 'flex justify-between gap-4' },
+                                                        React.createElement('span', { className: 'text-slate-400' }, 'Tirs'),
+                                                        React.createElement('span', { className: 'font-mono text-white' }, on.playerFgm + '-' + on.playerFga)
+                                                    ),
+                                                    React.createElement('div', { className: 'flex justify-between gap-4' },
+                                                        React.createElement('span', { className: 'text-slate-400' }, 'Passes D.'),
+                                                        React.createElement('span', { className: 'text-blue-400 font-mono font-bold' }, on.playerAst)
+                                                    ),
+                                                    React.createElement('div', { className: 'flex justify-between gap-4' },
+                                                        React.createElement('span', { className: 'text-slate-400' }, 'Pertes'),
+                                                        React.createElement('span', { className: 'text-red-400 font-mono font-bold' }, on.playerTov)
+                                                    )
+                                                )
+                                            )
+                                        )
+                                    )
+                                )
+                            );
+                        }
+
+                        return rows;
+                    })
+                )
+            )
+        ),
+
+        // BAR CHART HORIZONTAL (Net Diff)
+        React.createElement('div', { className: 'mt-4' },
+            React.createElement('h5', { className: 'text-xs text-slate-400 mb-2 uppercase' },
+                'Net Rating Différentiel (ON − OFF)'),
+            React.createElement('div', { className: 'space-y-1' },
+                sorted.map(({ player, netDiff }) => {
+                    const pct = Math.abs(netDiff) / maxAbsNetDiff * 100;
+                    const isPositive = netDiff >= 0;
+                    return React.createElement('div', {
+                        key: player.id, className: 'flex items-center gap-2 h-7'
+                    },
+                        React.createElement('span', {
+                            className: 'text-[10px] text-slate-400 w-20 text-right truncate'
+                        }, '#' + player.number + ' ' + player.name.split(' ')[0]),
+
+                        React.createElement('div', { className: 'flex-1 flex items-center h-full' },
+                            React.createElement('div', {
+                                className: 'relative h-full flex items-center',
+                                style: { width: '100%' }
+                            },
+                                React.createElement('div', {
+                                    className: 'absolute left-1/2 top-0 bottom-0 w-px bg-slate-600',
+                                    style: { transform: 'translateX(-50%)' }
+                                }),
+                                isPositive
+                                    ? React.createElement('div', {
+                                        className: 'absolute h-4 bg-green-500/60 rounded-r',
+                                        style: { left: '50%', width: (pct / 2) + '%' }
+                                    })
+                                    : React.createElement('div', {
+                                        className: 'absolute h-4 bg-red-500/60 rounded-l',
+                                        style: { right: '50%', width: (pct / 2) + '%' }
+                                    })
+                            )
+                        ),
+
+                        React.createElement('span', {
+                            className: 'text-[10px] font-bold w-8 ' + (isPositive ? 'text-green-400' : 'text-red-400')
+                        }, (netDiff > 0 ? '+' : '') + netDiff)
+                    );
+                })
+            )
+        )
     );
 }
 
