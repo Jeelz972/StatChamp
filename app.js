@@ -92,6 +92,102 @@ const calculateAverageMinutes = (playerStats) => {
     return active.reduce((sum, s) => sum + (s.minutes || 0), 0) / active.length;
 };
 
+// 1. Game Score (Hollinger)
+const calcGameScore = (s) => {
+    const FGM = (s.fgm || 0) + (s.threePM || 0);
+    const FGA = (s.fga || 0) + (s.threePA || 0);
+    const FTM = s.ftm || 0, FTA = s.fta || 0;
+    const PTS = s.pts || 0;
+    const OREB = s.oreb || 0, DREB = s.dreb || 0;
+    const STL = s.stl || 0, AST = s.ast || 0, BLK = s.blk || 0;
+    const PF = s.pf || 0, TOV = s.tov || 0;
+
+    return PTS + 0.4 * FGM - 0.7 * FGA - 0.4 * (FTA - FTM)
+         + 0.7 * OREB + 0.3 * DREB + STL + 0.7 * AST
+         + 0.7 * BLK - 0.4 * PF - TOV;
+};
+
+// 2. Hustle Index — normalisé par 36 min si minutes > 0
+const calcHustleIndex = (s) => {
+    const raw = (s.oreb || 0) * 1.5
+              + (s.stl || 0) * 1.2
+              + (s.blk || 0) * 1.0
+              + (s.chargesTaken || 0) * 2.0;
+    const min = s.minutes || s.min || 0;
+    if (min <= 0) return raw;
+    return (raw / min) * 36;
+};
+
+// 3. Consistency — écart-type de l'EFF sur les logs
+const calcConsistency = (logs) => {
+    if (!logs || logs.length < 2) return null;
+    const values = logs.map(l => l.eff || 0);
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / values.length;
+    return Math.sqrt(variance);
+};
+
+// 4. Estimated Points Created (simplifié U18)
+// EPC = AST * avgPtsPerAssist + OREB * 0.7 + FTDrawn * 0.4
+// avgPtsPerAssist estimé à ~2.0 pour U18 (proche de la valeur médiane FIBA jeunes)
+const calcEPC = (s, teamStats) => {
+    const AST = s.ast || 0;
+    const OREB = s.oreb || 0;
+    const FTA = s.fta || 0;
+
+    const teamPTS = teamStats.pts || 0;
+    const teamFTM = teamStats.ftm || 0;
+    const teamFGA = teamStats.fga || 1;
+    const teamAST = teamStats.ast || 1;
+
+    // Points produits par les tirs assistés (hors LF) / nombre d'assists équipe
+    const avgPtsPerAssist = teamAST > 0
+        ? ((teamPTS - teamFTM) / teamFGA) * 2 * (1 / (teamAST / (teamAST + 1)))
+        : 2.0;
+    // Simplification : on borne à [1.5, 2.8] pour rester réaliste en U18
+    const clampedAvg = Math.max(1.5, Math.min(2.8, avgPtsPerAssist));
+
+    return AST * clampedAvg + OREB * 0.7 + FTA * 0.4;
+};
+
+// 5. Floor General — ratio AST/TOV + pourcentages
+const calcFloorGeneral = (s, teamStats) => {
+    const AST = s.ast || 0, TOV = s.tov || 0;
+    const min = s.minutes || s.min || 0;
+    const teamMin = (teamStats && teamStats.minutes) || 200;
+    const teamFGM = (teamStats && teamStats.fgm) || 1;
+    const teamPoss = (teamStats && (teamStats.fga + 0.44 * (teamStats.fta || 0) + (teamStats.tov || 0))) || 1;
+
+    const ratio = AST / (TOV || 1);
+    const minPct = min / (teamMin / 5 || 1);
+    const astPct = teamFGM > 0 && min > 0
+        ? (AST / (((teamFGM / (teamMin || 1)) * min * 5) - (AST > teamFGM ? teamFGM : AST) || 1)) * 100
+        : 0;
+    const tovPct = teamPoss > 0 && min > 0
+        ? (TOV / (((teamPoss / (teamMin || 1)) * min * 5) || 1)) * 100
+        : 0;
+
+    return {
+        ratio: parseFloat(ratio.toFixed(2)),
+        astPct: parseFloat(Math.min(astPct, 100).toFixed(1)),
+        tovPct: parseFloat(Math.min(tovPct, 100).toFixed(1))
+    };
+};
+
+// 6. Dirty Work Index — normalisé per 36 min
+const calcDirtyWork = (s) => {
+    const raw = (s.oreb || 0) * 2
+              + (s.dreb || 0) * 0.5
+              + (s.stl || 0) * 1.5
+              + (s.blk || 0) * 1.5
+              + (s.chargesTaken || 0) * 3
+              + (s.deflections || 0) * 1;
+    const min = s.minutes || s.min || 0;
+    if (min <= 0) return raw;
+    return parseFloat(((raw / min) * 36).toFixed(1));
+};
+
+
 const calculateDeanOliverRatings = ({
     MP, PTS, FGM, FGA, ThreePM, FTM, FTA, ORB, DRB, AST, STL, BLK, TOV, PF,
     Team_PTS, Team_FGM, Team_FGA, Team_ThreePM, Team_FTM, Team_FTA,
@@ -526,8 +622,21 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                 stats: { pts:0, fgm:0, fga:0, threePM:0, threePA:0, ftm:0, fta:0, oreb:0, dreb:0, reb:0, ast:0, stl:0, blk:0, tov:0, pf:0, minutes:0, plusMinus: 0 },logs: []            };
                 
             });
+const GT = { FGM:0, FGA:0, ThreePM:0, FTM:0, FTA:0, ORB:0, DRB:0,
+                 AST:0, STL:0, BLK:0, TOV:0, PF:0, PTS:0, MP:0 };
 
        filteredGames.forEach(g => {
+        Object.values(g.playerStats).forEach(s => {
+            GT.FGM += (s.fgm||0) + (s.threePM||0);
+            GT.FGA += (s.fga||0) + (s.threePA||0);
+            GT.ThreePM += (s.threePM||0);
+            GT.FTM += (s.ftm||0); GT.FTA += (s.fta||0);
+            GT.ORB += (s.oreb||0); GT.DRB += (s.dreb||0);
+            GT.AST += (s.ast||0); GT.STL += (s.stl||0);
+            GT.BLK += (s.blk||0); GT.TOV += (s.tov||0);
+            GT.PF += (s.pf||0); GT.PTS += (s.pts||0);
+            GT.MP += (s.minutes||0);
+        });
             Object.entries(g.playerStats).forEach(([pid, stats]) => {
                 if (!agg[pid]) return;
                 const hasActivity = (stats.pts||0) > 0 || (stats.fgm||0) > 0 || (stats.fga||0) > 0 ||
@@ -545,6 +654,7 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                 const missedFG = ((stats.fga||0)+(stats.threePA||0)) - ((stats.fgm||0)+(stats.threePM||0));
                 const missedFT = (stats.fta||0) - (stats.ftm||0);
                 const eff = (stats.pts||0) + reb + (stats.ast||0) + (stats.stl||0) + (stats.blk||0) - missedFG - missedFT - (stats.tov||0);
+                
                 agg[pid].logs.push({
                     date: g.date,
                     opponent: g.opponent,
@@ -565,39 +675,114 @@ function GlobalStats({ players, games, phases, isAdmin }) {
             });
         });
 
-        return Object.values(agg)
-            .filter(p => p.gamesPlayed > 0)
-            .map(p => {
-                const gp = p.gamesPlayed;
-                const s = p.stats;
-                
-                // Calcul de l'EVAL (Simplifié: PTS + REB + AST + STL + BLK - MissedFG - MissedFT - TOV)
-                const missedFG = (s.fga + s.threePA) - (s.fgm + s.threePM);
-                const missedFT = s.fta - s.ftm;
-                const eff = (s.pts + s.reb + s.ast + s.stl + s.blk - missedFG - missedFT - s.tov) / gp;
+       // Remplacer TOUT le bloc : return Object.values(agg).filter(...).map(...).sort(...)
 
-                return {
-                    ...p,
-                    logs: p.logs.sort((a, b) => parseDate(b.date) - parseDate(a.date)),
-                    avg: {
-                        pts: (s.pts/gp).toFixed(1),
-                        min: (s.minutes/gp).toFixed(1),
-                        fgm: (s.fgm/gp).toFixed(1), fga: (s.fga/gp).toFixed(1),
-                        threePM: (s.threePM/gp).toFixed(1), threePA: (s.threePA/gp).toFixed(1),
-                        ftm: (s.ftm/gp).toFixed(1), fta: (s.fta/gp).toFixed(1),
-                        oreb: (s.oreb/gp).toFixed(1), dreb: (s.dreb/gp).toFixed(1), reb: (s.reb/gp).toFixed(1),
-                        ast: (s.ast/gp).toFixed(1), stl: (s.stl/gp).toFixed(1), blk: (s.blk/gp).toFixed(1),
-                        tov: (s.tov/gp).toFixed(1), pf: (s.pf/gp).toFixed(1),
-                        plusMinus: (s.plusMinus/gp).toFixed(1),
-                        eff: eff.toFixed(1),
-                        fgPct: (s.fga+s.threePA) > 0 ? (((s.fgm+s.threePM)/(s.fga+s.threePA))*100).toFixed(0) : 0,
-                        twoPct: s.fga > 0 ? ((s.fgm/s.fga)*100).toFixed(0) : 0, // Approx si FGA contient que 2pts
-                        threePct: s.threePA > 0 ? ((s.threePM/s.threePA)*100).toFixed(0) : 0,
-                        ftPct: s.fta > 0 ? ((s.ftm/s.fta)*100).toFixed(0) : 0,
-                    }
-                };
-            })
-            .sort((a, b) => parseFloat(b.avg.pts) - parseFloat(a.avg.pts));
+return Object.values(agg)
+    .filter(p => p.gamesPlayed > 0)
+    .map(p => {
+        const gp = p.gamesPlayed;
+        const t = p.stats;
+
+        // ── Totaux tirs (2pts + 3pts combinés) ──
+        const totalFGM = (t.fgm || 0) + (t.threePM || 0);
+        const totalFGA = (t.fga || 0) + (t.threePA || 0);
+
+        // ── Pourcentages avancés ──
+        const fgPct = totalFGA > 0 ? ((totalFGM / totalFGA) * 100).toFixed(1) : "0.0";
+        const threePct = (t.threePA || 0) > 0 ? ((t.threePM / t.threePA) * 100).toFixed(1) : "0.0";
+        const ftPct = (t.fta || 0) > 0 ? ((t.ftm / t.fta) * 100).toFixed(1) : "0.0";
+        const fg2M = totalFGM - (t.threePM || 0);
+        const fg2A = totalFGA - (t.threePA || 0);
+        const twoPct = fg2A > 0 ? ((fg2M / fg2A) * 100).toFixed(1) : "0.0";
+        const eFG = totalFGA > 0 ? (((totalFGM + 0.5 * (t.threePM || 0)) / totalFGA) * 100).toFixed(1) : "0.0";
+        const ts = (totalFGA + 0.44 * (t.fta || 0)) > 0
+            ? (((t.pts || 0) / (2 * (totalFGA + 0.44 * (t.fta || 0)))) * 100).toFixed(1) : "0.0";
+
+        // ── EFF saison (somme des EFF match par match) ──
+        const totalEff = p.logs.reduce((sum, l) => sum + (l.eff || 0), 0);
+
+        // ── PIE saison ──
+        const pieNum = (t.pts || 0) + totalFGM + (t.ftm || 0) - totalFGA - (t.fta || 0)
+                     + (t.dreb || 0) + 0.5 * (t.oreb || 0) + (t.ast || 0)
+                     + (t.stl || 0) + 0.5 * (t.blk || 0) - (t.pf || 0) - (t.tov || 0);
+        const pieDenom = GT.PTS + GT.FGM + GT.FTM - GT.FGA - GT.FTA
+                       + GT.DRB + 0.5 * GT.ORB + GT.AST + GT.STL
+                       + 0.5 * GT.BLK - GT.PF - GT.TOV;
+        const pie = pieDenom !== 0 ? ((pieNum / pieDenom) * 100) : 0;
+
+        // ── ORtg / DRtg simplifiés ──
+        const playerPoss = totalFGA + 0.44 * (t.fta || 0) + (t.tov || 0);
+        const ORtg = playerPoss > 0 ? ((t.pts || 0) / playerPoss) * 100 : 0;
+        const DRtg = 0; // Nécessite oppStats agrégées
+
+        // ── Métriques avancées Sprint A ──
+        const seasonStats = {
+            pts: t.pts || 0, oreb: t.oreb || 0, dreb: t.dreb || 0,
+            stl: t.stl || 0, blk: t.blk || 0, ast: t.ast || 0,
+            tov: t.tov || 0, pf: t.pf || 0,
+            fgm: t.fgm || 0, fga: t.fga || 0,
+            threePM: t.threePM || 0, threePA: t.threePA || 0,
+            ftm: t.ftm || 0, fta: t.fta || 0,
+            minutes: t.minutes || 0,
+            chargesTaken: t.chargesTaken || 0,
+            deflections: t.deflections || 0
+        };
+        const teamStatsForAdvanced = {
+            pts: GT.PTS, ftm: GT.FTM, fga: GT.FGA, fta: GT.FTA,
+            ast: GT.AST, tov: GT.TOV, fgm: GT.FGM,
+            minutes: GT.MP, oreb: GT.ORB
+        };
+
+        const gameScore = parseFloat(calcGameScore(seasonStats).toFixed(1));
+        const hustleIndex = parseFloat(calcHustleIndex(seasonStats).toFixed(1));
+        const consistency = calcConsistency(p.logs);
+        const epc = parseFloat(calcEPC(seasonStats, teamStatsForAdvanced).toFixed(1));
+        const floorGeneral = calcFloorGeneral(seasonStats, teamStatsForAdvanced);
+        const dirtyWork = calcDirtyWork(seasonStats);
+
+        return {
+            ...p,
+            avg: {
+                min: ((t.minutes || 0) / gp).toFixed(1),
+                pts: ((t.pts || 0) / gp).toFixed(1),
+                reb: ((t.reb || 0) / gp).toFixed(1),
+                oreb: ((t.oreb || 0) / gp).toFixed(1),
+                dreb: ((t.dreb || 0) / gp).toFixed(1),
+                ast: ((t.ast || 0) / gp).toFixed(1),
+                stl: ((t.stl || 0) / gp).toFixed(1),
+                blk: ((t.blk || 0) / gp).toFixed(1),
+                tov: ((t.tov || 0) / gp).toFixed(1),
+                pf: ((t.pf || 0) / gp).toFixed(1),
+                plusMinus: ((t.plusMinus || 0) / gp).toFixed(1),
+                eff: (totalEff / gp).toFixed(1),
+                fgm: totalFGM,
+                fga: totalFGA,
+                fgPct,
+                threePM: t.threePM || 0,
+                threePA: t.threePA || 0,
+                threePct,
+                ftm: t.ftm || 0,
+                fta: t.fta || 0,
+                ftPct,
+                twoPct, 
+                eFG,
+                TS: ts,
+                ORtg: ORtg.toFixed(1),
+                DRtg: DRtg.toFixed(1),
+                netRtg: (ORtg - DRtg).toFixed(1),
+                PIE: pie.toFixed(1)
+            },
+            advanced: {
+                gameScore,
+                hustleIndex,
+                consistency: consistency !== null ? parseFloat(consistency.toFixed(2)) : null,
+                epc,
+                floorGeneral,
+                dirtyWork
+            }
+        };
+    })
+    .sort((a, b) => parseFloat(b.avg.pts) - parseFloat(a.avg.pts));
     }, [filteredGames, players]);
 
     return (
