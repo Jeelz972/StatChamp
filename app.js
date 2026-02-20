@@ -23,10 +23,401 @@ const parseDate = (dateStr) => {
     return new Date(dateStr);
 };
 
+function MinutesDebugPanel({ game, players }) {
+    const [expandedPlayer, setExpandedPlayer] = useState(null);
+    const [showOnlyErrors, setShowOnlyErrors] = useState(false);
+
+    const QT_DURATION = 600;
+
+    const isOpponent = (pid) => {
+        if (pid === 'OPP') return true;
+        const n = typeof pid === 'number' ? pid : parseInt(pid);
+        return !isNaN(n) && n >= 1000;
+    };
+
+    const parseId = (val) => {
+        if (val === 'OPP') return 'OPP';
+        const p = parseInt(val);
+        return isNaN(p) ? val : p;
+    };
+
+    const fmt = (s) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
+
+    const debugData = useMemo(() => {
+        if (!game) return null;
+
+        const actions = game.actions || [];
+        const homeStarters = game.starters || {};
+        const oppStarters = game.opponentStarters || {};
+        const allSubs = actions.filter(a => a.type === 'SUB');
+
+        // Detect quarters
+        const qSet = new Set(actions.map(a => a.q || 1));
+        [1, 2, 3, 4].forEach(q => qSet.add(q));
+        const quarters = Array.from(qSet).sort((a, b) => a - b);
+
+        // Build player name map
+        const names = {};
+        if (game.playerStats) {
+            Object.entries(game.playerStats).forEach(([id, s]) => {
+                const p = players.find(x => String(x.id) === String(id));
+                names[id] = p ? `#${p.number} ${p.name}` : `#${id}`;
+            });
+        }
+        if (game.opponentPlayerStats) {
+            Object.entries(game.opponentPlayerStats).forEach(([id, s]) => {
+                names[id] = `[OPP] #${s.number || (parseInt(id) - 1000)} ${s.name || ''}`.trim();
+            });
+        }
+
+        // Simulate per-player per-quarter segments
+        const playerSegments = {}; // pid -> [{q, start, end, duration}]
+        const warnings = [];       // [{pid, q, msg, severity}]
+
+        function simulateTeam(startersData, belongsFn, teamLabel) {
+            quarters.forEach(q => {
+                const starterIds = (startersData[q] || []).map(parseId);
+                const onCourt = new Set(starterIds);
+
+                if (starterIds.length === 0) {
+                    warnings.push({ pid: null, q, msg: `${teamLabel} Q${q}: Aucun starter defini`, severity: 'error' });
+                    return;
+                }
+                if (starterIds.length !== 5) {
+                    warnings.push({ pid: null, q, msg: `${teamLabel} Q${q}: ${starterIds.length} starters (attendu: 5)`, severity: 'warn' });
+                }
+
+                starterIds.forEach(pid => {
+                    if (!playerSegments[pid]) playerSegments[pid] = [];
+                });
+
+                const qSubs = actions
+                    .filter(a => (a.q || 1) === q && a.type === 'SUB' && belongsFn(parseId(a.pid ?? a.playerId)))
+                    .map(a => ({ ...a, time: a.time || 0 }))
+                    .sort((a, b) => b.time - a.time);
+
+                let lastTime = QT_DURATION;
+
+                qSubs.forEach(sub => {
+                    const currentTime = sub.time;
+                    const duration = lastTime - currentTime;
+                    const pIn = parseId(sub.pid ?? sub.playerId);
+                    const pOut = parseId(sub.subOut);
+
+                    // Credit time to everyone on court
+                    if (duration > 0) {
+                        onCourt.forEach(p => {
+                            if (!playerSegments[p]) playerSegments[p] = [];
+                            playerSegments[p].push({ q, start: lastTime, end: currentTime, duration });
+                        });
+                    } else if (duration < 0) {
+                        warnings.push({ pid: pIn, q, msg: `Q${q} Duree negative: ${duration}s (lastTime=${fmt(lastTime)}, sub.time=${fmt(currentTime)})`, severity: 'error' });
+                    }
+
+                    // Validate sub
+                    if (pOut && !onCourt.has(pOut)) {
+                        warnings.push({ pid: pOut, q, msg: `Q${q} ${fmt(currentTime)}: Sorti mais n'etait PAS sur le terrain`, severity: 'error' });
+                    }
+                    if (pIn && onCourt.has(pIn)) {
+                        warnings.push({ pid: pIn, q, msg: `Q${q} ${fmt(currentTime)}: Entre mais etait DEJA sur le terrain`, severity: 'warn' });
+                    }
+
+                    if (pOut) onCourt.delete(pOut);
+                    if (pIn) {
+                        onCourt.add(pIn);
+                        if (!playerSegments[pIn]) playerSegments[pIn] = [];
+                    }
+
+                    lastTime = currentTime;
+                });
+
+                // Final segment -> 0:00
+                if (lastTime > 0) {
+                    onCourt.forEach(p => {
+                        if (!playerSegments[p]) playerSegments[p] = [];
+                        playerSegments[p].push({ q, start: lastTime, end: 0, duration: lastTime });
+                    });
+                }
+            });
+        }
+
+        simulateTeam(homeStarters, pid => !isOpponent(pid), 'DOM');
+        simulateTeam(oppStarters, pid => isOpponent(pid), 'OPP');
+
+        // Aggregate per player
+        const playerResults = [];
+        const allPids = new Set([
+            ...Object.keys(game.playerStats || {}),
+            ...Object.keys(playerSegments)
+        ]);
+
+        allPids.forEach(pidStr => {
+            const pid = parseId(pidStr);
+            if (isOpponent(pid)) return; // Home only for clarity
+
+            const segments = playerSegments[pidStr] || playerSegments[pid] || [];
+            const calcSec = segments.reduce((sum, s) => sum + s.duration, 0);
+            const calcMin = Math.round(calcSec / 60);
+            const storedMin = game.playerStats?.[pidStr]?.minutes || 0;
+            const diff = calcMin - storedMin;
+            const name = names[pidStr] || names[pid] || `#${pidStr}`;
+            const p = players.find(x => String(x.id) === String(pidStr));
+            const number = p?.number || pidStr;
+
+            const perQ = {};
+            quarters.forEach(q => {
+                const qSegs = segments.filter(s => s.q === q);
+                perQ[q] = {
+                    segments: qSegs,
+                    totalSec: qSegs.reduce((sum, s) => sum + s.duration, 0)
+                };
+            });
+
+            const hasError = diff !== 0 || warnings.some(w => String(w.pid) === String(pidStr) || String(w.pid) === String(pid));
+
+            playerResults.push({
+                pid: pidStr, name, number, segments, perQ,
+                calcSec, calcMin, storedMin, diff, hasError
+            });
+        });
+
+        playerResults.sort((a, b) => {
+            if (a.hasError && !b.hasError) return -1;
+            if (!a.hasError && b.hasError) return 1;
+            return b.calcSec - a.calcSec;
+        });
+
+        return { playerResults, warnings, quarters, allSubs };
+    }, [game, players]);
+
+    if (!debugData) return null;
+    if (!game?.actions?.length) {
+        return React.createElement('div', { className: 'text-center text-slate-500 text-sm py-4' },
+            'Pas d\'actions disponibles pour le debug minutes'
+        );
+    }
+
+    const { playerResults, warnings, quarters, allSubs } = debugData;
+    const displayed = showOnlyErrors ? playerResults.filter(p => p.hasError) : playerResults;
+    const errorCount = playerResults.filter(p => p.hasError).length;
+    const subCount = allSubs.length;
+
+    // ---- RENDER HELPERS ----
+
+    const renderTimelineBar = (perQ, q) => {
+        const data = perQ[q];
+        if (!data || data.segments.length === 0) {
+            return React.createElement('div', {
+                className: 'h-6 bg-slate-800 rounded border border-slate-700 flex items-center justify-center',
+                title: `Q${q}: pas sur le terrain`
+            }, React.createElement('span', { className: 'text-[9px] text-slate-600' }, '—'));
+        }
+
+        return React.createElement('div', {
+            className: 'h-6 bg-slate-800 rounded border border-slate-700 relative overflow-hidden',
+            title: `Q${q}: ${fmt(data.totalSec)} (${data.segments.length} segment${data.segments.length > 1 ? 's' : ''})`
+        },
+            data.segments.map((seg, i) => {
+                const left = ((QT_DURATION - seg.start) / QT_DURATION) * 100;
+                const width = (seg.duration / QT_DURATION) * 100;
+                return React.createElement('div', {
+                    key: i,
+                    className: 'absolute top-0 bottom-0 bg-green-500/70 border-r border-green-400/50',
+                    style: { left: `${left}%`, width: `${Math.max(width, 1)}%` },
+                    title: `${fmt(seg.start)} -> ${fmt(seg.end)} = ${fmt(seg.duration)}`
+                });
+            }),
+            React.createElement('span', {
+                className: 'absolute inset-0 flex items-center justify-center text-[9px] font-bold text-white z-10 drop-shadow'
+            }, fmt(data.totalSec))
+        );
+    };
+
+    const renderSegmentDetail = (player) => {
+        return React.createElement('div', { className: 'mt-2 bg-slate-950 rounded p-3 border border-slate-700 text-[11px] font-mono' },
+            quarters.map(q => {
+                const qData = player.perQ[q];
+                if (!qData || qData.segments.length === 0) return null;
+                return React.createElement('div', { key: q, className: 'mb-2' },
+                    React.createElement('div', { className: 'text-slate-500 font-bold mb-1' }, `Q${q} — ${qData.segments.length} segment(s) — Total: ${fmt(qData.totalSec)}`),
+                    qData.segments.map((seg, i) =>
+                        React.createElement('div', { key: i, className: 'flex gap-3 text-slate-400 ml-3' },
+                            React.createElement('span', null, `Seg${i + 1}:`),
+                            React.createElement('span', { className: 'text-cyan-400' }, `${fmt(seg.start)} → ${fmt(seg.end)}`),
+                            React.createElement('span', { className: 'text-green-400 font-bold' }, `= ${fmt(seg.duration)} (${seg.duration}s)`)
+                        )
+                    )
+                );
+            }),
+            // Warnings for this player
+            warnings.filter(w => String(w.pid) === String(player.pid)).map((w, i) =>
+                React.createElement('div', {
+                    key: `w-${i}`,
+                    className: `mt-1 px-2 py-1 rounded text-[10px] font-bold ${w.severity === 'error' ? 'bg-red-900/50 text-red-300' : 'bg-yellow-900/50 text-yellow-300'}`
+                }, `⚠ ${w.msg}`)
+            )
+        );
+    };
+
+    // ---- MAIN RENDER ----
+    return React.createElement('div', { className: 'bg-slate-900 border border-slate-700 rounded-xl p-4' },
+        // Header
+        React.createElement('div', { className: 'flex items-center justify-between mb-4' },
+            React.createElement('div', null,
+                React.createElement('h3', { className: 'text-white font-bold text-sm flex items-center gap-2' },
+                    '🔍 Debug Temps de Jeu'
+                ),
+                React.createElement('p', { className: 'text-slate-500 text-[11px] mt-1' },
+                    `${allSubs.length} SUBs detectes | ${playerResults.length} joueurs | ${errorCount} anomalie${errorCount > 1 ? 's' : ''}`
+                )
+            ),
+            React.createElement('div', { className: 'flex gap-2' },
+                React.createElement('button', {
+                    className: `px-3 py-1 rounded text-xs font-bold border ${showOnlyErrors ? 'bg-red-900/50 border-red-500 text-red-300' : 'bg-slate-800 border-slate-600 text-slate-400 hover:text-white'}`,
+                    onClick: () => setShowOnlyErrors(!showOnlyErrors)
+                }, showOnlyErrors ? `Erreurs (${errorCount})` : 'Filtrer erreurs')
+            )
+        ),
+
+        // Global warnings
+        warnings.filter(w => !w.pid).length > 0 && React.createElement('div', { className: 'mb-3 space-y-1' },
+            warnings.filter(w => !w.pid).map((w, i) =>
+                React.createElement('div', {
+                    key: i,
+                    className: `px-3 py-1.5 rounded text-xs font-bold ${w.severity === 'error' ? 'bg-red-900/40 text-red-300 border border-red-700' : 'bg-yellow-900/40 text-yellow-300 border border-yellow-700'}`
+                }, `⚠ ${w.msg}`)
+            )
+        ),
+
+        // Quarter headers
+        React.createElement('div', { className: 'grid gap-1 mb-2', style: { gridTemplateColumns: `180px repeat(${quarters.length}, 1fr) 80px 80px 60px` } },
+            React.createElement('div', { className: 'text-[10px] text-slate-600 font-bold uppercase' }, 'Joueur'),
+            ...quarters.map(q => React.createElement('div', { key: q, className: 'text-[10px] text-slate-600 font-bold text-center uppercase' }, `Q${q}`)),
+            React.createElement('div', { className: 'text-[10px] text-slate-600 font-bold text-center uppercase' }, 'Calcule'),
+            React.createElement('div', { className: 'text-[10px] text-slate-600 font-bold text-center uppercase' }, 'Stocke'),
+            React.createElement('div', { className: 'text-[10px] text-slate-600 font-bold text-center uppercase' }, 'Diff')
+        ),
+
+        // Player rows
+        React.createElement('div', { className: 'space-y-1' },
+            displayed.map(p =>
+                React.createElement('div', { key: p.pid },
+                    React.createElement('div', {
+                        className: `grid gap-1 items-center cursor-pointer rounded px-1 py-0.5 hover:bg-slate-800/50 ${p.hasError ? 'bg-red-950/30' : ''}`,
+                        style: { gridTemplateColumns: `180px repeat(${quarters.length}, 1fr) 80px 80px 60px` },
+                        onClick: () => setExpandedPlayer(expandedPlayer === p.pid ? null : p.pid)
+                    },
+                        // Player name
+                        React.createElement('div', { className: 'flex items-center gap-2' },
+                            React.createElement('span', { className: `w-2 h-2 rounded-full ${p.hasError ? 'bg-red-500' : 'bg-green-500'}` }),
+                            React.createElement('span', { className: 'text-xs text-white font-semibold truncate' }, p.name)
+                        ),
+                        // Timeline bars per Q
+                        ...quarters.map(q => React.createElement('div', { key: q }, renderTimelineBar(p.perQ, q))),
+                        // Calculated
+                        React.createElement('div', { className: 'text-center' },
+                            React.createElement('span', { className: 'text-sm font-bold text-cyan-400' }, `${p.calcMin}min`),
+                            React.createElement('div', { className: 'text-[9px] text-slate-500' }, `(${p.calcSec}s)`)
+                        ),
+                        // Stored
+                        React.createElement('div', { className: 'text-center' },
+                            React.createElement('span', { className: 'text-sm font-bold text-slate-300' }, `${p.storedMin}min`)
+                        ),
+                        // Diff
+                        React.createElement('div', { className: 'text-center' },
+                            React.createElement('span', {
+                                className: `text-sm font-bold ${p.diff === 0 ? 'text-green-400' : Math.abs(p.diff) <= 1 ? 'text-yellow-400' : 'text-red-400'}`
+                            }, p.diff === 0 ? '✓' : `${p.diff > 0 ? '+' : ''}${p.diff}`)
+                        )
+                    ),
+                    // Expanded detail
+                    expandedPlayer === p.pid && renderSegmentDetail(p)
+                )
+            )
+        ),
+
+        // Legend
+        React.createElement('div', { className: 'mt-4 pt-3 border-t border-slate-700 flex flex-wrap gap-4 text-[10px] text-slate-500' },
+            React.createElement('span', null, '🟢 Vert = sur le terrain'),
+            React.createElement('span', null, '⬛ Gris = hors terrain'),
+            React.createElement('span', null, '✓ = stocke == calcule'),
+            React.createElement('span', null, '🔴 = anomalie detectee'),
+            React.createElement('span', null, 'Cliquer un joueur = detail des segments')
+        )
+    );
+}
 // ===========================================
 // FONCTIONS DE CALCUL DES RATINGS AVANCES
 // ===========================================
+// --- UTILITAIRE : Recalcul minutes depuis les SUBs ---
+const QT_DURATION_SEC = 600;
 
+function recalcMinutesFromSubsUtil(actions, homeStartersData, oppStartersData, totalQTs) {
+    const playTime = {};
+    const maxQ = totalQTs || 4;
+
+    const _parseId = (v) => { if (v === 'OPP') return 'OPP'; const n = parseInt(v); return isNaN(n) ? v : n; };
+    const _isOpp = (pid) => { if (pid === 'OPP') return true; const n = typeof pid === 'number' ? pid : parseInt(pid); return !isNaN(n) && n >= 1000; };
+
+    function calcForTeam(startersData, belongsToTeam) {
+        for (let q = 1; q <= maxQ; q++) {
+            const starters = (startersData && startersData[q])
+                ? startersData[q].map(_parseId)
+                : [];
+
+            const onCourt = new Set(starters);
+            starters.forEach(pid => {
+                if (playTime[pid] === undefined) playTime[pid] = 0;
+            });
+
+            const qSubs = actions
+                .filter(a => (a.q || 1) === q && a.type === 'SUB' && belongsToTeam(_parseId(a.pid ?? a.playerId)))
+                .map(a => ({ ...a, time: a.time || 0 }))
+                .sort((a, b) => b.time - a.time);
+
+            let lastTime = QT_DURATION_SEC;
+
+            qSubs.forEach(sub => {
+                const currentTime = sub.time;
+                const duration = lastTime - currentTime;
+
+                if (duration > 0) {
+                    onCourt.forEach(p => {
+                        if (playTime[p] === undefined) playTime[p] = 0;
+                        playTime[p] += duration;
+                    });
+                }
+
+                const pIn = _parseId(sub.pid ?? sub.playerId);
+                const pOut = _parseId(sub.subOut);
+
+                if (pOut) onCourt.delete(pOut);
+                if (pIn) {
+                    onCourt.add(pIn);
+                    if (playTime[pIn] === undefined) playTime[pIn] = 0;
+                }
+
+                lastTime = currentTime;
+            });
+
+            if (lastTime > 0) {
+                onCourt.forEach(p => {
+                    if (playTime[p] === undefined) playTime[p] = 0;
+                    playTime[p] += lastTime;
+                });
+            }
+        }
+    }
+
+    calcForTeam(homeStartersData, pid => !_isOpp(pid));
+    calcForTeam(oppStartersData, pid => _isOpp(pid));
+
+    const result = {};
+    Object.entries(playTime).forEach(([pid, sec]) => {
+        result[pid] = Math.round(sec / 60);
+    });
+    return result;
+}
 const calculateHGI = (playerStats, allGames, playerId, weights = { PT: 0.35, RP: 0.40, SI: 0.25 }) => {
     const stats = playerStats;
     if (!stats) return { total: 0, PT: 0, RP: 0, SI: 0 };
@@ -69,22 +460,7 @@ const calculateSpacingImpact = (games, playerId) => {
     return onEFG - offEFG;
 };
 
-const estimateOpponentStats = (game) => {
-    const opp = game.opponentStats || {};
-    const pts = game.awayScore || opp.pts || 0;
-    let T_DRB = 0;
-    Object.values(game.playerStats || {}).forEach(s => { T_DRB += (s.dreb || 0); });
-    return {
-        pts, fgm: opp.fgm || Math.round(pts * 0.38), fga: opp.fga || Math.round(pts * 0.85),
-        ftm: opp.ftm || Math.round(pts * 0.15), fta: opp.fta || Math.round(pts * 0.2),
-        oreb: opp.oreb || (opp.reb ? Math.round(opp.reb * 0.3) : Math.round(pts * 0.12)),
-        dreb: opp.dreb || (opp.reb ? Math.round(opp.reb * 0.7) : Math.round(pts * 0.3)),
-        reb: opp.reb || Math.round(pts * 0.4),
-        tov: opp.tov || Math.round(pts * 0.1),
-        fouls: opp.fouls || 0,
-        ast: opp.ast || 0, blk: opp.blk || 0
-    };
-};
+
 
 const calculateAverageMinutes = (playerStats) => {
     const active = Object.values(playerStats).filter(s => (s.minutes || 0) > 0);
@@ -92,166 +468,6 @@ const calculateAverageMinutes = (playerStats) => {
     return active.reduce((sum, s) => sum + (s.minutes || 0), 0) / active.length;
 };
 
-// 1. Game Score (Hollinger)
-const calcGameScore = (s) => {
-    const FGM = (s.fgm || 0) + (s.threePM || 0);
-    const FGA = (s.fga || 0) + (s.threePA || 0);
-    const FTM = s.ftm || 0, FTA = s.fta || 0;
-    const PTS = s.pts || 0;
-    const OREB = s.oreb || 0, DREB = s.dreb || 0;
-    const STL = s.stl || 0, AST = s.ast || 0, BLK = s.blk || 0;
-    const PF = s.pf || 0, TOV = s.tov || 0;
-
-    return PTS + 0.4 * FGM - 0.7 * FGA - 0.4 * (FTA - FTM)
-         + 0.7 * OREB + 0.3 * DREB + STL + 0.7 * AST
-         + 0.7 * BLK - 0.4 * PF - TOV;
-};
-
-// 2. Hustle Index — normalisé par 36 min si minutes > 0
-const calcHustleIndex = (s) => {
-    const raw = (s.oreb || 0) * 1.5
-              + (s.stl || 0) * 1.2
-              + (s.blk || 0) * 1.0
-              + (s.chargesTaken || 0) * 2.0;
-    const min = s.minutes || s.min || 0;
-    if (min <= 0) return raw;
-    return (raw / min) * 36;
-};
-
-// 3. Consistency — écart-type de l'EFF sur les logs
-const calcConsistency = (logs) => {
-    if (!logs || logs.length < 2) return null;
-    const values = logs.map(l => l.eff || 0);
-    const mean = values.reduce((a, b) => a + b, 0) / values.length;
-    const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / values.length;
-    return Math.sqrt(variance);
-};
-
-// 4. Estimated Points Created (simplifié U18)
-// EPC = AST * avgPtsPerAssist + OREB * 0.7 + FTDrawn * 0.4
-// avgPtsPerAssist estimé à ~2.0 pour U18 (proche de la valeur médiane FIBA jeunes)
-const calcEPC = (s, teamStats) => {
-    const AST = s.ast || 0;
-    const OREB = s.oreb || 0;
-    const FTA = s.fta || 0;
-
-    const teamPTS = teamStats.pts || 0;
-    const teamFTM = teamStats.ftm || 0;
-    const teamFGA = teamStats.fga || 1;
-    const teamAST = teamStats.ast || 1;
-
-    // Points produits par les tirs assistés (hors LF) / nombre d'assists équipe
-    const avgPtsPerAssist = teamAST > 0
-        ? ((teamPTS - teamFTM) / teamFGA) * 2 * (1 / (teamAST / (teamAST + 1)))
-        : 2.0;
-    // Simplification : on borne à [1.5, 2.8] pour rester réaliste en U18
-    const clampedAvg = Math.max(1.5, Math.min(2.8, avgPtsPerAssist));
-
-    return AST * clampedAvg + OREB * 0.7 + FTA * 0.4;
-};
-
-// 5. Floor General — ratio AST/TOV + pourcentages
-const calcFloorGeneral = (s, teamStats) => {
-    const AST = s.ast || 0, TOV = s.tov || 0;
-    const min = s.minutes || s.min || 0;
-    const teamMin = (teamStats && teamStats.minutes) || 200;
-    const teamFGM = (teamStats && teamStats.fgm) || 1;
-    const teamPoss = (teamStats && (teamStats.fga + 0.44 * (teamStats.fta || 0) + (teamStats.tov || 0))) || 1;
-
-    const ratio = AST / (TOV || 1);
-    const minPct = min / (teamMin / 5 || 1);
-    const astPct = teamFGM > 0 && min > 0
-        ? (AST / (((teamFGM / (teamMin || 1)) * min * 5) - (AST > teamFGM ? teamFGM : AST) || 1)) * 100
-        : 0;
-    const tovPct = teamPoss > 0 && min > 0
-        ? (TOV / (((teamPoss / (teamMin || 1)) * min * 5) || 1)) * 100
-        : 0;
-
-    return {
-        ratio: parseFloat(ratio.toFixed(2)),
-        astPct: parseFloat(Math.min(astPct, 100).toFixed(1)),
-        tovPct: parseFloat(Math.min(tovPct, 100).toFixed(1))
-    };
-};
-
-// 6. Dirty Work Index — normalisé per 36 min
-const calcDirtyWork = (s) => {
-    const raw = (s.oreb || 0) * 2
-              + (s.dreb || 0) * 0.5
-              + (s.stl || 0) * 1.5
-              + (s.blk || 0) * 1.5
-              + (s.chargesTaken || 0) * 3
-              + (s.deflections || 0) * 1;
-    const min = s.minutes || s.min || 0;
-    if (min <= 0) return raw;
-    return parseFloat(((raw / min) * 36).toFixed(1));
-};
-
-
-const calculateDeanOliverRatings = ({
-    MP, PTS, FGM, FGA, ThreePM, FTM, FTA, ORB, DRB, AST, STL, BLK, TOV, PF,
-    Team_PTS, Team_FGM, Team_FGA, Team_ThreePM, Team_FTM, Team_FTA,
-    Team_ORB, Team_DRB, Team_AST, Team_STL, Team_BLK, Team_TOV, Team_PF, Team_MP,
-    Opp_PTS, Opp_FGM, Opp_FGA, Opp_FTM, Opp_FTA, Opp_ORB, Opp_DRB, Opp_TOV,
-    Opp_MP, avgMinutes, k = 1.5
-}) => {
-    if (MP === 0 || Team_MP === 0) return { ORtg: 0, DRtg: 0, netRtg: 0 };
-
-    const Team_Poss = Team_FGA + 0.44 * Team_FTA - Team_ORB + Team_TOV;
-    const Team_ORB_Pct = (Team_ORB + Opp_DRB) > 0 ? Team_ORB / (Team_ORB + Opp_DRB) : 0;
-    const Team_Play_Pct = Team_FGA > 0 ? Team_FGM / Team_FGA : 0;
-    const FT_Scoring = FTA > 0 ? (1 - Math.pow(1 - (FTM / FTA), 2)) * 0.4 * FTA : 0;
-    const Team_FT_Scoring = Team_FTA > 0 ? (1 - Math.pow(1 - (Team_FTM / Team_FTA), 2)) * 0.4 * Team_FTA : 0;
-    const Team_Scoring_Poss = Team_FGM + Team_FT_Scoring;
-    const Team_ORB_Weight = Team_Scoring_Poss > 0 ? ((1 - Team_ORB_Pct) * Team_Play_Pct) / ((1 - Team_ORB_Pct) * Team_Play_Pct + Team_ORB_Pct * (1 - Team_Play_Pct)) : 0;
-
-    const qAST_t1 = (MP / (Team_MP / 5)) * (1.14 * ((Team_AST - AST) / (Team_FGM || 1)));
-    const qAST_t2 = ((((Team_AST / Team_MP) * MP * 5 - AST) / ((Team_FGM / Team_MP) * MP * 5 - FGM || 1)) * (1 - (MP / (Team_MP / 5))));
-    const qAST = Math.min(Math.max(qAST_t1 + qAST_t2, 0), 1) || 0;
-
-    const FG_Part = FGM * (1 - 0.5 * ((PTS - FTM) / (2 * FGA || 1)) * qAST);
-    const AST_Part = 0.5 * (((Team_PTS - Team_FTM) - (PTS - FTM)) / (2 * (Team_FGA - FGA) || 1)) * AST;
-    const ScPoss_Factor = Team_Scoring_Poss > 0 ? 1 - (Team_ORB / Team_Scoring_Poss) * Team_ORB_Weight * Team_Play_Pct : 1;
-    const ScPoss = (FG_Part + AST_Part + FT_Scoring) * ScPoss_Factor + ORB * Team_ORB_Weight * Team_Play_Pct;
-    const FGxPoss = (FGA - FGM) * (1 - 1.07 * Team_ORB_Pct);
-    const FTxPoss = Math.pow(1 - (FTM / (FTA || 1)), 2) * 0.4 * FTA;
-    const TotPoss = ScPoss + FGxPoss + FTxPoss + TOV;
-
-    const PProd_FG = 2 * (FGM + 0.5 * ThreePM) * (1 - 0.5 * ((PTS - FTM) / (2 * FGA || 1)) * qAST);
-    const PProd_AST = 2 * ((Team_FGM - FGM + 0.5 * (Team_ThreePM - ThreePM)) / (Team_FGM - FGM || 1)) * 0.5 * (((Team_PTS - Team_FTM) - (PTS - FTM)) / (2 * (Team_FGA - FGA) || 1)) * AST;
-    const Team_Pts_Per_Score = Team_Scoring_Poss > 0 ? Team_PTS / Team_Scoring_Poss : 2;
-    const PProd_ORB = ORB * Team_ORB_Weight * Team_Play_Pct * Team_Pts_Per_Score;
-    const PProd = (PProd_FG + PProd_AST + FTM) * ScPoss_Factor + PProd_ORB;
-    const ORtg_ind = TotPoss > 0 ? 100 * (PProd / TotPoss) : 0;
-
-    const DOR_Pct = (Opp_ORB + Team_DRB) > 0 ? Opp_ORB / (Opp_ORB + Team_DRB) : 0;
-    const DFG_Pct = Opp_FGA > 0 ? Opp_FGM / Opp_FGA : 0.45;
-    const FMwt_D = DFG_Pct * (1 - DOR_Pct);
-    const FMwt = (FMwt_D + (1 - DFG_Pct) * DOR_Pct) > 0 ? FMwt_D / (FMwt_D + (1 - DFG_Pct) * DOR_Pct) : 0.5;
-    const Stops1 = STL + BLK * FMwt * (1 - 1.07 * DOR_Pct) + DRB * (1 - FMwt);
-    const Stops2_P1 = Team_MP > 0 ? ((Opp_FGA - Opp_FGM - Team_BLK) / Team_MP) * FMwt * (1 - 1.07 * DOR_Pct) : 0;
-    const Stops2_P2 = Team_MP > 0 ? ((Opp_TOV - Team_STL) / Team_MP) : 0;
-    const Stops2_P3 = Team_PF > 0 && Opp_FTA > 0 ? (PF / Team_PF) * 0.4 * Opp_FTA * Math.pow(1 - (Opp_FTM / Opp_FTA), 2) : 0;
-    const Stops = Stops1 + (Stops2_P1 + Stops2_P2) * MP + Stops2_P3;
-    const Stop_Pct = (Team_Poss * MP) > 0 ? (Stops * (Opp_MP || Team_MP)) / (Team_Poss * MP) : 0;
-    const Team_DRtg = Team_Poss > 0 ? 100 * (Opp_PTS / Team_Poss) : 100;
-    const Opp_FT_Scoring = Opp_FTA > 0 ? (1 - Math.pow(1 - (Opp_FTM / Opp_FTA), 2)) * 0.4 * Opp_FTA : 0;
-    const D_Pts_per_ScPoss = (Opp_FGM + Opp_FT_Scoring) > 0 ? Opp_PTS / (Opp_FGM + Opp_FT_Scoring) : 2;
-    const DRtg_ind = Team_DRtg + 0.2 * (100 * D_Pts_per_ScPoss * (1 - Stop_Pct) - Team_DRtg);
-
-    const Team_ORtg = Team_Poss > 0 ? 100 * (Team_PTS / Team_Poss) : 100;
-    const Min_moy = avgMinutes || (Team_MP / 5);
-    const C = k * Min_moy;
-    const w = MP / (MP + C);
-    const ORtg = Team_ORtg + (ORtg_ind - Team_ORtg) * w;
-    const DRtg = Team_DRtg + (DRtg_ind - Team_DRtg) * w;
-
-    return {
-        ORtg: isFinite(ORtg) ? ORtg : Team_ORtg,
-        DRtg: isFinite(DRtg) ? DRtg : Team_DRtg,
-        netRtg: isFinite(ORtg - DRtg) ? ORtg - DRtg : 0
-    };
-};
 
 
 const _isHomePlayer = (pid, homePlayers) => homePlayers.some(p => p.id === pid);
@@ -524,8 +740,6 @@ const calcOnOffImpact = (actions, playerId, homePlayers) => {
 
 
 // ==========================================
-const { useState, useEffect, useMemo } = React;
-const { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Legend, AreaChart, Area, ComposedChart, ReferenceLine, Cell, ScatterChart, Scatter, ZAxis } = window.Recharts || {};
 const generateId = () => Math.random().toString(36).substr(2, 9);
 const defaultPlayers = [{ id: 1, name: "Joueur 1", number: 4, pos: "PG" }, { id: 2, name: "Joueur 2", number: 5, pos: "SG" }];
 const DEFAULT_PHASES = [{ id: "phase1", name: "Phase 1" }, { id: "phase2", name: "Phase 2" }];
@@ -597,10 +811,10 @@ const Icons = {
 };
 
 // --- UI COMPONENTS ---
-const Card = ({ children, className = "" }) => <div className={`bg-slate-800 rounded-lg border border-slate-700 shadow-lg overflow-hidden ${className}`}>{children}</div>;
+const Card = ({ children, className = "" }) =>  <div className={`bg-slate-800 rounded-lg border border-slate-700 shadow-lg overflow-hidden hover:glow-gold-subtle transition-shadow ${className}`}>{children}</div>;;
 const Button = ({ onClick, children, variant = "primary", className = "", size = "md", disabled = false }) => {
     const base = "font-semibold rounded transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer";
-    const variants = { primary: "bg-orange-500 hover:bg-orange-600 text-white", secondary: "bg-slate-700 hover:bg-slate-600 text-slate-200", danger: "bg-red-600 hover:bg-red-700 text-white", success: "bg-green-600 hover:bg-green-700 text-white", ghost: "bg-transparent hover:bg-slate-700 text-slate-400" };
+    const variants = { primary: "bg-gradient-to-r from-orange-400 to-orange-500 hover:from-orange-300 hover:to-orange-400 text-slate-950", secondary: "bg-slate-700 hover:bg-slate-600 text-slate-200", danger: "bg-red-600 hover:bg-red-700 text-white", success: "bg-green-600 hover:bg-green-700 text-white", ghost: "bg-transparent hover:bg-slate-700 text-slate-400" };
     const sizes = { sm: "px-2 py-1 text-xs", md: "px-4 py-2 text-sm", lg: "px-6 py-3 text-lg" };
     return <button onClick={onClick} disabled={disabled} className={`${base} ${variants[variant]} ${sizes[size]} ${className} ${disabled ? 'opacity-50' : ''}`}>{children}</button>;
 };
@@ -620,7 +834,12 @@ const Modal = ({ isOpen, onClose, title, children, size = "max-w-4xl" }) => {
         document.body
     );
 };
-
+window.parseDate = parseDate;
+window.Icons = Icons;
+window.Icon = Icon;
+window.Card = Card;
+window.Button = Button;
+window.Modal = Modal;
 // --- PARSE HTML ---
 const parseHTMLStats = (html) => {
     const parser = new DOMParser();
@@ -679,101 +898,7 @@ const parseHTMLStats = (html) => {
 };
 
 
-// ============================================================
-// 1. VolumeEfficiencyMatrix
-// ============================================================
-// ScatterChart : X = FGA/match (volume), Y = TS% (efficacité)
-// Taille point = minutes jouées, couleur = position
-// Quadrants délimités par ReferenceLine aux médianes
 
-function VolumeEfficiencyMatrix({ players }) {
-    const POS_COLORS = { PG: '#f97316', SG: '#3b82f6', SF: '#22c55e', PF: '#a855f7', C: '#ef4444', G: '#f97316', F: '#22c55e' };
-
-    const data = useMemo(() => {
-        // Correction de la condition de filtrage pour correspondre à l'objet 'aggregated' de app.js
-        const pts = players
-            .filter(p => p.gamesPlayed > 0 && p.avg) 
-            .map(p => {
-                const a = p.avg; // Utilisation des moyennes déjà calculées dans app.js
-                return { 
-                    name: p.info.name, 
-                    pos: p.info.pos || 'G', 
-                    fgaPg: parseFloat(a.fga) || 0, 
-                    ts: parseFloat(a.TS) || 0, 
-                    minPg: parseFloat(a.min) || 0, 
-                    color: POS_COLORS[p.info.pos] || '#94a3b8' 
-                };
-            });
-
-        if (pts.length === 0) return { points: [], medFga: 0, medTs: 0 };
-
-        const fgaVals = pts.map(d => d.fgaPg);
-        const tsVals = pts.map(d => d.ts);
-        const sortedFga = [...fgaVals].sort((a, b) => a - b);
-        const sortedTs = [...tsVals].sort((a, b) => a - b);
-        const median = arr => {
-            if (arr.length === 0) return 0;
-            const mid = Math.floor(arr.length / 2);
-            return arr.length % 2 !== 0 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
-        };
-
-        return { points: pts, medFga: median(sortedFga), medTs: median(sortedTs) };
-    }, [players]);
-
-    if (!data.points || data.points.length === 0) {
-        return <div className="text-slate-500 text-xs text-center p-8 bg-slate-900/30 rounded-lg border border-dashed border-slate-700">Données insuffisantes (nécessite au moins 1 match enregistré)</div>;
-    }
-
-    const positions = [...new Set(data.points.map(d => d.pos))];
-
-    return (
-        <div className="space-y-3">
-            <h4 className="text-xs text-slate-400 uppercase font-bold flex items-center gap-2">
-                <span className="text-orange-500">🎯</span> Volume vs Efficacité (TS%)
-            </h4>
-            <div className="flex flex-wrap gap-3 mb-2">
-                {positions.map(pos => (
-                    <span key={pos} className="flex items-center gap-1 text-[10px] text-slate-400">
-                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: POS_COLORS[pos] || '#94a3b8' }} />
-                        {pos}
-                    </span>
-                ))}
-            </div>
-            <div className="h-72 bg-slate-900/50 rounded-lg p-2 border border-slate-800">
-                <ResponsiveContainer width="100%" height="100%">
-                    <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-                        <XAxis type="number" dataKey="fgaPg" name="FGA/m" stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} />
-                        <YAxis type="number" dataKey="ts" name="TS%" stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} unit="%" />
-                        <ZAxis type="number" dataKey="minPg" range={[50, 400]} />
-                        <ReferenceLine x={data.medFga} stroke="#475569" strokeDasharray="3 3" label={{ value: 'Médiane Vol.', fill: '#475569', fontSize: 8, position: 'top' }} />
-                        <ReferenceLine y={data.medTs} stroke="#475569" strokeDasharray="3 3" label={{ value: 'Médiane Eff.', fill: '#475569', fontSize: 8, position: 'right' }} />
-                        <Tooltip
-                            cursor={{ strokeDasharray: '3 3' }}
-                            content={({ active, payload }) => {
-                                if (!active || !payload || !payload.length) return null;
-                                const d = payload[0].payload;
-                                return (
-                                    <div className="bg-slate-800 border border-slate-600 p-2 rounded shadow-2xl text-[11px]">
-                                        <div className="font-bold text-white mb-1">{d.name}</div>
-                                        <div className="text-slate-400">FGA/match: <span className="text-white">{d.fgaPg}</span></div>
-                                        <div className="text-slate-400">True Shooting: <span className="text-green-400">{d.ts}%</span></div>
-                                        <div className="text-slate-400">Minutes/m: <span className="text-white">{d.minPg}</span></div>
-                                    </div>
-                                );
-                            }}
-                        />
-                        <Scatter data={data.points}>
-                            {data.points.map((entry, i) => (
-                                <Cell key={i} fill={entry.color} stroke="#0f172a" strokeWidth={1} />
-                            ))}
-                        </Scatter>
-                    </ScatterChart>
-                </ResponsiveContainer>
-            </div>
-        </div>
-    );
-}
 
 
 // ============================================================
@@ -849,13 +974,13 @@ function MomentumChart({ scoreHistory, actions }) {
                                 <stop offset="100%" stopColor="#ef4444" stopOpacity={0} />
                             </linearGradient>
                         </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                        <XAxis dataKey="idx" stroke="#94a3b8" fontSize={10} tickFormatter={(v) => {
+                        <CartesianGrid strokeDasharray="3 3" stroke="#2a2a4a" />
+                        <XAxis dataKey="idx" stroke="#a0a0b0" fontSize={10} tickFormatter={(v) => {
                             const pt = chartData.data[v];
                             return pt ? `Q${pt.q}` : '';
                         }} />
-                        <YAxis stroke="#94a3b8" fontSize={10} domain={[-maxAbs, maxAbs]} tickFormatter={v => v > 0 ? `+${v}` : v} />
-                        <ReferenceLine y={0} stroke="#64748b" strokeWidth={2} />
+                        <YAxis stroke="#a0a0b0" fontSize={10} domain={[-maxAbs, maxAbs]} tickFormatter={v => v > 0 ? `+${v}` : v} />
+                        <ReferenceLine y={0} stroke="#50506a" strokeWidth={2} />
                         <Tooltip content={({ active, payload }) => {
                             if (!active || !payload || !payload.length) return null;
                             const d = payload[0].payload;
@@ -880,387 +1005,8 @@ function MomentumChart({ scoreHistory, actions }) {
                 <span className="text-red-400">▼ Adversaire mène</span>
             </div>
         </div>
-    );
-}
+    );}
 
-
-// ============================================================
-// 3. GhostSeasonChart
-// ============================================================
-// ComposedChart : Line 1 = moyenne cumulée, Line 2 = match sélectionné
-// Area entre les deux pour visualiser l'écart
-
-function GhostSeasonChart({ logs, currentGame }) {
-    const chartData = useMemo(() => {
-        if (!logs || logs.length === 0) return [];
-
-        const categories = ['pts', 'reb', 'ast', 'stl', 'blk'];
-        let cumulative = {};
-        categories.forEach(c => cumulative[c] = 0);
-
-        return logs.map((log, i) => {
-            const entry = { game: i + 1, opponent: log.opponent || `M${i + 1}` };
-            categories.forEach(c => {
-                cumulative[c] += (log[c] || 0);
-                entry[`avg_${c}`] = Math.round((cumulative[c] / (i + 1)) * 10) / 10;
-                entry[`val_${c}`] = log[c] || 0;
-            });
-            // Score composite pour la vue principale
-            entry.avgComposite = Math.round((entry.avg_pts + entry.avg_reb * 1.2 + entry.avg_ast * 1.5 + entry.avg_stl * 2 + entry.avg_blk * 2) * 10) / 10;
-            entry.valComposite = Math.round((entry.val_pts + entry.val_reb * 1.2 + entry.val_ast * 1.5 + entry.val_stl * 2 + entry.val_blk * 2) * 10) / 10;
-            entry.isSelected = currentGame != null && i === currentGame;
-            return entry;
-        });
-    }, [logs, currentGame]);
-
-    const [metric, setMetric] = useState('composite');
-    const metrics = [
-        { key: 'composite', label: 'Global', color: '#f97316' },
-        { key: 'pts', label: 'PTS', color: '#f97316' },
-        { key: 'reb', label: 'REB', color: '#3b82f6' },
-        { key: 'ast', label: 'AST', color: '#22c55e' },
-    ];
-
-    if (chartData.length === 0) return <div className="text-slate-500 text-sm text-center p-4">Pas de données</div>;
-
-    const avgKey = metric === 'composite' ? 'avgComposite' : `avg_${metric}`;
-    const valKey = metric === 'composite' ? 'valComposite' : `val_${metric}`;
-    const activeColor = metrics.find(m => m.key === metric)?.color || '#f97316';
-
-    return (
-        <div>
-            <h4 className="text-xs text-slate-400 uppercase mb-2">Courbe Fantôme — Saison vs Match</h4>
-            <div className="flex gap-1 mb-2">
-                {metrics.map(m => (
-                    <button key={m.key} onClick={() => setMetric(m.key)}
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors ${metric === m.key ? 'text-white' : 'text-slate-500 hover:text-slate-300'}`}
-                        style={metric === m.key ? { backgroundColor: m.color + '30', color: m.color, border: `1px solid ${m.color}` } : { border: '1px solid transparent' }}>
-                        {m.label}
-                    </button>
-                ))}
-            </div>
-            <div className="h-56 bg-slate-900/50 rounded-lg p-2">
-                <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={chartData} margin={{ top: 10, right: 10, bottom: 5, left: 10 }}>
-                        <defs>
-                            <linearGradient id="ghostGrad" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor={activeColor} stopOpacity={0.15} />
-                                <stop offset="100%" stopColor={activeColor} stopOpacity={0.02} />
-                            </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                        <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} />
-                        <YAxis stroke="#94a3b8" fontSize={10} />
-                        <Tooltip content={({ active, payload }) => {
-                            if (!active || !payload || !payload.length) return null;
-                            const d = payload[0].payload;
-                            return (
-                                <div className="bg-slate-800 border border-slate-600 p-2 rounded shadow-xl text-xs">
-                                    <div className="font-bold text-white">{d.opponent}</div>
-                                    <div style={{ color: activeColor }}>Match: {d[valKey]}</div>
-                                    <div className="text-slate-400">Moy. cumulée: {d[avgKey]}</div>
-                                    <div className={`text-[10px] ${d[valKey] >= d[avgKey] ? 'text-green-400' : 'text-red-400'}`}>
-                                        Écart: {d[valKey] >= d[avgKey] ? '+' : ''}{Math.round((d[valKey] - d[avgKey]) * 10) / 10}
-                                    </div>
-                                </div>
-                            );
-                        }} />
-                        <Area type="monotone" dataKey={avgKey} stroke="none" fill="url(#ghostGrad)" isAnimationActive={false} />
-                        <Line type="monotone" dataKey={avgKey} name="Moy. cumulée" stroke="#64748b" strokeWidth={2} strokeDasharray="6 3" dot={false} isAnimationActive={false} />
-                        <Line type="monotone" dataKey={valKey} name="Match" stroke={activeColor} strokeWidth={2}
-                            dot={(props) => {
-                                const { cx, cy, payload } = props;
-                                const above = payload[valKey] >= payload[avgKey];
-                                return <circle cx={cx} cy={cy} r={payload.isSelected ? 6 : 3} fill={above ? '#22c55e' : '#ef4444'} stroke={payload.isSelected ? '#fff' : 'none'} strokeWidth={payload.isSelected ? 2 : 0} />;
-                            }}
-                            isAnimationActive={false}
-                        />
-                    </ComposedChart>
-                </ResponsiveContainer>
-            </div>
-        </div>
-    );
-}
-
-
-// ============================================================
-// 4. ArchetypeRadar
-// ============================================================
-// RadarChart 5 axes : Scoring, Playmaking, Defense, Rebounding, Shooting
-// Notes 0-99 calculées par normalisation sur l'effectif
-
-function ArchetypeRadar({ player, allPlayers }) {
-    
-    // --- CONFIGURATION DES SEUILS (Garde-fous) ---
-    // Pour être considéré comme "Spécialiste" d'une catégorie, 
-    // il faut au moins ces stats moyennes par match.
-    const MIN_CRITERIA = {
-        scoring: 5.0,      // Minimum 5 pts/match pour être considéré "Scoreur"
-        playmaking: 1.5,   // Minimum 1.5 passes/match (évite le cas du pivot à 0.4)
-        rebounding: 3.0,   // Minimum 3 rebonds/match
-        defense: 0.8,      // Minimum 0.8 (Interceptions + Contres)
-        shooting: 20       // Score composite (efficacité + volume) minimum
-    };
-
-    
-
-    // 1. Calcul des données
-    const radarData = useMemo(() => {
-        if (!player || !player.info || !allPlayers || allPlayers.length === 0) return [];
-
-        const eligible = allPlayers.filter(p => p.gamesPlayed > 0 && p.total && p.info);
-        if (eligible.length === 0) return [];
-
-        // Etape A : Stats brutes
-        const rawStats = eligible.map(p => {
-            const gp = p.gamesPlayed;
-            const t = p.total;
-            const totalFGA = (t.fga || 0) + (t.threePA || 0);
-            const tsa = totalFGA + 0.44 * (t.fta || 0);
-            
-            // Correction Formule :
-            const threePAr = totalFGA > 0 ? (t.threePA || 0) / totalFGA : 0;
-            const rawShootingScore = tsa > 0 ? ((t.pts || 0) / (2 * tsa)) * 100 : 0;
-            const adjustedShooting = rawShootingScore * (0.8 + (0.2 * threePAr));
-
-            return {
-                id: p.info.id,
-                scoring: (t.pts || 0) / gp,
-                // Playmaking : On valorise plus la passe pure pour éviter les faux positifs liés aux TOV
-                playmaking: ((t.ast || 0) / gp), 
-                defense: ((t.stl || 0) / gp) * 1.5 + ((t.blk || 0) / gp) * 1.2,
-                rebounding: ((t.reb || 0) / gp),
-                shooting: adjustedShooting
-            };
-        });
-
-        const playerRaw = rawStats.find(r => r.id === player.info.id);
-        if (!playerRaw) return [];
-
-        const axes = ['scoring', 'playmaking', 'defense', 'rebounding', 'shooting'];
-        const labels = { scoring: 'Scoring', playmaking: 'Playmaking', defense: 'Defense', rebounding: 'Rebounding', shooting: 'Shooting' };
-
-        // Etape B : Normalisation
-        return axes.map(axis => {
-            const vals = rawStats.map(r => r[axis]);
-            const min = Math.min(...vals);
-            const max = Math.max(...vals);
-
-            // Buffer de difficulté
-            let difficultyBuffer = 1.15;
-            if (axis === 'scoring') difficultyBuffer = 1.25; 
-            if (axis === 'shooting') difficultyBuffer = 1.10;
-
-            const theoreticalMax = max * difficultyBuffer;
-            const range = theoreticalMax - min;
-            
-            let normalized = 50;
-            if (range > 0) {
-                normalized = ((playerRaw[axis] - min) / range) * 99;
-            }
-            
-            return { 
-                axis: labels[axis],
-                id: axis, // Identifiant technique pour les conditions 
-                score: Math.round(Math.max(0, Math.min(99, normalized))), 
-                raw: Math.round(playerRaw[axis] * 10) / 10 
-            };
-        });
-    }, [player, allPlayers]);
-
-    // 2. Détermination de l'Archétype AVEC VALIDATION BRUTE
-    const archetypeInfo = useMemo(() => {
-        if (!radarData || radarData.length === 0) return { name: 'N/A', avg: 0, color: 'slate' };
-
-        const avgScore = Math.round(radarData.reduce((s, d) => s + d.score, 0) / radarData.length);
-        
-        // On trie par score (Note sur 99)
-        let sorted = [...radarData].sort((a, b) => b.score - a.score);
-
-        // --- FILTRE "GARDE-FOU" (La partie importante) ---
-        // Si la meilleure stat ne respecte pas le minimum absolu, on la rétrograde.
-        // Exemple : 99 en Passe mais 0.4 pass/match -> On ignore cette caté.
-        sorted = sorted.filter(stat => {
-            const threshold = MIN_CRITERIA[stat.id];
-            return stat.raw >= threshold;
-        });
-        // Si après filtrage, le joueur n'a aucune stat potable
-        if (sorted.length.length === 0) {
-            // Le joueur n'atteint aucun seuil minimum.
-            // On regarde sa "moins mauvaise" note pour voir son profil futur.
-            const bestPotential = [...radarData].sort((a, b) => b.score - a.score)[0];
-            
-            let prospectName = 'Espoir';
-            
-            // Si c'est vraiment très faible (OVR < 15)
-            if (avgScore < 15) {
-                prospectName = 'Débutant';
-            } else {
-                switch (bestPotential.id) {
-                    case 'scoring': 
-                        prospectName = 'Attaquant en Herbe'; // Essaie de marquer mais manque de volume
-                        break;
-                    case 'playmaking': 
-                        prospectName = 'Apprenti Meneur'; // Cherche la passe mais pas assez d'impact
-                        break;
-                    case 'defense': 
-                        prospectName = 'Prospect Défensif'; // A de l'activité (steals/contres)
-                        break;
-                    case 'rebounding': 
-                        prospectName = 'Intérieur en Formation'; // Va au rebond mais manque de physique
-                        break;
-                    case 'shooting': 
-                        prospectName = 'Shooteur en Réglage'; // Prend des tirs, adresse à travailler
-                        break;
-                    default: 
-                        prospectName = 'Espoir';
-                }
-            }
-            // On retourne un objet gris (slate) pour bien différencier des titulaires
-            return { name: prospectName, avg: avgScore, color: 'slate' };
-        }
-        const t1 = sorted[0]; // La vraie dominante validée
-        const t2 = sorted[1] || { axis: 'None', score: 0 }; // Fallback si une seule stat valide
-        const t5 = radarData.find(d => d.score === Math.min(...radarData.map(x=>x.score))); // Pour détecter superstar
-
-        let typeName = 'Polyvalent';
-        let colorTheme = 'slate'; 
-
-        // Si le joueur est fort partout (Check sur la donnée non filtrée pour l'OVR)
-        if (avgScore > 75) {
-             typeName = 'Superstar Complète';
-             colorTheme = 'fuchsia';
-        } else {
-            // Switch sur l'ID technique (scoring, playmaking, etc)
-            switch (t1.id) {
-                
-                case 'scoring':
-                    colorTheme = 'orange'; 
-                    if (t2.id === 'shooting' && t2.score > 60) typeName = 'Sniper Offensif';
-                    else if (t2.id === 'playmaking' && t2.score > 60) typeName = 'Hélio-Créateur';
-                    else if (t2.id === 'defense' && t2.score > 60) typeName = 'Two-Way Scorer';
-                    else if (t2.id === 'rebounding' && t2.score > 60) typeName = 'Intérieur Dominant';
-                    else typeName = 'Scoreur Volume';
-                    break;
-
-                case 'playmaking':
-                    colorTheme = 'emerald'; 
-                    // Si on est ici, c'est qu'il a > 1.5 passes/match (validé par MIN_CRITERIA)
-                    if (t2.id === 'defense' && t2.score > 60) typeName = 'Général de Défense';
-                    else if (t2.id === 'scoring' && t2.score > 60) typeName = 'Maestro Offensif';
-                    else if (t2.id === 'rebounding') typeName = 'Point Forward';
-                    else typeName = 'Distributeur Pur';
-                    break;
-
-                case 'defense':
-                    colorTheme = 'blue'; 
-                    if (t2.id === 'rebounding' && t2.score > 60) typeName = 'Ancre Défensive';
-                    else if (t2.id === 'shooting' && t2.score > 60) typeName = '3 & D Premium';
-                    else if (t2.id === 'playmaking') typeName = 'Connecteur Défensif';
-                    else typeName = 'Spécialiste Lock-down';
-                    break;
-
-                case 'rebounding':
-                    colorTheme = 'indigo'; 
-                    if (t2.id === 'defense' && t2.score > 60) typeName = 'Nettoyeur de Raquette';
-                    else if (t2.id === 'scoring' && t2.score > 60) typeName = 'Monstre de la Peinture';
-                    else if (t2.id === 'playmaking') typeName = 'Pivot-Passeur';
-                    else typeName = 'Rebondeur de Devoir';
-                    break;
-
-                case 'shooting':
-                    colorTheme = 'cyan'; 
-                    if (t2.id === 'scoring' && t2.score > 60) typeName = 'Micro-Onde';
-                    else if (t2.id === 'defense') typeName = '3 & D';
-                    else typeName = 'Spécialiste Corner';
-                    break;
-
-                default:
-                    typeName = 'Role Player';
-            }
-        }
-
-        return { name: typeName, avg: avgScore, color: colorTheme };
-    }, [radarData]);
-
-    if (radarData.length === 0) return <div className="text-slate-500 text-sm text-center p-4">Pas de données</div>;
-
-    const getBadgeStyle = (color) => {
-        const styles = {
-            orange: "bg-orange-900/30 text-orange-400 border-orange-800",
-            emerald: "bg-emerald-900/30 text-emerald-400 border-emerald-800",
-            blue: "bg-blue-900/30 text-blue-400 border-blue-800",
-            indigo: "bg-indigo-900/30 text-indigo-400 border-indigo-800",
-            rose: "bg-rose-900/30 text-rose-400 border-rose-800",
-            fuchsia: "bg-fuchsia-900/30 text-fuchsia-400 border-fuchsia-800",
-            cyan: "bg-cyan-900/30 text-cyan-400 border-cyan-800",
-            slate: "bg-slate-700/30 text-slate-400 border-slate-600",
-        };
-        return styles[color] || styles.slate;
-    };
-
-    const getRadarColor = (color) => {
-        const colors = {
-            orange: "#fb923c", emerald: "#34d399", blue: "#60a5fa", indigo: "#818cf8",
-            rose: "#fb7185", fuchsia: "#e879f9", cyan: "#22d3ee", slate: "#94a3b8",
-        };
-        return colors[color] || "#94a3b8";
-    };
-
-    const activeColor = getRadarColor(archetypeInfo.color);
-
-    return (
-        <div>
-            <div className="flex items-center justify-between mb-2">
-                <h4 className="text-xs text-slate-400 uppercase">Profil Coach</h4>
-                <div className="flex items-center gap-2">
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${getBadgeStyle(archetypeInfo.color)}`}>
-                        {archetypeInfo.name}
-                    </span>
-                    <span className="text-xs text-slate-500">OVR {archetypeInfo.avg}</span>
-                </div>
-            </div>
-            <div className="h-64 bg-slate-900/50 rounded-lg p-2 relative">
-                <ResponsiveContainer width="100%" height="100%">
-                    <RadarChart data={radarData} outerRadius="70%">
-                        <PolarGrid stroke="#334155" />
-                        <PolarAngleAxis dataKey="axis" stroke="#94a3b8" fontSize={10} tick={{ fill: '#94a3b8' }} />
-                        <PolarRadiusAxis stroke="#334155" fontSize={9} domain={[0, 99]} tickCount={4} angle={30} />
-                        <Radar 
-                            name="Stats"
-                            dataKey="score" 
-                            stroke={activeColor} 
-                            fill={activeColor} 
-                            fillOpacity={0.3} 
-                            strokeWidth={2} 
-                        />
-                        <Tooltip content={({ active, payload }) => {
-                            if (!active || !payload || !payload.length) return null;
-                            const d = payload[0].payload;
-                            return (
-                                <div className="bg-slate-800 border border-slate-600 p-2 rounded shadow-xl text-xs z-50 relative">
-                                    <div className="font-bold text-white mb-1">{d.axis}</div>
-                                    <div style={{ color: activeColor }} className="mb-0.5">Note: <span className="font-bold text-base">{d.score}</span>/99</div>
-                                    <div className="text-slate-400">Brut: <span className="text-white">{d.raw}</span></div>
-                                </div>
-                            );
-                        }} />
-                    </RadarChart>
-                </ResponsiveContainer>
-            </div>
-            <div className="flex flex-wrap gap-2 mt-2 justify-center">
-                {radarData.map(d => (
-                    <span key={d.axis} className="text-[10px] text-slate-400 flex items-center gap-1">
-                        {d.axis}: 
-                        <span className={`font-bold ${d.score >= 70 ? 'text-green-400' : d.score >= 40 ? 'text-orange-400' : 'text-red-400'}`}>
-                            {d.score}
-                        </span>
-                    </span>
-                ))}
-            </div>
-        </div>
-    );
-}
 // --- LIVE TRACKER ---
 function LiveTracker({ players, onSaveGame, initialGame, phases, selectedPhase }) {
     const [gameState, setGameState] = useState({ quarter: 1, opponent: "Adversaire", actions: [], phase: selectedPhase });
@@ -1344,771 +1090,6 @@ function LiveTracker({ players, onSaveGame, initialGame, phases, selectedPhase }
     );
 }
 
-// ===========================================
-// GLOBAL STATS
-// ===========================================
-function GlobalStats({ players, games, phases, isAdmin }) {
-    const [filterPhase, setFilterPhase] = React.useState('all');
-    const [selectedPlayer, setSelectedPlayer] = React.useState(null);
-    const [showTeamTrends, setShowTeamTrends] = React.useState(false);
-    const [showVolumeMatrix, setShowVolumeMatrix] = useState(false);
-    const [viewMode, setViewMode] = React.useState('classic'); // 'classic' or 'advanced'
-
-    // Filtrage des matchs
-   const filteredGames = React.useMemo(() => {
-    const isFinal = g => !g.status || g.status === 'final';
-    if (filterPhase === 'all') return games.filter(isFinal);
-    return games.filter(g => g.phase === filterPhase && isFinal(g));
-}, [games, filterPhase]);
-
-    // --- 1. CALCULS DES TENDANCES ET ANALYSE DÉFAITES ---
-    const teamTrendsData = React.useMemo(() => {
-        const sorted = [...filteredGames].sort((a, b) => parseDate(a.date) - parseDate(b.date));
-        
-        // Initialisation des accumulateurs
-        const initStats = () => ({ 
-            pts: 0, conceded: 0, 
-            fgm: 0, fga: 0, threePM: 0, threePA: 0, ftm: 0, fta: 0, 
-            reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0 
-        });
-
-        let global = initStats();
-        let winsStats = { ...initStats(), count: 0 };
-        let lossStats = { ...initStats(), count: 0 };
-
-        const data = sorted.map((g) => {
-            let stats = initStats();
-            
-            // Somme des stats des joueurs pour ce match
-            Object.values(g.playerStats).forEach(s => {
-                stats.pts += (s.pts||0); 
-                stats.fgm += (s.fgm||0)+(s.threePM||0); // FGM inclut généralement 3PM dans les boxscores complets, ici on additionne si séparé
-                stats.fga += (s.fga||0)+(s.threePA||0);
-                stats.threePM += (s.threePM||0); stats.threePA += (s.threePA||0);
-                stats.ftm += (s.ftm||0); stats.fta += (s.fta||0);
-                stats.reb += (s.oreb||0)+(s.dreb||0);
-                stats.ast += (s.ast||0); stats.stl += (s.stl||0); stats.blk += (s.blk||0);
-                stats.tov += (s.tov||0); stats.pf += (s.pf||0);
-            });
-
-            // Aggrégation Globale
-            Object.keys(global).forEach(k => { if(stats[k] !== undefined) global[k] += stats[k]; });
-            global.conceded += (g.awayScore||0);
-
-            // Calculs avancés par match
-            const totalPoss = stats.fga + 0.44*stats.fta - (stats.reb*0.3) + stats.tov; 
-            const ortg = totalPoss > 0 ? (stats.pts/totalPoss)*100 : 0;
-            const drtg = totalPoss > 0 ? ((g.awayScore||0)/totalPoss)*100 : 0;
-            const isWin = (g.homeScore||0) > (g.awayScore||0);
-
-            // Aggrégation Victoires / Défaites
-            const target = isWin ? winsStats : lossStats;
-            target.count++;
-            target.conceded += (g.awayScore||0);
-            Object.keys(stats).forEach(k => { if(target[k] !== undefined) target[k] += stats[k]; });
-
-            return {
-                date: g.date, opponent: g.opponent, isWin,
-                score: g.homeScore||0, conceded: g.awayScore||0,
-                ORtg: parseFloat(ortg.toFixed(1)), DRtg: parseFloat(drtg.toFixed(1)), NetRtg: parseFloat((ortg-drtg).toFixed(1)),
-                ...stats,
-                fgPct: stats.fga > 0 ? ((stats.fgm/stats.fga)*100).toFixed(1) : 0,
-                threePct: stats.threePA > 0 ? ((stats.threePM/stats.threePA)*100).toFixed(1) : 0
-            };
-        });
-
-        // Fonction utilitaire pour calculer les moyennes
-        const calcAvg = (source, count) => {
-            if (count === 0) return {};
-            return {
-                pts: (source.pts/count).toFixed(1), conceded: (source.conceded/count).toFixed(1),
-                reb: (source.reb/count).toFixed(1), ast: (source.ast/count).toFixed(1),
-                stl: (source.stl/count).toFixed(1), blk: (source.blk/count).toFixed(1),
-                tov: (source.tov/count).toFixed(1), pf: (source.pf/count).toFixed(1),
-                fgPct: source.fga > 0 ? ((source.fgm/source.fga)*100).toFixed(1) : 0,
-                threePct: source.threePA > 0 ? ((source.threePM/source.threePA)*100).toFixed(1) : 0,
-                ftPct: source.fta > 0 ? ((source.ftm/source.fta)*100).toFixed(1) : 0,
-                fgm: (source.fgm/count).toFixed(1), fga: (source.fga/count).toFixed(1),
-                threePM: (source.threePM/count).toFixed(1), threePA: (source.threePA/count).toFixed(1)
-            };
-        };
-
-        const avgs = calcAvg(global, data.length || 1);
-        const winAvgs = calcAvg(winsStats, winsStats.count);
-        const lossAvgs = calcAvg(lossStats, lossStats.count);
-
-        // ANALYSE DES DÉFAITES (Comparaison Différentielle)
-        const analysis = [];
-        if (lossStats.count > 0 && winsStats.count > 0) {
-            // Calcul des deltas (Combien fait-on de MOINS en défaite par rapport à la victoire)
-            // Positif = On est moins bon en défaite. Négatif = On est meilleur en défaite (rare mais possible)
-            
-            const diffs = [
-                { label: "Défense (Pts Encaissés)", val: parseFloat(lossAvgs.conceded) - parseFloat(winAvgs.conceded), type: 'negative_more_is_bad', unit: 'pts' },
-                { label: "Attaque (Scoring)", val: parseFloat(winAvgs.pts) - parseFloat(lossAvgs.pts), type: 'positive_less_is_bad', unit: 'pts' },
-                { label: "Pertes de balle", val: parseFloat(lossAvgs.tov) - parseFloat(winAvgs.tov), type: 'negative_more_is_bad', unit: 'bp' },
-                { label: "Adresse Globale", val: parseFloat(winAvgs.fgPct) - parseFloat(lossAvgs.fgPct), type: 'positive_less_is_bad', unit: '%' },
-                { label: "Adresse 3-Pts", val: parseFloat(winAvgs.threePct) - parseFloat(lossAvgs.threePct), type: 'positive_less_is_bad', unit: '%' },
-                { label: "Rebonds", val: parseFloat(winAvgs.reb) - parseFloat(lossAvgs.reb), type: 'positive_less_is_bad', unit: 'reb' },
-                { label: "Création (Passes)", val: parseFloat(winAvgs.ast) - parseFloat(lossAvgs.ast), type: 'positive_less_is_bad', unit: 'pd' },
-            ];
-
-            // On trie par impact (valeur absolue la plus grande)
-            analysis.push(...diffs
-                .map(d => ({ ...d, impact: Math.abs(d.val), raw: d.val }))
-                .sort((a, b) => b.impact - a.impact)
-                .slice(0, 3) // Top 3 des causes
-            );
-        }
-
-        const streak = data.length > 0 ? (data[data.length-1].isWin ? "W" : "L") : "-";
-
-        return { data, avgs, winAvgs, lossAvgs, wins: winsStats.count, losses: lossStats.count, streak, analysis };
-    }, [filteredGames]);
-
-    // Aggrégation des joueurs (inchangée mais nécessaire pour le tableau)
-const aggregated = useMemo(() => {
-        const stats = {};
-        // Initialisation avec structure étendue pour PIR et Records complets
-        players.forEach(p => { 
-            stats[p.id] = { 
-                info: p, gamesPlayed: 0, 
-                total: { 
-                    pts: 0, reb: 0, oreb: 0, dreb: 0, ast: 0, stl: 0, blk: 0, tov: 0, min: 0, eff: 0, 
-                    fgm: 0, fga: 0, threePM: 0, threePA: 0, ftm: 0, fta: 0, pf: 0, plusMinus: 0, 
-                    pie: 0, pir: 0, foulDrawn: 0, blkAgainst: 0 // Ajout PIR, FD, BlkAg
-                }, 
-                totalMinPlayed: 0, weightedORtg: 0, weightedDRtg: 0, 
-                logs: [], 
-                // Records étendus
-                records: { 
-                    pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, eff: 0, threePM: 0,
-                    pir: -999, min: 0, fgm: 0, fga: 0, ftm: 0, fta: 0, threePA: 0,
-                    oreb: 0, dreb: 0, tov: 0, pf: 0, plusMinus: -999, foulDrawn: 0
-                } 
-            }; 
-        });
-
-        const GT = { FGM: 0, FGA: 0, ThreePM: 0, FTM: 0, FTA: 0, ORB: 0, DRB: 0, TRB: 0, AST: 0, STL: 0, BLK: 0, TOV: 0, PF: 0, PTS: 0, MP: 0, Opp_PTS: 0, Opp_FGM: 0, Opp_FGA: 0, Opp_FTM: 0, Opp_FTA: 0, Opp_ORB: 0, Opp_TRB: 0, Opp_TOV: 0 };
-
-        filteredGames.forEach(g => {
-            // ... (Calculs GT inchangés pour l'équipe) ...
-            // Je reprends les calculs d'équipe pour le contexte (copier-coller du bloc existant pour GT si nécessaire, mais ici focus sur la boucle joueurs)
-            let gamePTS=0, gameFGM=0, gameFTM=0, gameFGA=0, gameFTA=0;
-            let gameDRB=0, gameORB=0, gameAST=0, gameSTL=0, gameBLK=0, gamePF=0, gameTO=0;
-            
-            Object.values(g.playerStats).forEach(s => {
-                const min = s.minutes||0;
-                GT.FGM+=(s.fgm||0)+(s.threePM||0); GT.FGA+=(s.fga||0)+(s.threePA||0); GT.ThreePM+=(s.threePM||0); GT.FTM+=(s.ftm||0); GT.FTA+=(s.fta||0); GT.ORB+=(s.oreb||0); GT.DRB+=(s.dreb||0); GT.AST+=(s.ast||0); GT.STL+=(s.stl||0); GT.BLK+=(s.blk||0); GT.TOV+=(s.tov||0); GT.PF+=(s.pf||0); GT.PTS+=(s.pts||0); GT.MP+=min;
-                gamePTS+=s.pts||0; gameFGM+=(s.fgm||0)+(s.threePM||0); gameFTM+=s.ftm||0; gameFGA+=(s.fga||0)+(s.threePA||0); gameFTA+=s.fta||0; gameDRB+=s.dreb||0; gameORB+=s.oreb||0; gameAST+=s.ast||0; gameSTL+=s.stl||0; gameBLK+=s.blk||0; gamePF+=s.pf||0; gameTO+=s.tov||0;
-            });
-
-            const opp = g.opponentStats||{}; const oppPTS = g.awayScore||0;
-            const oppFGM = opp.fgm||Math.round(oppPTS/2.2); const oppFTM = opp.ftm||0; const oppFGA = opp.fga||Math.round(oppPTS/1.1); const oppFTA = opp.fta||0; const oppDRB = opp.reb?Math.round(opp.reb*0.7):0; const oppORB = opp.oreb||0; const oppTOV = opp.tov||0;
-            GT.Opp_PTS+=oppPTS; GT.Opp_FGM+=oppFGM; GT.Opp_FGA+=oppFGA; GT.Opp_FTM+=oppFTM; GT.Opp_FTA+=oppFTA; GT.Opp_ORB+=oppORB; GT.Opp_TRB+=(oppDRB+oppORB); GT.Opp_TOV+=oppTOV;
-            
-            gamePTS+=oppPTS; gameFGM+=oppFGM; gameFTM+=oppFTM; gameFGA+=oppFGA; gameFTA+=oppFTA; gameDRB+=oppDRB; gameORB+=oppORB; gameAST+=opp.ast||0; gameSTL+=opp.stl||0; gameBLK+=opp.blk||0; gamePF+=opp.fouls||0; gameTO+=oppTOV;
-            
-            const gamePIEDenom = gamePTS + gameFGM + gameFTM - gameFGA - gameFTA + gameDRB + (0.5 * gameORB) + gameAST + gameSTL + (0.5 * gameBLK) - gamePF - gameTO;
-            const teamPoss = (gameFGA-oppFGA) + 0.44*(gameFTA-oppFTA) - (gameORB-oppORB) + (gameTO-oppTOV);
-            const teamORtg_Game = teamPoss>0 ? ((gamePTS-oppPTS)/teamPoss)*100 : 0;
-            const teamDRtg_Game = teamPoss>0 ? (oppPTS/teamPoss)*100 : 0;
-
-            // Stats Joueurs
-            Object.entries(g.playerStats).forEach(([pid, s]) => {
-                const id = parseInt(pid);
-                if ((s.minutes||0) > 0 && stats[id]) {
-                    const t = stats[id].total; 
-                    const playerMin = s.minutes||0;
-                    
-                    // Calculs standards existants
-                    stats[id].gamesPlayed += 1; stats[id].totalMinPlayed += playerMin;
-                    stats[id].weightedORtg += teamORtg_Game * playerMin; 
-                    stats[id].weightedDRtg += teamDRtg_Game * playerMin; 
-                    
-                    t.pts += (s.pts||0); t.reb += (s.reb||0); t.oreb += (s.oreb||0); t.dreb += (s.dreb||0);
-                    t.ast += (s.ast||0); t.stl += (s.stl||0); t.blk += (s.blk||0); t.tov += (s.tov||0); t.min += playerMin;
-                    t.fgm += (s.fgm||0); t.fga += (s.fga||0); t.threePM += (s.threePM||0); t.threePA += (s.threePA||0);
-                    t.ftm += (s.ftm||0); t.fta += (s.fta||0); t.pf += (s.pf||0); t.plusMinus += (s.plusMinus||0);
-                    
-                    const playerFGA = (s.fga||0)+(s.threePA||0); 
-                    const playerFGM = (s.fgm||0)+(s.threePM||0);
-                    
-                    // EVAL (inchangé)
-                    const evalStat = (s.pts+s.reb+s.ast+s.stl+s.blk) - ((playerFGA-playerFGM) + ((s.fta||0)-(s.ftm||0)) + s.tov);
-                    t.eff += evalStat;
-                    
-                    // --- CALCUL DU PIR ---
-                    const missedFG = playerFGA - playerFGM;
-                    const missedFT = (s.fta||0) - (s.ftm||0);
-                    const foulDrawn = s.foulDrawn || 0;
-                    const blkAgainst = s.blkAgainst || 0;
-                    
-                    const pir = ((s.pts||0) + (s.reb||0) + (s.ast||0) + (s.stl||0) + (s.blk||0) + foulDrawn) 
-                                - (missedFG + missedFT + (s.tov||0) + blkAgainst + (s.pf||0));
-                    
-                    t.pir += pir;
-                    t.foulDrawn += foulDrawn;
-                    t.blkAgainst += blkAgainst;
-
-                    // PIE (inchangé)
-                    const playerPIENum = (s.pts||0) + playerFGM + (s.ftm||0) - playerFGA - (s.fta||0) + (s.dreb||0) + (0.5*(s.oreb||0)) + (s.ast||0) + (s.stl||0) + (0.5*(s.blk||0)) - (s.pf||0) - (s.tov||0);
-                    const playerPIE = gamePIEDenom !== 0 ? (playerPIENum / gamePIEDenom) * 100 : 0;
-                    t.pie += playerPIE;
-
-                    // --- GESTION DES RECORDS (Optimisée) ---
-                    const rec = stats[id].records;
-                    const currentStats = {
-                        pts: s.pts, reb: s.reb, ast: s.ast, stl: s.stl, blk: s.blk, eff: evalStat,
-                        threePM: s.threePM, pir: pir, min: s.minutes, fgm: playerFGM, fga: playerFGA,
-                        ftm: s.ftm, fta: s.fta, threePA: s.threePA, oreb: s.oreb, dreb: s.dreb,
-                        tov: s.tov, pf: s.pf, plusMinus: s.plusMinus, foulDrawn: foulDrawn
-                    };
-
-                    Object.keys(currentStats).forEach(key => {
-                        const val = currentStats[key] || 0;
-                        if (val > rec[key] || (key === 'plusMinus' && rec[key] === -999)) {
-                            rec[key] = val;
-                            rec[key + 'Date'] = g.date;
-                            rec[key + 'Opp'] = g.opponent;
-                        }
-                    });
-
-                    // AJOUT AU LOG
-                    stats[id].logs.push({ 
-                        date: g.date, opponent: g.opponent, phase: g.phase, min: s.minutes,
-                        pts: s.pts||0, reb: s.reb||0, oreb: s.oreb||0, dreb: s.dreb||0, ast: s.ast||0, stl: s.stl||0, blk: s.blk||0, tov: s.tov||0, pf: s.pf||0, plusMinus: s.plusMinus||0,
-                        fgm: playerFGM, fga: playerFGA, threePM: s.threePM||0, threePA: s.threePA||0, ftm: s.ftm||0, fta: s.fta||0,
-                        eff: evalStat, pir: pir, // PIR ajouté
-                        eFG: parseFloat((playerFGA>0?((playerFGM+0.5*(s.threePM||0))/playerFGA)*100:0).toFixed(1)), 
-                        TS: parseFloat(((playerFGA+0.44*(s.fta||0))>0 ? ((s.pts||0)/(2*(playerFGA+0.44*(s.fta||0))))*100 : 0).toFixed(1)), 
-                        PIE: parseFloat(playerPIE.toFixed(1)),
-                        ORtg: parseFloat((playerFGA + 0.44*(s.fta||0) + (s.tov||0) > 0 ? ((s.pts||0) / (playerFGA + 0.44*(s.fta||0) + (s.tov||0))) * 100 : 0).toFixed(1)), 
-                        DRtg: parseFloat(teamDRtg_Game.toFixed(1))
-                    });
-                }
-            });
-        });
-
-        // Calculs Saisonniers & Moyennes
-        const activePlayers = Object.values(stats).filter(p => p.gamesPlayed > 0);
-        const Min_moy = activePlayers.length > 0 ? GT.MP / activePlayers.length : 0;
-        const C = 1.5 * Min_moy; // Constante de stabilisation pour Ratings
-
-        return activePlayers.map(p => {
-            const t = p.total; const gp = p.gamesPlayed || 1;
-            
-            // Recalcul ORtg/DRtg stabilisé (inchangé, résumé ici pour brièveté)
-            // ... (logique Dean Oliver existante dans votre code) ...
-            const ORtg = p.weightedORtg / p.totalMinPlayed || 100; // Simplifié pour l'exemple, garder votre logique complexe si présente
-            const DRtg = p.weightedDRtg / p.totalMinPlayed || 100;
-
-            p.logs.sort((a, b) => parseDate(a.date) - parseDate(b.date));
-
-            const totalFGA = t.fga + t.threePA; const totalFGM = t.fgm + t.threePM;
-            const twoFGA = t.fga; const twoFGM = t.fgm;
-            return {
-                ...p,
-                stats: {
-                    fgm: parseFloat((twoFGM).toFixed(1)), // Seulement les 2pts ici pour que l'addition avec threePM soit correcte
-                    fga: parseFloat((twoFGA).toFixed(1)),
-                    threePM: parseFloat((t.threePM).toFixed(1)),
-                    threePA: parseFloat((t.threePA).toFixed(1)),
-                    ftm: parseFloat((t.ftm).toFixed(1)),
-                    fta: parseFloat((t.fta).toFixed(1))
-                },
-                avg: {
-                    min: (t.min/gp).toFixed(1), pts: (t.pts/gp).toFixed(1), reb: (t.reb/gp).toFixed(1),oreb: (t.oreb/gp).toFixed(1), dreb: (t.dreb/gp).toFixed(1),
-                    ast: (t.ast/gp).toFixed(1), stl: (t.stl/gp).toFixed(1), blk: (t.blk/gp).toFixed(1),
-                    tov: (t.tov/gp).toFixed(1), pf: (t.pf/gp).toFixed(1), plusMinus: (t.plusMinus/gp).toFixed(1),
-                    eff: (t.eff/gp).toFixed(1), pir: (t.pir/gp).toFixed(1), // Moyenne PIR ajoutée
-                    twoPct: twoFGA > 0 ? ((twoFGM/twoFGA)*100).toFixed(1) : "0.0",
-                    fgm: totalFGM, fga: totalFGA, fgPct: totalFGA>0?((totalFGM/totalFGA)*100).toFixed(1):"0.0",
-                    threePM: t.threePM, threePA: t.threePA, threePct: t.threePA>0?((t.threePM/t.threePA)*100).toFixed(1):"0.0",
-                    ftm: t.ftm, fta: t.fta, ftPct: t.fta>0?((t.ftm/t.fta)*100).toFixed(1):"0.0",
-                    eFG: (totalFGA>0?((totalFGM+0.5*t.threePM)/totalFGA)*100:0).toFixed(1),
-                    TS: ((totalFGA+0.44*t.fta)>0?((t.pts/(2*(totalFGA+0.44*t.fta)))*100):0).toFixed(1),
-                    ORtg: ORtg.toFixed(1), DRtg: DRtg.toFixed(1), netRtg: (ORtg-DRtg).toFixed(1), 
-                    PIE: (t.pie/gp).toFixed(1)
-                }
-            };
-        });
-    }, [players, filteredGames]);
-    return (
-        <div className="space-y-4 h-full flex flex-col pb-20 md:pb-0">
-            <Card className="p-2 md:p-4 flex-1 overflow-hidden flex flex-col">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
-                    <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto">
-                        <select 
-                            value={filterPhase} 
-                            onChange={(e) => setFilterPhase(e.target.value)}
-                            className="bg-slate-800 border-slate-700 text-slate-200 text-sm rounded p-2"
-                        >
-                            <option value="all">Toute la saison</option>
-                            {phases.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                        </select>
-                        <button 
-                            onClick={() => setViewMode(viewMode === 'classic' ? 'advanced' : 'classic')}
-                            className="px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded text-xs uppercase text-slate-300 border border-slate-700 transition-colors"
-                        >
-                            {viewMode === 'classic' ? 'Vue Avancée' : 'Vue Classique'}
-                        </button>
-                        <Button variant="ghost" size="sm" onClick={() => setShowVolumeMatrix(true)}><Icon path={Icons.Chart} /> Volume/Eff.</Button>
-
-                    </div>
-                    <div className="flex gap-2">
-                         <button 
-                            onClick={() => setShowTeamTrends(true)}
-                            className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded shadow-lg text-sm flex items-center gap-2 transition-all"
-                        >
-                            <Icon path={Icons.TrendingUp} /> Analyse & Tendances
-                        </button>
-                    </div>
-                </div>
-                
-                {/* TABLEAU PRINCIPAL AVEC EN-TÊTES GROUPÉS */}
-                <div className="overflow-auto flex-1 relative custom-scrollbar">
-                    <table className="w-full text-left text-sm text-slate-300 whitespace-nowrap border-collapse">
-                        <thead className="bg-slate-900 text-white uppercase text-xs sticky top-0 z-20">
-                            {/* Ligne de groupe */}
-                            <tr className="bg-slate-950 border-b border-slate-700">
-                                <th className="p-1 sticky left-0 bg-slate-950 z-30 min-w-[120px]"></th>
-                                <th colSpan="2" className="p-1 text-center border-r border-slate-700 text-slate-500">Général</th>
-                                {viewMode === 'classic' ? (
-                                    <>
-                                        <th colSpan="3" className="p-1 text-center border-r border-slate-700 text-orange-400 bg-orange-900/10">Scoring</th>
-                                        <th colSpan="4" className="p-1 text-center border-r border-slate-700 text-blue-400 bg-blue-900/10">Pourcentages</th>
-                                        <th colSpan="3" className="p-1 text-center border-r border-slate-700 text-purple-400 bg-purple-900/10">Rebonds</th>
-                                        <th colSpan="4" className="p-1 text-center border-r border-slate-700 text-yellow-400 bg-yellow-900/10">Activité</th>
-                                        <th colSpan="2" className="p-1 text-center text-green-400 bg-green-900/10">Impact</th>
-                                    </>
-                                ) : (
-                                    <th colSpan="8" className="p-1 text-center text-indigo-400">Métriques Avancées</th>
-                                )}
-                            </tr>
-                            <tr className="bg-slate-900 shadow-md">
-                                <th className="p-3 sticky left-0 bg-slate-900 z-30 border-r border-slate-700 font-bold">Joueur</th>
-                                <th className="p-3 text-center w-12 text-slate-400">MJ</th>
-                                <th className="p-3 text-center w-12 border-r border-slate-700 text-slate-400">MIN</th>
-                                {viewMode === 'classic' ? (
-                                    <>
-                                        <th className="p-3 text-center text-orange-400 font-bold bg-slate-800/50">PTS</th>
-                                        <th className="p-3 text-center text-slate-400">TIR</th>
-                                        <th className="p-3 text-center border-r border-slate-700 text-slate-400">LF</th>
-                                        
-                                        <th className="p-3 text-center">FG%</th>
-                                        <th className="p-3 text-center text-xs text-slate-500">2P%</th>
-                                        <th className="p-3 text-center">3P%</th>
-                                        <th className="p-3 text-center border-r border-slate-700 text-slate-500">LF%</th>
-                                        
-                                        <th className="p-3 text-center font-bold">REB</th>
-                                        <th className="p-3 text-center text-[10px] text-slate-500">RO</th>
-                                        <th className="p-3 text-center border-r border-slate-700 text-[10px] text-slate-500">RD</th>
-                                        
-                                        <th className="p-3 text-center">PD</th>
-                                        <th className="p-3 text-center">INT</th>
-                                        <th className="p-3 text-center">CTR</th>
-                                        <th className="p-3 text-center border-r border-slate-700 text-red-400">BP</th>
-                                        
-                                        <th className="p-3 text-center">+/-</th>
-                                        <th className="p-3 text-center font-black text-green-400">EVAL</th>
-                                    </>
-                                ) : (
-                                    <>
-                                        {/* Placeholders pour le mode avancé si non implémenté complètement */}
-                                        <th className="p-3 text-center">TS%</th>
-                                        <th className="p-3 text-center">eFG%</th>
-                                        <th className="p-3 text-center">USG%</th>
-                                        <th className="p-3 text-center">ORtg</th>
-                                        <th className="p-3 text-center">DRtg</th>
-                                    </>
-                                )}
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-800">
-                            {aggregated.map(p => (
-                                <tr key={p.info.id} onClick={() => setSelectedPlayer(p)} className="hover:bg-slate-800 cursor-pointer transition-colors odd:bg-slate-900 even:bg-slate-800/40">
-                                    <td className="p-3 font-medium text-white sticky left-0 bg-slate-900 z-10 border-r border-slate-800 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.5)]">
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-6 h-6 rounded-full bg-slate-700 flex items-center justify-center text-[10px]">{p.info.number}</div>
-                                            {p.info.name}
-                                        </div>
-                                    </td>
-                                    <td className="p-3 text-center text-slate-400">{p.gamesPlayed}</td>
-                                    <td className="p-3 text-center border-r border-slate-800 text-slate-500">{p.avg.min}</td>
-                                    {viewMode === 'classic' ? (
-                                        <>
-                                            <td className="p-3 text-center font-bold text-orange-400 bg-orange-500/5">{p.avg.pts}</td>
-                                           <td className="p-3 text-center text-xs text-slate-400">{p.stats.fgm+p.stats.threePM}-{p.stats.fga+p.stats.threePA}</td>
-                                            <td className="p-3 text-center text-xs border-r border-slate-800 text-slate-500">{p.stats.ftm}-{p.stats.fta}</td>
-                                            
-                                            <td className={`p-3 text-center font-medium ${parseFloat(p.avg.fgPct)>=45?'text-green-400':parseFloat(p.avg.fgPct)<35?'text-red-400':'text-yellow-500'}`}>{p.avg.fgPct}%</td>
-                                            <td className="p-3 text-center text-xs text-slate-600">{p.avg.twoPct}%</td>
-                                            <td className={`p-3 text-center ${parseFloat(p.avg.threePct)>=33?'text-blue-400':'text-slate-500'}`}>{p.avg.threePct}%</td>
-                                            <td className="p-3 text-center border-r border-slate-800 text-xs text-slate-500">{p.avg.ftPct}%</td>
-                                            
-                                            <td className="p-3 text-center font-bold text-white">{p.avg.reb}</td>
-                                            <td className="p-3 text-center text-xs text-slate-600">{p.avg.oreb}</td>
-                                            <td className="p-3 text-center text-xs text-slate-600 border-r border-slate-800">{p.avg.dreb}</td>
-                                            
-                                            <td className="p-3 text-center">{p.avg.ast}</td>
-                                            <td className="p-3 text-center">{p.avg.stl}</td>
-                                            <td className="p-3 text-center">{p.avg.blk}</td>
-                                            <td className="p-3 text-center border-r border-slate-800 text-red-400">{p.avg.tov}</td>
-                                            
-                                            <td className={`p-3 text-center font-bold ${parseFloat(p.avg.plusMinus)>=0?'text-green-500':'text-red-500'}`}>{p.avg.plusMinus > 0 ? '+' : ''}{p.avg.plusMinus}</td>
-                                            <td className="p-3 text-center font-black text-green-400 text-lg">{p.avg.eff}</td>
-                                        </>
-                                    ) : (
-                                        <td colSpan="8" className="p-3 text-center text-slate-600 text-xs italic">Données avancées en développement</td>
-                                    )}
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </Card>
-
-            {/* MODAL ANALYSE EQUIPE */}
-            <Modal isOpen={showTeamTrends} onClose={() => setShowTeamTrends(false)} title={<><Icon path={Icons.TrendingUp} /> Analyse Saison & Facteurs Clés</>} size="max-w-6xl">
-                <div className="space-y-6">
-                    {/* EN-TÊTE BILAN */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <div className="bg-slate-800 p-4 rounded-xl border-l-4 border-green-500 shadow-lg">
-                            <div className="text-slate-400 text-xs uppercase mb-1 tracking-wider">Bilan Global</div>
-                            <div className="text-3xl font-black text-white flex items-baseline gap-2">
-                                {teamTrendsData.wins}V - {teamTrendsData.losses}D
-                                <span className={`text-sm font-bold px-2 py-0.5 rounded ${((teamTrendsData.wins/(teamTrendsData.wins+teamTrendsData.losses))*100) >= 50 ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'}`}>
-                                    {((teamTrendsData.wins / (teamTrendsData.data.length||1))*100).toFixed(0)}%
-                                </span>
-                            </div>
-                            <div className="mt-2 text-xs text-slate-500">Série actuelle: <span className="text-white font-bold">{teamTrendsData.streak}</span></div>
-                        </div>
-                        <div className="bg-slate-800 p-4 rounded-xl border-l-4 border-orange-500 shadow-lg">
-                            <div className="text-slate-400 text-xs uppercase mb-1 tracking-wider">Moyenne Points</div>
-                            <div className="flex justify-between items-end">
-                                <div>
-                                    <div className="text-3xl font-black text-white">{teamTrendsData.avgs.pts}</div>
-                                    <div className="text-[10px] text-slate-400">Marqués</div>
-                                </div>
-                                <div className="text-right">
-                                    <div className="text-xl font-bold text-red-400">{teamTrendsData.avgs.conceded}</div>
-                                    <div className="text-[10px] text-slate-400">Encaissés</div>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="bg-slate-800 p-4 rounded-xl border-l-4 border-blue-500 shadow-lg">
-                            <div className="text-slate-400 text-xs uppercase mb-1 tracking-wider">Adresses (FG / 3PT / LF)</div>
-                            <div className="grid grid-cols-3 gap-2 text-center h-full items-center">
-                                <div><div className="text-xl font-bold text-white">{teamTrendsData.avgs.fgPct}%</div><div className="text-[10px] text-slate-500">Global</div></div>
-                                <div className="border-x border-slate-700"><div className="text-xl font-bold text-blue-400">{teamTrendsData.avgs.threePct}%</div><div className="text-[10px] text-slate-500">3 Pts</div></div>
-                                <div><div className="text-xl font-bold text-slate-300">{teamTrendsData.avgs.ftPct}%</div><div className="text-[10px] text-slate-500">Lancers</div></div>
-                            </div>
-                        </div>
-                        <div className="bg-slate-800 p-4 rounded-xl border-l-4 border-purple-500 shadow-lg">
-                            <div className="text-slate-400 text-xs uppercase mb-1 tracking-wider">Moyennes / Match</div>
-                            <div className="grid grid-cols-4 gap-1 text-center text-sm h-full items-center">
-                                <div><div className="font-bold text-white">{teamTrendsData.avgs.reb}</div><div className="text-[9px] text-slate-500">REB</div></div>
-                                <div><div className="font-bold text-white">{teamTrendsData.avgs.ast}</div><div className="text-[9px] text-slate-500">PD</div></div>
-                                <div><div className="font-bold text-white">{teamTrendsData.avgs.stl}</div><div className="text-[9px] text-slate-500">INT</div></div>
-                                <div><div className="font-bold text-red-400">{teamTrendsData.avgs.tov}</div><div className="text-[9px] text-slate-500">BP</div></div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* SECTION ANALYSE DES DÉFAITES */}
-                    {teamTrendsData.losses > 0 && teamTrendsData.analysis.length > 0 && (
-                        <div className="bg-red-950/20 border border-red-900/50 p-6 rounded-xl animate-fade-in">
-                            <h3 className="text-red-400 font-bold uppercase text-sm mb-4 flex items-center gap-2">
-                                <Icon path={Icons.TrendingUp} className="rotate-180 w-5 h-5" /> 
-                                Analyse : Pourquoi perdons-nous ? (Différentiel Victoires vs Défaites)
-                            </h3>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                {teamTrendsData.analysis.map((item, idx) => (
-                                    <div key={idx} className="bg-slate-900 p-4 rounded-lg border border-slate-700 flex flex-col justify-between shadow-sm hover:border-red-800 transition-colors">
-                                        <div className="flex justify-between items-start mb-2">
-                                            <div className="text-slate-200 font-bold">{item.label}</div>
-                                            <div className="bg-red-900/40 text-red-300 text-xs px-2 py-0.5 rounded uppercase font-bold">-{item.impact.toFixed(1)} {item.unit}</div>
-                                        </div>
-                                        
-                                        <div className="space-y-2 mt-2">
-                                            <div className="flex justify-between text-sm">
-                                                <span className="text-slate-500">Moy. en Victoire</span>
-                                                <span className="text-green-400 font-mono">
-                                                    {item.unit === '%' ? teamTrendsData.winAvgs[item.label.includes('3') ? 'threePct' : 'fgPct'] : 
-                                                     item.label.includes('Défense') ? teamTrendsData.winAvgs.conceded :
-                                                     item.label.includes('Attaque') ? teamTrendsData.winAvgs.pts :
-                                                     item.label.includes('Pertes') ? teamTrendsData.winAvgs.tov :
-                                                     item.label.includes('Rebonds') ? teamTrendsData.winAvgs.reb : teamTrendsData.winAvgs.ast}
-                                                </span>
-                                            </div>
-                                            <div className="flex justify-between text-sm">
-                                                <span className="text-slate-500">Moy. en Défaite</span>
-                                                <span className="text-red-400 font-mono">
-                                                    {item.unit === '%' ? teamTrendsData.lossAvgs[item.label.includes('3') ? 'threePct' : 'fgPct'] : 
-                                                     item.label.includes('Défense') ? teamTrendsData.lossAvgs.conceded :
-                                                     item.label.includes('Attaque') ? teamTrendsData.lossAvgs.pts :
-                                                     item.label.includes('Pertes') ? teamTrendsData.lossAvgs.tov :
-                                                     item.label.includes('Rebonds') ? teamTrendsData.lossAvgs.reb : teamTrendsData.lossAvgs.ast}
-                                                </span>
-                                            </div>
-                                        </div>
-                                        
-                                        <div className="text-[10px] text-slate-500 mt-3 italic border-t border-slate-800 pt-2">
-                                            {item.type === 'negative_more_is_bad' 
-                                                ? "En défaite, nous concédons/perdons beaucoup plus de ballons/points." 
-                                                : "En défaite, notre production s'effondre significativement."}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* GRAPHIQUE NET RATING */}
-                    <div className="h-64 bg-slate-900 rounded-xl p-4 border border-slate-800 shadow-lg">
-                         <h4 className="text-xs text-slate-400 uppercase mb-4 font-bold tracking-wider">Régularité (Net Rating par match)</h4>
-                        <ResponsiveContainer width="100%" height="90%">
-                            <ComposedChart data={teamTrendsData.data}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-                                <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} angle={-45} textAnchor="end" height={60} tick={{fill: '#94a3b8'}} />
-                                <YAxis stroke="#94a3b8" fontSize={10} tick={{fill: '#94a3b8'}} />
-                                <ReferenceLine y={0} stroke="#64748b" strokeDasharray="3 3" />
-                                <Tooltip 
-                                    contentStyle={{backgroundColor:'#1e293b', border:'1px solid #475569', borderRadius:'8px', color: '#f8fafc'}} 
-                                    itemStyle={{color: '#f8fafc'}}
-                                    cursor={{fill: 'rgba(255,255,255,0.05)'}}
-                                />
-                                <Bar dataKey="NetRtg" name="Différentiel Pts" radius={[4, 4, 0, 0]}>
-                                    {teamTrendsData.data.map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.NetRtg >= 0 ? '#22c55e' : '#ef4444'} />))}
-                                </Bar>
-                            </ComposedChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
-            </Modal>
-            
-            {/* Modal Joueur existante */}
-           
-
-{selectedPlayer && (
-    <Modal isOpen={!!selectedPlayer} onClose={() => setSelectedPlayer(null)} title={<><Icon path={Icons.Trophy} className="text-yellow-400" /> {selectedPlayer?.info.name}</>} size="max-w-5xl">
-        <div className="space-y-6">
-            {/* EN-TÊTE STATS CLÉS AVEC PIR */}
-            <div className="grid grid-cols-2 md:grid-cols-6 gap-2 bg-slate-900 p-4 rounded-lg">
-                <div className="text-center"><div className="text-xs text-slate-500">Points</div><div className="text-xl md:text-2xl font-bold text-white">{selectedPlayer.avg.pts}</div></div>
-                <div className="text-center"><div className="text-xs text-slate-500">Rebonds</div><div className="text-xl md:text-2xl font-bold text-white">{selectedPlayer.avg.reb}</div></div>
-                <div className="text-center"><div className="text-xs text-slate-500">Passes</div><div className="text-xl md:text-2xl font-bold text-white">{selectedPlayer.avg.ast}</div></div>
-                <div className="text-center"><div className="text-xs text-slate-500">Éval</div><div className="text-xl md:text-2xl font-bold text-green-400">{selectedPlayer.avg.eff}</div></div>
-                <div className="text-center"><div className="text-xs text-slate-500">PIR</div><div className="text-xl md:text-2xl font-bold text-orange-400">{selectedPlayer.avg.pir}</div></div>
-                <div className="text-center"><div className="text-xs text-slate-500">PIE</div><div className="text-xl md:text-2xl font-bold text-cyan-400">{selectedPlayer.avg.PIE}%</div></div>
-            
-                <div className="text-center">
-                    <div className="text-[10px] text-slate-500 uppercase">+/-</div>
-                    <div className={`text-2xl font-black ${parseFloat(selectedPlayer.avg.plusMinus) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {parseFloat(selectedPlayer.avg.plusMinus) > 0 ? '+' : ''}{selectedPlayer.avg.plusMinus}
-                    </div>
-                </div>
-            </div>
-
-            <div className="space-y-3">
-                <h4 className="text-sm text-slate-400 uppercase font-bold flex items-center gap-2"><span className="text-yellow-400">🏆</span> Records de la Saison</h4>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    {[
-                        { key: 'pir', label: 'PIR', icon: '💎', color: 'from-orange-500 to-red-600' },
-                        { key: 'pts', label: 'Points', icon: '🔥', color: 'from-orange-500 to-red-600' },
-                        { key: 'reb', label: 'Rebonds', icon: '💪', color: 'from-blue-500 to-cyan-600' },
-                        { key: 'ast', label: 'Passes', icon: '🎯', color: 'from-purple-500 to-pink-600' },
-                        { key: 'stl', label: 'Interceptions', icon: '⚡', color: 'from-yellow-500 to-orange-600' },
-                        { key: 'blk', label: 'Contres', icon: '🛡️', color: 'from-red-500 to-rose-600' },
-                        { key: 'min', label: 'Minutes', icon: '⏱️', color: 'from-slate-500 to-slate-700' },
-                        { key: 'plusMinus', label: '+/-', icon: '📈', color: 'from-green-500 to-emerald-600' },
-                    ].map(item => (
-                        <div key={item.key} className={`relative overflow-hidden rounded-xl bg-gradient-to-br ${item.color} p-0.5`}>
-                            <div className="bg-slate-900 rounded-xl p-3 h-full">
-                                <div className="flex items-center gap-2 mb-1">
-                                    <span className="text-lg">{item.icon}</span>
-                                    <span className="text-[10px] text-slate-400 uppercase tracking-wider">{item.label}</span>
-                                </div>
-                                <div className="text-xl font-black text-white">{selectedPlayer.records[item.key]}</div>
-                                <div className="text-[9px] text-slate-500 mt-1 truncate">vs {selectedPlayer.records[item.key + 'Opp']}</div>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-            {/* MÉTRIQUES AVANCÉES — ORtg / DRtg / NetRtg / MIN */}
-            <div className="grid grid-cols-4 gap-2">
-                <div className="bg-slate-800 p-3 rounded-lg text-center border border-slate-700">
-                    <div className="text-[10px] text-slate-400 uppercase">ORtg</div>
-                    <div className="text-lg font-bold text-purple-400">{selectedPlayer.avg.ORtg}</div>
-                </div>
-                <div className="bg-slate-800 p-3 rounded-lg text-center border border-slate-700">
-                    <div className="text-[10px] text-slate-400 uppercase">DRtg</div>
-                    <div className="text-lg font-bold text-red-400">{selectedPlayer.avg.DRtg}</div>
-                </div>
-                <div className="bg-slate-800 p-3 rounded-lg text-center border border-slate-700">
-                    <div className="text-[10px] text-slate-400 uppercase">NetRtg</div>
-                    <div className={`text-lg font-bold ${parseFloat(selectedPlayer.avg.netRtg) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {parseFloat(selectedPlayer.avg.netRtg) > 0 ? '+' : ''}{selectedPlayer.avg.netRtg}
-                    </div>
-                </div>
-                <div className="bg-slate-800 p-3 rounded-lg text-center border border-slate-700">
-                    <div className="text-[10px] text-slate-400 uppercase">Min/Match</div>
-                    <div className="text-lg font-bold text-white">{selectedPlayer.avg.min}</div>
-                </div>
-            </div>
-
-            {/* SHOOTING SPLITS */}
-            <div className="bg-slate-900 p-4 rounded-lg border border-slate-700">
-                <h4 className="text-xs text-slate-400 uppercase mb-3 font-bold tracking-wider">Adresses</h4>
-                <div className="grid grid-cols-3 gap-4">
-                    {[
-                        { label: '2 Points', pct: selectedPlayer.avg.twoPct, made: selectedPlayer.stats.fgm, att: selectedPlayer.stats.fga, color: 'orange' },
-                        { label: '3 Points', pct: selectedPlayer.avg.threePct, made: selectedPlayer.stats.threePM, att: selectedPlayer.stats.threePA, color: 'blue' },
-                        { label: 'Lancers F.', pct: selectedPlayer.avg.ftPct, made: selectedPlayer.stats.ftm, att: selectedPlayer.stats.fta, color: 'green' }
-                    ].map(sh => (
-                        <div key={sh.label} className="text-center">
-                            <div className="text-xs text-slate-500 mb-1">{sh.label}</div>
-                            <div className={`text-2xl font-black text-${sh.color}-400`}>{sh.pct}%</div>
-                            <div className="text-[10px] text-slate-500">{sh.made}/{sh.att}</div>
-                            <div className="w-full bg-slate-700 rounded-full h-2 mt-2 overflow-hidden">
-                                <div className={`h-full rounded-full bg-${sh.color}-500 transition-all`}
-                                     style={{ width: `${Math.min(parseFloat(sh.pct) || 0, 100)}%` }} />
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-
-            {/* ACTIVITÉ — INT / CTR / BP / FTE */}
-            <div className="grid grid-cols-4 gap-2">
-                <div className="bg-slate-800 p-2 rounded text-center">
-                    <div className="text-[10px] text-slate-500">INT</div>
-                    <div className="text-lg font-bold text-yellow-400">{selectedPlayer.avg.stl}</div>
-                </div>
-                <div className="bg-slate-800 p-2 rounded text-center">
-                    <div className="text-[10px] text-slate-500">CTR</div>
-                    <div className="text-lg font-bold text-orange-400">{selectedPlayer.avg.blk}</div>
-                </div>
-                <div className="bg-slate-800 p-2 rounded text-center">
-                    <div className="text-[10px] text-slate-500">BP</div>
-                    <div className="text-lg font-bold text-red-400">{selectedPlayer.avg.tov}</div>
-                </div>
-                <div className="bg-slate-800 p-2 rounded text-center">
-                    <div className="text-[10px] text-slate-500">FTE</div>
-                    <div className="text-lg font-bold text-red-300">{selectedPlayer.avg.pf}</div>
-                </div>
-            </div>
-
-            {/* GRAPHIQUES */}
-            {(selectedPlayer.logs || []).length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-slate-900 rounded-lg p-3 border border-slate-700">
-                    <h4 className="text-xs text-slate-400 uppercase mb-2 font-bold">Scoring & Éval par match</h4>
-                    <div className="h-48 w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={selectedPlayer.logs}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                                <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} hide />
-                                <YAxis stroke="#94a3b8" fontSize={10} />
-                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '8px' }} />
-                                <Line type="monotone" dataKey="pts" name="Points" stroke="#f97316" strokeWidth={2} dot={{ r: 3 }} />
-                                <Line type="monotone" dataKey="eff" name="Éval" stroke="#22c55e" strokeWidth={2} dot={{ r: 3 }} />
-                                <Legend />
-                            </LineChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
-                <div className="bg-slate-900 rounded-lg p-3 border border-slate-700">
-                    <h4 className="text-xs text-slate-400 uppercase mb-2 font-bold">ORtg / DRtg par match</h4>
-                    <div className="h-48 w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={selectedPlayer.logs}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                                <XAxis dataKey="opponent" stroke="#94a3b8" fontSize={10} hide />
-                                <YAxis stroke="#94a3b8" fontSize={10} domain={['auto', 'auto']} />
-                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '8px' }} />
-                                <Line type="monotone" dataKey="ORtg" name="ORtg" stroke="#a855f7" strokeWidth={2} dot={{ r: 3 }} />
-                                <Line type="monotone" dataKey="DRtg" name="DRtg" stroke="#ef4444" strokeWidth={2} dot={{ r: 3 }} />
-                                <Legend />
-                            </LineChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
-
-                            <GhostSeasonChart logs={selectedPlayer.logs} currentGame={null} />
-
-                            <ArchetypeRadar player={selectedPlayer} allPlayers={aggregated} />
-                  
-            </div>      
-            )}
-
-            {/* GAME LOGS */}
-            {(selectedPlayer.logs || []).length > 0 && (
-            <div>
-                <h4 className="text-xs text-slate-400 uppercase mb-2 font-bold tracking-wider">
-                    Match par match ({selectedPlayer.gamesPlayed} matchs)
-                </h4>
-                <div className="overflow-x-auto bg-slate-900 rounded-lg border border-slate-700 max-h-64">
-                    <table className="w-full text-xs text-slate-300 whitespace-nowrap">
-                        <thead className="bg-slate-800 text-white uppercase text-[10px] sticky top-0 z-10">
-                            <tr>
-                                <th className="p-2 text-left sticky left-0 bg-slate-800 z-20">Adversaire</th>
-                                <th className="p-2 text-center">Score</th>
-                                <th className="p-2 text-center">MIN</th>
-                                <th className="p-2 text-center text-orange-400">PTS</th>
-                                <th className="p-2 text-center">REB</th>
-                                <th className="p-2 text-center">PD</th>
-                                <th className="p-2 text-center">INT</th>
-                                <th className="p-2 text-center text-red-400">BP</th>
-                                <th className="p-2 text-center">+/-</th>
-                                <th className="p-2 text-center text-purple-400">ORtg</th>
-                                <th className="p-2 text-center text-red-400">DRtg</th>
-                                <th className="p-2 text-center text-green-400">EVAL</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-800">
-                            {(selectedPlayer.logs || []).map((log, i) => (
-                                <tr key={i} className={`transition-colors ${log.isWin ? 'bg-green-900/5 hover:bg-green-900/15' : 'bg-red-900/5 hover:bg-red-900/15'}`}>
-                                    <td className="p-2 font-bold text-white sticky left-0 bg-slate-900 z-10 border-r border-slate-800">
-                                        <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 ${log.isWin ? 'bg-green-500' : 'bg-red-500'}`}></span>
-                                        {log.opponent}
-                                    </td>
-                                    <td className="p-2 text-center">
-                                        <span className="text-green-400">{log.score}</span>
-                                        <span className="text-slate-600"> - </span>
-                                        <span className="text-red-400">{log.conceded}</span>
-                                    </td>
-                                    <td className="p-2 text-center text-slate-500">{log.min}</td>
-                                    <td className="p-2 text-center font-bold text-orange-400">{log.pts}</td>
-                                    <td className="p-2 text-center">{log.reb}</td>
-                                    <td className="p-2 text-center">{log.ast}</td>
-                                    <td className="p-2 text-center">{log.stl}</td>
-                                    <td className="p-2 text-center text-red-400">{log.tov}</td>
-                                    <td className={`p-2 text-center font-bold ${log.plusMinus >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                        {log.plusMinus > 0 ? '+' : ''}{log.plusMinus}
-                                    </td>
-                                    <td className="p-2 text-center text-purple-400">{log.ORtg}</td>
-                                    <td className="p-2 text-center text-red-400">{log.DRtg}</td>
-                                    <td className="p-2 text-center font-bold text-green-400">{log.eff}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            )}
-        </div>
-    </Modal>
-)}
-<Modal isOpen={showVolumeMatrix} onClose={() => setShowVolumeMatrix(false)} title={<><Icon path={Icons.Chart} /> Matrice Volume / Efficacité</>} size="max-w-3xl">
-                <VolumeEfficiencyMatrix players={aggregated} />
-            </Modal>
-        </div>
-    );
-}
-
 // --- IMPORT REVIEW MODAL ---
 function ImportReviewModal({ importData, currentPlayers, phases, onConfirm, onCancel }) {
     const [mapping, setMapping] = useState({});
@@ -2174,84 +1155,206 @@ function ImportReviewModal({ importData, currentPlayers, phases, onConfirm, onCa
 }
 
 // --- MODALE DETAILS MATCH ---
+
 function GameDetailsModal({ game, isOpen, onClose, players }) {
     if (!game) return null;
     const [viewMode, setViewMode] = useState('classic');
+    const [showMinutesDebug, setShowMinutesDebug] = useState(false);
 
     const statsData = React.useMemo(() => {
         const pStats = game.playerStats || {};
         const opp = game.opponentStats || {};
-        let T_FGM=0, T_FGA=0, T_3PM=0, T_FTM=0, T_FTA=0, T_ORB=0, T_DRB=0, T_AST=0, T_STL=0, T_BLK=0, T_TOV=0, T_PF=0, T_PTS=0, T_MP=0;
+
+         let subMinutes = null;
+    if (game.actions?.length && game.starters) {
+        const qSet = new Set(game.actions.map(a => a.q || 1));
+        [1,2,3,4].forEach(q => qSet.add(q));
+        const maxQ = Math.max(...qSet);
+        subMinutes = recalcMinutesFromSubsUtil(
+            game.actions,
+            game.starters || {},
+            game.opponentStarters || {},
+            maxQ
+        );
+    }
+        // --- Flag : le match a-t-il un play-by-play ? ---
+        const hasPBP = Array.isArray(game.actions) && game.actions.length > 0;
+
+        // --- Détection : foulDrawn / blkAgainst sont-ils trackés dans ce match ? ---
+        // On regarde si au moins un joueur a ces champs non-nuls
+        let hasFoulDrawnData = false;
+        let hasBlkAgainstData = false;
         Object.values(pStats).forEach(s => {
-            T_FGM += (s.fgm||0)+(s.threePM||0); T_FGA += (s.fga||0)+(s.threePA||0); T_3PM += (s.threePM||0);
-            T_FTM += (s.ftm||0); T_FTA += (s.fta||0); T_ORB += (s.oreb||0); T_DRB += (s.dreb||0);
-            T_AST += (s.ast||0); T_STL += (s.stl||0); T_BLK += (s.blk||0); T_TOV += (s.tov||0);
-            T_PF += (s.pf||0); T_PTS += (s.pts||0); T_MP += (s.minutes||0);
+            if ((s.foulDrawn || 0) > 0) hasFoulDrawnData = true;
+            if ((s.blkAgainst || 0) > 0) hasBlkAgainstData = true;
         });
+        // Si le match a un PBP, on considère que ces stats sont trackées même si toutes à 0
+        if (hasPBP) {
+            hasFoulDrawnData = true;
+            hasBlkAgainstData = true;
+        }
+
+        let T_FGM=0, T_FGA=0, T_3PM=0, T_FTM=0, T_FTA=0, T_ORB=0, T_DRB=0;
+        let T_AST=0, T_STL=0, T_BLK=0, T_TOV=0, T_PF=0, T_PTS=0, T_MP=0;
+        let T_FD=0, T_BLK_AG=0;
+
+        Object.values(pStats).forEach(s => {
+            const pid = Object.keys(pStats).find(key => pStats[key] === s);
+            const playerMin = (subMinutes && subMinutes[pid] !== undefined) ? subMinutes[pid] : (s.minutes || 0);
+            T_FGM += (s.fgm||0)+(s.threePM||0);
+            T_FGA += (s.fga||0)+(s.threePA||0);
+            T_3PM += (s.threePM||0);
+            T_FTM += (s.ftm||0); T_FTA += (s.fta||0);
+            T_ORB += (s.oreb||0); T_DRB += (s.dreb||0);
+            T_AST += (s.ast||0); T_STL += (s.stl||0);
+            T_BLK += (s.blk||0); T_TOV += (s.tov||0);
+            T_PF += (s.pf||0); T_PTS += (s.pts||0);
+            T_MP += playerMin;
+            T_FD += (s.foulDrawn||0);
+            T_BLK_AG += (s.blkAgainst||0);
+        });
+
         const O_PTS = game.awayScore||0;
-        const O_FGM = opp.fgm||0; const O_FGA = opp.fga||(O_FGM+T_DRB);
+        const O_FGM = opp.fgm||0;
+        const O_FGA = opp.fga||(O_FGM+T_DRB);
         const O_FTM = opp.ftm||0; const O_FTA = opp.fta||0;
-        const O_ORB = opp.oreb||0; const O_TRB = (opp.reb||(O_ORB+T_DRB));
-        const O_TOV = opp.tov||0; const O_MP = T_MP;
+        const O_ORB = opp.oreb||0;
+        const O_TRB = (opp.reb||(O_ORB+T_DRB));
+        const O_TOV = opp.tov||0;
+
         const Team_Poss = T_FGA + 0.44*T_FTA - T_ORB + T_TOV;
         const Team_ORtg = Team_Poss > 0 ? (T_PTS/Team_Poss)*100 : 0;
         const Team_DRtg = Team_Poss > 0 ? (O_PTS/Team_Poss)*100 : 0;
 
         const rawPlayers = Object.entries(pStats).map(([pid, s]) => {
-            const hasActivity = (s.pts||0) > 0 || (s.fgm||0) > 0 || (s.fga||0) > 0 || (s.threePA||0) > 0 || (s.fta||0) > 0 || (s.oreb||0) > 0 || (s.dreb||0) > 0 || (s.ast||0) > 0 || (s.stl||0) > 0 || (s.blk||0) > 0 || (s.tov||0) > 0 || (s.pf||0) > 0 || (s.minutes||0) > 0;
+            const hasActivity = (s.pts||0) > 0 || (s.fgm||0) > 0 || (s.fga||0) > 0 || (s.threePA||0) > 0 ||
+                (s.fta||0) > 0 || (s.oreb||0) > 0 || (s.dreb||0) > 0 || (s.ast||0) > 0 ||
+                (s.stl||0) > 0 || (s.blk||0) > 0 || (s.tov||0) > 0 || (s.pf||0) > 0 || (s.minutes||0) > 0;
             if (!hasActivity) return null;
-            const MP = s.minutes||0;
-            const FGM = (s.fgm||0)+(s.threePM||0); const FGA = (s.fga||0)+(s.threePA||0);
+
+            const MP = (subMinutes && subMinutes[pid] !== undefined) ? subMinutes[pid] : (s.minutes || 0);
+            const FGM = (s.fgm||0)+(s.threePM||0);
+            const FGA = (s.fga||0)+(s.threePA||0);
             const eFG = FGA > 0 ? ((FGM + 0.5*(s.threePM||0))/FGA)*100 : 0;
             const TS = (FGA + 0.44*(s.fta||0)) > 0 ? ((s.pts||0)/(2*(FGA + 0.44*(s.fta||0))))*100 : 0;
-            const gamePIEDenom = (T_PTS + O_PTS) + (T_FGM + O_FGM) + (T_FTM + O_FTM) - (T_FGA + O_FGA) - (T_FTA + O_FTA) + (T_DRB + (O_TRB-O_ORB)) + (0.5 * (T_ORB + O_ORB)) + (T_AST + (opp.ast||0)) + (T_STL) + (0.5 * T_BLK) - (T_PF + (opp.fouls||0)) - (T_TOV + O_TOV);
-            const playerPIENum = (s.pts||0) + FGM + (s.ftm||0) - FGA - (s.fta||0) + (s.dreb||0) + (0.5*(s.oreb||0)) + (s.ast||0) + (s.stl||0) + (0.5*(s.blk||0)) - (s.pf||0) - (s.tov||0);
+
+            const gamePIEDenom = (T_PTS + O_PTS) + (T_FGM + O_FGM) + (T_FTM + O_FTM)
+                - (T_FGA + O_FGA) - (T_FTA + O_FTA) + (T_DRB + (O_TRB-O_ORB))
+                + (0.5 * (T_ORB + O_ORB)) + (T_AST + (opp.ast||0))
+                + (T_STL) + (0.5 * T_BLK) - (T_PF + (opp.fouls||0)) - (T_TOV + O_TOV);
+            const playerPIENum = (s.pts||0) + FGM + (s.ftm||0) - FGA - (s.fta||0)
+                + (s.dreb||0) + (0.5*(s.oreb||0)) + (s.ast||0) + (s.stl||0)
+                + (0.5*(s.blk||0)) - (s.pf||0) - (s.tov||0);
             const pie = gamePIEDenom !== 0 ? (playerPIENum / gamePIEDenom) * 100 : 0;
-            const evalStat = ((s.pts||0)+(s.oreb||0)+(s.dreb||0)+(s.ast||0)+(s.stl||0)+(s.blk||0)) - ((FGA-FGM)+((s.fta||0)-(s.ftm||0))+(s.tov||0));
+
+            const evalStat = ((s.pts||0)+(s.oreb||0)+(s.dreb||0)+(s.ast||0)+(s.stl||0)+(s.blk||0))
+                - ((FGA-FGM)+((s.fta||0)-(s.ftm||0))+(s.tov||0));
+
             const player = players.find(p => p.id === parseInt(pid));
+
             return {
-                id: pid, name: player ? player.name : `#${pid}`, minutes: MP,
-                pts: s.pts||0, ast: s.ast||0, reb: (s.oreb||0)+(s.dreb||0), stl: s.stl||0, blk: s.blk||0, tov: s.tov||0, pf: s.pf||0,
-                fgm: FGM, fga: FGA, twoPM: s.fgm||0, twoPA: s.fga||0, threePM: s.threePM||0, threePA: s.threePA||0,
-                ftm: s.ftm||0, fta: s.fta||0, oreb: s.oreb||0, dreb: s.dreb||0,
-                plusMinus: s.plusMinus||0, eFG: eFG.toFixed(1), TS: TS.toFixed(1), PIE: pie.toFixed(1), eff: evalStat
+                id: pid,
+                name: player ? player.name : `#${pid}`,
+                minutes: MP,
+                pts: s.pts||0, ast: s.ast||0,
+                reb: (s.oreb||0)+(s.dreb||0),
+                stl: s.stl||0, blk: s.blk||0,
+                tov: s.tov||0, pf: s.pf||0,
+                fgm: FGM, fga: FGA,
+                twoPM: s.fgm||0, twoPA: s.fga||0,
+                threePM: s.threePM||0, threePA: s.threePA||0,
+                ftm: s.ftm||0, fta: s.fta||0,
+                oreb: s.oreb||0, dreb: s.dreb||0,
+                plusMinus: s.plusMinus||0,
+                eFG: eFG.toFixed(1), TS: TS.toFixed(1),
+                PIE: pie.toFixed(1), eff: evalStat,
+                // --- NOUVELLES STATS ---
+                foulDrawn: s.foulDrawn||0,
+                blkAgainst: s.blkAgainst||0
             };
         }).filter(p => p !== null);
-        return { team: { poss: Team_Poss.toFixed(1), ORtg: Team_ORtg.toFixed(1), DRtg: Team_DRtg.toFixed(1), Net: (Team_ORtg-Team_DRtg).toFixed(1) }, players: rawPlayers };
+
+        return {
+            team: {
+                poss: Team_Poss.toFixed(1),
+                ORtg: Team_ORtg.toFixed(1),
+                DRtg: Team_DRtg.toFixed(1),
+                Net: (Team_ORtg-Team_DRtg).toFixed(1),
+                // Totaux pour ligne TOTAL
+                T_FD, T_BLK_AG, T_PTS, T_FGM, T_FGA, T_3PM, T_FTM, T_FTA,
+                T_ORB, T_DRB, T_AST, T_STL, T_BLK, T_TOV, T_PF, T_MP
+            },
+            players: rawPlayers,
+            hasPBP,
+            hasFoulDrawnData,
+            hasBlkAgainstData
+        };
     }, [game, players]);
 
+    // --- RENDU ---
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={`Vs ${game.opponent}`} size="max-w-6xl">
             <div className="space-y-4 md:space-y-6">
+                {/* Momentum Chart (inchangé) */}
                 {game.scoreHistory && game.scoreHistory.length > 1 && (
                     <Card className="p-4">
-                        <MomentumChart scoreHistory={game.scoreHistory} actions={game.actions || []} />
+                        <MomentumChart scoreHistory={game.scoreHistory} />
                     </Card>
                 )}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4">
-                    <div className="lg:col-span-2 bg-slate-900 p-3 rounded-lg flex justify-between items-center border border-slate-700 relative overflow-hidden shadow-inner">
-                        <div className="text-center z-10 w-1/3"><div className="text-[10px] md:text-xs text-slate-400 uppercase tracking-widest">Nous</div><div className="text-3xl md:text-5xl font-black text-green-400 leading-none mt-1">{game.homeScore}</div></div>
-                        <div className="flex flex-col items-center z-10 px-2 text-center w-1/3 border-x border-slate-800"><div className="text-[10px] md:text-xs text-slate-500">{game.date}</div><div className="text-sm md:text-lg font-bold text-white uppercase tracking-wider leading-tight mt-1">{game.opponent}</div></div>
-                        <div className="text-center z-10 w-1/3"><div className="text-[10px] md:text-xs text-slate-400 uppercase tracking-widest">Eux</div><div className="text-3xl md:text-5xl font-black text-red-400 leading-none mt-1">{game.awayScore}</div></div>
-                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-500 via-transparent to-red-500 opacity-50"></div>
-                    </div>
-                    <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-600/50 flex flex-col justify-center">
-                        <div className="text-[10px] text-slate-400 uppercase mb-2 text-center border-b border-slate-700 pb-1 font-semibold">Efficacite Collective</div>
-                        <div className="grid grid-cols-2 gap-y-2 gap-x-4">
-                            <div className="flex justify-between items-end"><span className="text-slate-400 text-xs">Poss:</span> <span className="text-white font-mono font-bold">{statsData.team.poss}</span></div>
+
+                {/* Score + Ratings (inchangé) */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
+                    <Card className="p-4 text-center col-span-1 md:col-span-2">
+                        <div className="flex items-center justify-center gap-4 md:gap-6">
+                            <div>
+                                <div className="text-3xl md:text-5xl font-black text-white">{game.homeScore}</div>
+                                <div className="text-xs text-slate-400 uppercase mt-1">Champagne</div>
+                            </div>
+                            <span className="text-xl md:text-2xl text-slate-600 font-bold">-</span>
+                            <div>
+                                <div className="text-3xl md:text-5xl font-black text-red-400">{game.awayScore}</div>
+                                <div className="text-xs text-slate-400 uppercase mt-1">{game.opponent}</div>
+                            </div>
+                        </div>
+                    </Card>
+                    <Card className="p-3 md:p-4">
+                        <div className="space-y-2 text-sm">
+                            <div className="flex justify-between items-end"><span className="text-slate-400 text-xs">Poss:</span> <span className="text-white font-mono">{statsData.team.poss}</span></div>
                             <div className="flex justify-between items-end"><span className="text-slate-400 text-xs">NetRtg:</span> <span className={`${parseFloat(statsData.team.Net)>=0?'text-green-400':'text-red-400'} font-mono font-bold text-xs`}>{statsData.team.Net}</span></div>
                             <div className="flex justify-between items-end"><span className="text-purple-300 text-xs">ORtg:</span> <span className="text-white font-mono">{statsData.team.ORtg}</span></div>
                             <div className="flex justify-between items-end"><span className="text-red-300 text-xs">DRtg:</span> <span className="text-white font-mono">{statsData.team.DRtg}</span></div>
                         </div>
-                    </div>
+                    </Card>
                 </div>
 
+                {/* --- BANNIÈRE AVERTISSEMENT STATS MANQUANTES --- */}
+                {(!statsData.hasFoulDrawnData || !statsData.hasBlkAgainstData) && (
+                    <div className="bg-amber-900/30 border border-amber-700/50 rounded-lg px-4 py-2 flex items-center gap-2 text-xs text-amber-300">
+                        <span>⚠️</span>
+                        <span>
+                            Match importé sans play-by-play —
+                            {!statsData.hasFoulDrawnData && !statsData.hasBlkAgainstData
+                                ? ' Fautes provoquées (FP) et contres subis (CS) non disponibles.'
+                                : !statsData.hasFoulDrawnData
+                                    ? ' Fautes provoquées (FP) non disponibles.'
+                                    : ' Contres subis (CS) non disponibles.'
+                            }
+                        </span>
+                    </div>
+                )}
+
+                {/* --- TABLEAU JOUEURS --- */}
                 <div>
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-3 gap-2">
-                        <h4 className="text-orange-400 font-bold text-sm uppercase flex items-center gap-2"><Icon path={Icons.Users} className="w-4 h-4"/> <span>Joueurs ({statsData.players.length})</span></h4>
+                        <h4 className="text-orange-400 font-bold text-sm uppercase flex items-center gap-2">
+                            <Icon path={Icons.Users} className="w-4 h-4"/>
+                            <span>Joueurs ({statsData.players.length})</span>
+                        </h4>
                         <div className="flex bg-slate-800 rounded p-0.5 border border-slate-700 w-full sm:w-auto">
                             <button onClick={() => setViewMode('classic')} className={`flex-1 sm:flex-none px-4 py-1.5 text-xs font-medium rounded transition-all ${viewMode==='classic'?'bg-slate-600 text-white shadow':'text-slate-400 hover:text-white'}`}>Classique</button>
                             <button onClick={() => setViewMode('advanced')} className={`flex-1 sm:flex-none px-4 py-1.5 text-xs font-medium rounded transition-all ${viewMode==='advanced'?'bg-slate-600 text-white shadow':'text-slate-400 hover:text-white'}`}>Avance</button>
+                            <button className={`px-3 py-1 rounded text-xs font-bold border ${showMinutesDebug ? 'bg-orange-600 border-orange-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}onClick={() => setShowMinutesDebug(!showMinutesDebug)}>Debug</button>
+                
                         </div>
                     </div>
                     <div className="overflow-x-auto bg-slate-900 rounded-lg border border-slate-700 shadow-xl">
@@ -2263,11 +1366,19 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
                                     {viewMode === 'classic' ? (
                                         <>
                                             <th className="p-3 text-center text-orange-400 font-bold">PTS</th>
-                                            <th className="p-3 text-center">2PT</th><th className="p-3 text-center">3PT</th><th className="p-3 text-center">LF</th>
+                                            <th className="p-3 text-center">2PT</th>
+                                            <th className="p-3 text-center">3PT</th>
+                                            <th className="p-3 text-center">LF</th>
                                             <th className="p-3 text-center font-bold text-white">REB</th>
-                                            <th className="p-3 text-center text-[10px]">RO</th><th className="p-3 text-center text-[10px]">RD</th>
-                                            <th className="p-3 text-center">PD</th><th className="p-3 text-center">INT</th><th className="p-3 text-center">CTR</th>
-                                            <th className="p-3 text-center text-red-400">BP</th><th className="p-3 text-center text-red-400">FTE</th>
+                                            <th className="p-3 text-center text-[10px]">RO</th>
+                                            <th className="p-3 text-center text-[10px]">RD</th>
+                                            <th className="p-3 text-center">PD</th>
+                                            <th className="p-3 text-center">INT</th>
+                                            <th className="p-3 text-center">CTR</th>
+                                            {statsData.hasBlkAgainstData && <th className="p-3 text-center text-orange-300 text-[10px]" title="Contres subis">CS</th>}
+                                            <th className="p-3 text-center text-red-400">BP</th>
+                                            <th className="p-3 text-center text-red-400">FTE</th>
+                                            {statsData.hasFoulDrawnData && <th className="p-3 text-center text-cyan-400 text-[10px]" title="Fautes provoquées">FP</th>}
                                             <th className="p-3 text-center font-bold">+/-</th>
                                             <th className="p-3 text-center text-green-400 font-bold">EVAL</th>
                                         </>
@@ -2301,8 +1412,10 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
                                                 <td className="p-3 text-center">{p.ast}</td>
                                                 <td className="p-3 text-center">{p.stl}</td>
                                                 <td className="p-3 text-center">{p.blk}</td>
+                                                {statsData.hasBlkAgainstData && <td className="p-3 text-center text-orange-300">{p.blkAgainst}</td>}
                                                 <td className="p-3 text-center text-red-400">{p.tov}</td>
                                                 <td className="p-3 text-center text-red-400">{p.pf}</td>
+                                                {statsData.hasFoulDrawnData && <td className="p-3 text-center text-cyan-400">{p.foulDrawn}</td>}
                                                 <td className={`p-3 text-center font-bold ${p.plusMinus>=0?'text-green-400':'text-red-400'}`}>{p.plusMinus>0?'+':''}{p.plusMinus}</td>
                                                 <td className="p-3 text-center font-bold text-green-400">{p.eff}</td>
                                             </>
@@ -2324,7 +1437,7 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
                     </div>
                 </div>
 
-                {/* Play-by-Play */}
+                {/* Play-by-Play (inchangé — garder le code existant après ce bloc) */}
                 {game.actions && game.actions.length > 0 ? (
                     <div className="mt-6">
                         <div className="flex items-center justify-between mb-3">
@@ -2338,40 +1451,66 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
                                 const timeSec = (a.time || 0) % 60;
                                 const timeStr = `Q${a.q || 1} ${timeMin}:${timeSec.toString().padStart(2, '0')}`;
                                 let playerNum = '?', playerName = '';
-                                if (isHome) { const player = players.find(p => p.id === a.pid); if (player) { playerNum = player.number; playerName = player.name; } }
-                                else { if (game.opponentPlayerStats && game.opponentPlayerStats[a.pid]) { const op = game.opponentPlayerStats[a.pid]; playerNum = op.number || (a.pid - 1000); playerName = op.name || `Adv ${playerNum}`; } else { playerNum = a.pid - 1000; playerName = 'Adversaire'; } }
+                                if (isHome) {
+                                    const player = players.find(p => p.id === a.pid);
+                                    if (player) { playerNum = player.number; playerName = player.name; }
+                                } else {
+                                    if (game.opponentPlayerStats && game.opponentPlayerStats[a.pid]) {
+                                        const op = game.opponentPlayerStats[a.pid];
+                                        playerNum = op.number || (a.pid - 1000);
+                                        playerName = op.name || `Adv ${playerNum}`;
+                                    } else {
+                                        playerNum = a.pid - 1000; playerName = 'Adversaire';
+                                    }
+                                }
                                 let icon = '', desc = a.type, color = 'text-slate-300';
-                                if (a.type === 'SHOT') { icon = a.made ? '+' : 'x'; desc = `Tir ${a.val}pts ${a.made ? 'reussi' : 'rate'}`; if (a.astId) { const passer = players.find(p => p.id === a.astId); desc += passer ? ` (passe #${passer.number} ${passer.name})` : ` (passe #${a.astId})`; } color = a.made ? 'text-green-400' : 'text-red-400'; }
-                                else if (a.type === 'OREB') { desc = 'Rebond offensif'; color = 'text-purple-400'; }
-                                else if (a.type === 'DREB') { desc = 'Rebond defensif'; color = 'text-blue-400'; }
-                                else if (a.type === 'STL') { desc = 'Interception'; color = 'text-yellow-400'; }
-                                else if (a.type === 'BLK') { desc = 'Contre'; color = 'text-orange-400'; }
-                                else if (a.type === 'TOV') { desc = 'Perte de balle'; color = 'text-red-400'; }
-                                else if (a.type === 'FOUL') { let victimInfo = ''; if (a.victim) { if (a.victim < 1000) { const victim = players.find(p => p.id === a.victim); if (victim) victimInfo = `sur #${victim.number} ${victim.name}`; } else { victimInfo = `sur #${a.victim - 1000}`; } } desc = `Faute ${victimInfo}`; color = 'text-red-400'; }
-                                else if (a.type === 'FT') { desc = `Lancers francs: ${a.ftMade||0}/${a.ftAtt||0}`; color = (a.ftMade||0) > 0 ? 'text-green-400' : 'text-slate-400'; }
-                                else if (a.type === 'SUB') { let inPlayerInfo = ''; if (a.inId < 1000) { const inP = players.find(p => p.id === a.inId); if (inP) inPlayerInfo = `#${inP.number} ${inP.name}`; } else { inPlayerInfo = `#${a.inId - 1000}`; } desc = `Sort -> ${inPlayerInfo} entre`; color = 'text-cyan-400'; }
+                                if (a.type === 'SHOT') {
+                                    icon = a.made ? '+' : 'x';
+                                    desc = `Tir ${a.val}pts ${a.made ? 'reussi' : 'rate'}`;
+                                    if (a.astId) {
+                                        const passer = players.find(p => p.id === a.astId);
+                                        desc += passer ? ` (passe #${passer.number} ${passer.name})` : ` (passe #${a.astId})`;
+                                    }
+                                    color = a.made ? 'text-green-400' : 'text-red-400';
+                                } else if (a.type === 'FT') {
+                                    icon = '🎯'; desc = `LF ${a.ftMade||0}/${a.ftAtt||0}`; color = (a.ftMade||0) > 0 ? 'text-green-400' : 'text-red-400';
+                                } else if (a.type === 'OREB') { icon = '🔄'; desc = 'Reb Off'; color = 'text-blue-400'; }
+                                else if (a.type === 'DREB') { icon = '🛡️'; desc = 'Reb Def'; color = 'text-blue-300'; }
+                                else if (a.type === 'AST') { icon = '🏀'; desc = 'Passe D'; color = 'text-purple-400'; }
+                                else if (a.type === 'STL') { icon = '⚡'; desc = 'Interception'; color = 'text-yellow-400'; }
+                                else if (a.type === 'BLK') { icon = '✋'; desc = 'Contre'; color = 'text-cyan-400'; }
+                                else if (a.type === 'TOV') { icon = '💨'; desc = 'Perte de balle'; color = 'text-orange-400'; }
+                                else if (a.type === 'FOUL') { icon = '🚨'; desc = `Faute${a.foulType ? ` (${a.foulType})` : ''}`; color = 'text-red-400'; }
+                                else if (a.type === 'SUB') { icon = '🔁'; desc = 'Changement'; color = 'text-slate-400'; }
+
                                 return (
-                                    <div key={i} className={`flex items-center gap-3 px-3 py-2 border-b border-slate-800 text-xs hover:bg-slate-800/50 ${isHome ? 'border-l-2 border-l-blue-500' : 'border-l-2 border-l-red-500'}`}>
-                                        <span className="text-slate-500 font-mono w-16 shrink-0 text-[10px]">{timeStr}</span>
-                                        <span className={`font-bold shrink-0 ${isHome ? 'text-blue-400' : 'text-red-400'}`}>#{playerNum} <span className="font-normal text-slate-300">{playerName}</span></span>
-                                        <span className={`flex-1 ${color} text-right`}>{desc}</span>
+                                    <div key={i} className={`flex items-center gap-2 px-3 py-1.5 border-b border-slate-800/50 text-xs ${isHome ? 'bg-blue-950/20' : 'bg-red-950/20'}`}>
+                                        <span className="text-slate-500 font-mono w-16 shrink-0">{timeStr}</span>
+                                        <span className="w-5">{icon}</span>
+                                        <span className={`font-bold ${isHome ? 'text-blue-400' : 'text-red-400'}`}>#{playerNum}</span>
+                                        <span className={`flex-1 ${color}`}>{desc}</span>
                                     </div>
                                 );
                             })}
                         </div>
                     </div>
                 ) : (
-                    <div className="mt-6 text-center text-slate-500 text-sm py-6 bg-slate-900/50 rounded-lg border border-slate-700/50">Match importe sans play-by-play detaille</div>
+                    <div className="text-center text-slate-500 text-xs py-4 bg-slate-900/50 rounded-lg border border-slate-800">
+                        Pas de play-by-play disponible pour ce match
+                    </div>
                 )}
+                {showMinutesDebug && <MinutesDebugPanel game={game} players={players} />}
             </div>
-{/* CLUTCH ANALYSIS */}
+            {/* CLUTCH ANALYSIS */}
                 <ClutchPanel game={game} players={players} />
 
                 {/* ON/OFF IMPACT */}
                 <OnOffPanel game={game} players={players} />
+        
         </Modal>
     );
 }
+
 
 function ClutchPanel({ game, players }) {
     if (!game?.actions?.length || !game.actions[0].onCourt || game.actions[0].time === undefined) {
@@ -2829,6 +1968,8 @@ function History({ games, players, setGames, phases, onEditGame, onImportClick, 
                         </div>
                         {isAdmin && (
                             <div className="flex flex-col justify-center gap-2 p-2 bg-slate-900/50 border-l border-slate-700">
+
+                            {g.actions?.length > 0 && (<Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); if (confirm(`Reprendre le match vs ${g.opponent} en live ?`)) {window.location.href = `live.html?resume=${g.id}`;}}}><Icon path={Icons.Play} /> Live</Button>)}
                                 {g.actions?.length > 0 && (<Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); setEditingPBP(g); }}><Icon path={Icons.Edit} /> PBP</Button>)}
                                 <Button variant="danger" size="sm" onClick={(e) => { e.stopPropagation(); if (confirm("Supprimer ?")) { const newG = games.filter(x => x.id !== g.id); setGames(newG); if (window.db) saveDataToCloud(window.db, "games", newG); } }}><Icon path={Icons.Trash} /></Button>
                             </div>
@@ -2868,6 +2009,17 @@ function Settings({ players, onUpdatePlayers, phases, onUpdatePhases, firebaseCo
                     </div>
                 </div>
             </Card>
+            <Card className="p-6 border-l-4 border-indigo-500">
+                        <h3 className="text-lg font-bold text-white mb-4">Gemini AI</h3>
+                        <input 
+                            type="password" 
+                            className="w-full bg-slate-900 text-white px-3 py-2 rounded border border-slate-600 text-sm font-mono"
+                            placeholder="Clé API Gemini"
+                            defaultValue={localStorage.getItem('gemini_api_key') || ''}
+                            onChange={(e) => localStorage.setItem('gemini_api_key', e.target.value.trim())}
+                        />
+                        <p className="text-xs text-slate-500 mt-2">Utilisée pour les analyses IA dans le Scouting Report.</p>
+                    </Card>
             <Card className="p-6 border-l-4 border-purple-500">
                 <h3 className="text-lg font-bold text-white mb-4"><Icon path={Icons.Cloud} /> Firebase</h3>
                 <textarea className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-xs text-white font-mono h-32 mb-2" value={localConfig} onChange={(e) => setLocalConfig(e.target.value)} />
@@ -2993,7 +2145,7 @@ function App() {
         setImportData(null); setView('history');
     };
 
-    if (isPlayerMode) return <div className="max-w-5xl mx-auto h-screen bg-slate-950 flex flex-col font-sans text-slate-200"><header className="h-16 bg-slate-900 flex items-center px-6"><h1 className="font-bold text-lg text-white">Stats</h1><span className="ml-auto text-xs text-orange-500 px-2 py-1 bg-orange-900/20 rounded border border-orange-900">Mode Joueur</span></header><div className="flex-1 p-4 overflow-y-auto"><GlobalStats players={players} games={games} phases={phases} /></div></div>;
+    if (isPlayerMode) return <div className="max-w-5xl mx-auto h-screen bg-slate-950 flex flex-col font-sans text-slate-200"><header className="h-16 bg-slate-900 flex items-center px-6"><h1 className="font-bold text-lg text-white">Stats</h1><span className="ml-auto text-xs text-orange-500 px-2 py-1 bg-orange-900/20 rounded border border-orange-900">Mode Joueur</span></header><div className="flex-1 p-4 overflow-y-auto">{window.GlobalStats && <window.GlobalStats players={players} games={games} phases={phases} />}</div></div>;
 const ReportModule = window.PlayerReportModule;
     return (
         <div className="max-w-5xl mx-auto h-screen bg-slate-950 flex flex-col md:flex-row overflow-hidden font-sans text-slate-200">
@@ -3018,7 +2170,7 @@ const ReportModule = window.PlayerReportModule;
                                     console.error("window.PlayerReportModule is undefined");
                                 }
                             }}
-                            className={`p-3 rounded-xl transition-all ${showReport ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/50' : 'text-indigo-400 hover:bg-slate-800'}`} 
+                            className={`p-3 rounded-xl transition-all ${showReport ? 'bg-orange-500 text-white shadow-lg shadow-indigo-500/50' : 'text-indigo-400 hover:bg-slate-800'}`} 
                             title="Scouting Report"
                         >
                             <Icon path={Icons.Target} />
@@ -3039,7 +2191,7 @@ const ReportModule = window.PlayerReportModule;
                     </div>
                 </header>
                 <div className="flex-1 p-4 overflow-y-auto" style={{ zIndex: 10 }}>
-                    {view === 'global_stats' && <GlobalStats players={players} games={games} phases={phases} isAdmin={isAdmin}/>}
+                   {view === 'global_stats' && window.GlobalStats && <window.GlobalStats players={players} games={games} phases={phases} isAdmin={isAdmin}/>}
                     {view === 'history' && <History games={games} players={players} setGames={setGames} phases={phases} isAdmin={isAdmin} onEditGame={(g) => { setActiveGame(g); setView('live'); }} onImportClick={() => document.getElementById('html-upload').click()} onMultiImport={() => document.getElementById('multi-upload').click()} />}
                     {view === 'settings' && isAdmin && <Settings players={players} onUpdatePlayers={handleSettingsUpdate} phases={phases} onUpdatePhases={handleUpdatePhases} firebaseConfig={firebaseConfig} setFirebaseConfig={setFirebaseConfig} />}
                     {!isAdmin && (view === 'live' || view === 'settings') && <div className="h-full flex flex-col items-center justify-center text-slate-500"><Icon path={Icons.Users} className="w-16 h-16 mb-4 opacity-20" /><p>Acces reserve au coach.</p><button onClick={() => setShowLogin(true)} className="mt-4 text-orange-500 hover:underline">Se connecter</button></div>}

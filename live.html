@@ -8,30 +8,31 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <style>
+
 :root {
-    /* --- PALETTE CYBER SPORT --- */
-    --bg-primary: #0f172a; 
-    --bg-secondary: #1e293b; 
-    --bg-gradient: radial-gradient(circle at top center, #1e293b 0%, #020617 100%);
+    /* --- PALETTE NAVY/GOLD --- */
+    --bg-primary: #0f0f1a; 
+    --bg-secondary: #1e1e3a; 
+    --bg-gradient: radial-gradient(circle at top center, #1a1a2e 0%, #0f0f1a 100%);
     
-    --bg-card: rgba(30, 41, 59, 0.7);
-    --bg-elevated: rgba(51, 65, 85, 0.8);
+    --bg-card: rgba(30, 30, 58, 0.7);
+    --bg-elevated: rgba(42, 42, 74, 0.8);
     
-    --accent: #f59e0b; /* Orange vif */
-    --accent-glow: rgba(245, 158, 11, 0.4);
+    --accent: #d4a574;
+    --accent-glow: rgba(212, 165, 116, 0.4);
     
-    --success: #10b981; 
+    --success: #4ade80; 
     --danger: #ef4444; 
-    --warning: #eab308; 
-    --info: #3b82f6;
+    --warning: #fbbf24; 
+    --info: #60a5fa;
     
-    --text-primary: #f1f5f9; 
-    --text-secondary: #94a3b8; 
-    --text-muted: #64748b; 
+    --text-primary: #ffffff; 
+    --text-secondary: #a0a0b0; 
+    --text-muted: #50506a; 
     
-    --border: rgba(255, 255, 255, 0.1);
+    --border: rgba(212, 165, 116, 0.15);
     
-    --home-color: #3b82f6; 
+    --home-color: #60a5fa; 
     --away-color: #ef4444;
 }
 
@@ -70,7 +71,7 @@ body {
 .btn-big:disabled { opacity: 0.5; box-shadow: none; cursor: not-allowed; }
 .toggle-btns { display: flex; gap: 8px; }
 .toggle-btn { flex: 1; padding: 10px; border: 2px solid var(--border); border-radius: 8px; background: transparent; color: var(--text-secondary); font-weight: 600; cursor: pointer; font-size: 0.85rem; transition: 0.2s; }
-.toggle-btn.active { border-color: var(--accent); background: rgba(249, 115, 22, 0.1); color: var(--accent); }
+.toggle-btn.active { border-color: var(--accent); background: rgba(212, 165, 116, 0.15); color: var(--accent); }
 .player-check { display: flex; align-items: center; gap: 10px; padding: 10px; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
 .phase-btns { display: flex; flex-wrap: wrap; gap: 8px; }
 .phase-btn { padding: 8px 16px; border: 1px solid var(--border); border-radius: 20px; background: rgba(255,255,255,0.05); color: var(--text-secondary); font-weight: 600; cursor: pointer; font-size: 0.8rem; }
@@ -223,7 +224,7 @@ canvas { max-width: 100%; max-height: 100%; cursor: crosshair; }
 .overlay-msg.show { opacity: 1; }
 
 .court-popup { 
-    position: fixed; top: 50%; left: 50%; background: rgba(15, 23, 42, 0.95); 
+    position: fixed; top: 50%; left: 50%; background: rgba(15, 15, 26, 0.95); 
     border: 1px solid var(--accent); 
     border-radius: 12px; padding: 10px; display: none; 
     flex-direction: column; gap: 8px; z-index: 150; 
@@ -243,7 +244,7 @@ canvas { max-width: 100%; max-height: 100%; cursor: crosshair; }
 .court-popup-value { text-align: center; font-size: 0.7rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; }
 
 /* ACTIONS BAR */
-.actions-bar { flex-shrink: 0; background: rgba(15, 23, 42, 0.95); padding: 8px; border-top: 1px solid var(--border); backdrop-filter: blur(5px); }
+.actions-bar { flex-shrink: 0; background: rgba(15, 15, 26, 0.95); padding: 8px; border-top: 1px solid var(--border); backdrop-filter: blur(5px); }
 .actions-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
 .btn-act { 
     height: 42px; min-width: 60px; padding: 0 10px; border: none; border-radius: 10px; 
@@ -257,10 +258,10 @@ canvas { max-width: 100%; max-height: 100%; cursor: crosshair; }
 
 .c-purple { background: linear-gradient(145deg, #8b5cf6, #6d28d9); }
 .c-green { background: linear-gradient(145deg, #10b981, #059669); }
-.c-orange { background: linear-gradient(145deg, #f97316, #c2410c); }
+.c-orange { background: linear-gradient(145deg, #d4a574, #b8935f); }
 .c-red { background: linear-gradient(145deg, #ef4444, #b91c1c); }
 .c-blue { background: linear-gradient(145deg, #3b82f6, #1d4ed8); }
-.c-gray { background: linear-gradient(145deg, #475569, #334155); }
+.c-gray { background: linear-gradient(145deg, #3a3a5a, #2a2a4a); }
 
 /* PBP */
 .pbp-panel { display: flex; flex-direction: column; background: var(--bg-secondary); border-left: 1px solid var(--border); overflow: hidden; }
@@ -421,7 +422,7 @@ canvas { max-width: 100%; max-height: 100%; cursor: crosshair; }
 .player-picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 10px; }
 .player-picker-btn { padding: 14px 8px; border-radius: 10px; border: 2px solid var(--border); background: var(--bg-elevated); color: white; font-weight: 700; cursor: pointer; text-align: center; transition: all 0.15s; }
 .player-picker-btn:active { transform: scale(0.95); }
-.player-picker-btn:hover { border-color: var(--accent); background: rgba(249,115,22,0.15); }
+.player-picker-btn:hover { border-color: var(--accent); background: rgba(212,165,116,0.15); }
 .player-picker-btn .pp-num { font-size: 1.4rem; display: block; font-weight: 800; }
 .player-picker-btn .pp-name { font-size: 0.55rem; color: var(--text-secondary); display: block; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .player-picker-cancel { display: block; width: 100%; margin-top: 12px; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text-muted); cursor: pointer; font-weight: 600; text-align: center; }
@@ -490,7 +491,14 @@ canvas { max-width: 100%; max-height: 100%; cursor: crosshair; }
         <div class="main-area">
             <div class="roster-panel">
                 <div class="roster-section home"><div class="roster-header"><span class="roster-title">🏠 Nous</span></div><div class="roster-list" id="rosterHome"></div></div>
-                <div class="roster-section away"><div class="roster-header"><span class="roster-title">🚨 Eux</span></div><div class="roster-list" id="rosterAway"></div></div>
+                
+            <div class="roster-section away">
+                <div class="roster-header" style="display:flex;justify-content:space-between;align-items:center;">
+                    <span class="roster-title">🚨 Eux</span>
+                    <button onclick="OppLineupEditor.show()" style="background:none;border:1px solid var(--border);color:var(--text-muted);font-size:0.5rem;padding:2px 6px;border-radius:4px;cursor:pointer;" title="Modifier lineup adverse">✏️</button>
+                </div>
+                <div class="roster-list" id="rosterAway"></div>
+            </div>
             </div>
             <div class="court-panel">
                 <div class="court-wrapper">
@@ -618,7 +626,7 @@ let db = null, firebaseRoster = [], firebasePhases = [{ id: 'phase1', name: 'Pha
 
 const State = {
     match: { id: null, date: null, opponent: 'Adversaire', isHome: true, quarter: 1, time: 600, running: false, phase: 'phase1' },
-    players: {}, actions: [], onCourt: { home: [], away: [] }, starters: { 1: [], 2: [], 3: [], 4: [] },
+    players: {}, actions: [], onCourt: { home: [], away: [] }, starters: { 1: [], 2: [], 3: [], 4: [] },opponentStarters: { 1: [], 2: [], 3: [], 4: []},
     teamFouls: { home: [0,0,0,0], away: [0,0,0,0] }, scoreHistory: [],
     specialFouls: { technical: [], unsportsmanlike: [], offensive: [] },
     ui: { sel: null, pending: null, ctx: {}, lastActionTime: 0, pendingAction: null },
@@ -907,52 +915,336 @@ const FoulPanel = {
 
 // ===== STARTERS MODAL =====
 const StartersModal = {
-    selected: [], quarter: 1,
+    selected: [], quarter: 1, tab: 'home',
+
     show(quarter) {
         this.quarter = quarter;
-        this.selected = [...(State.starters[quarter] || State.onCourt.home)];
-        document.getElementById('startersTitle').textContent = `5 de départ Q${quarter}`;
+        this.tab = 'home';
+        const saved = State.starters[quarter];
+        this.selected = (saved && saved.length > 0) ? [...saved] : [...State.onCourt.home];
         this.render();
         document.getElementById('startersModal').classList.add('show');
     },
+
+    setTab(tab) {
+        if (this.tab === 'home') {
+            State.starters[this.quarter] = [...this.selected];
+        } else {
+            State.opponentStarters[this.quarter] = [...this.selected];
+        }
+        this.tab = tab;
+        if (tab === 'home') {
+            const saved = State.starters[this.quarter];
+            this.selected = (saved && saved.length > 0) ? [...saved] : [...State.onCourt.home];
+        } else {
+            const saved = State.opponentStarters[this.quarter];
+            this.selected = (saved && saved.length > 0) ? [...saved] : [...State.onCourt.away];
+        }
+        this.render();
+    },
+
     render() {
-        const homePlayers = Object.values(State.players).filter(p => p.team === 'home');
-        document.getElementById('startersGrid').innerHTML = homePlayers.map(p => 
-            `<button class="${this.selected.includes(p.id) ? 'selected' : ''}" onclick="StartersModal.toggle(${p.id})">${p.number}<span>${p.name.substring(0,5)}</span></button>`
+        const isHome = this.tab === 'home';
+        const players = Object.values(State.players).filter(p => p.team === (isHome ? 'home' : 'away'));
+
+        document.getElementById('startersTitle').innerHTML =
+            `<div style="margin-bottom:10px;">5 de départ Q${this.quarter}</div>` +
+            `<div style="display:flex;gap:8px;justify-content:center;">` +
+            `<button class="btn-mod ${isHome ? 'prim' : ''}" onclick="StartersModal.setTab('home')" style="padding:6px 16px;font-size:0.75rem;">🏠 NOUS</button>` +
+            `<button class="btn-mod ${!isHome ? 'prim' : ''}" onclick="StartersModal.setTab('away')" style="padding:6px 16px;font-size:0.75rem;">🚨 EUX</button>` +
+            `</div>`;
+
+        document.getElementById('startersGrid').innerHTML = players.map(p =>
+            `<button class="${this.selected.includes(p.id) ? 'selected' : ''}" onclick="StartersModal.toggle(${p.id})">${p.number}<span>${p.name.substring(0, 5)}</span></button>`
         ).join('');
+
         document.getElementById('startersCount').textContent = `${this.selected.length}/5 sélectionnés`;
         document.getElementById('startersConfirm').disabled = this.selected.length !== 5;
     },
-    toggle(id) { const idx = this.selected.indexOf(id); if (idx >= 0) this.selected.splice(idx, 1); else if (this.selected.length < 5) this.selected.push(id); this.render(); },
-    confirm() { State.starters[this.quarter] = [...this.selected]; State.onCourt.home = [...this.selected]; document.getElementById('startersModal').classList.remove('show'); UI.renderRoster(); UI.toast(`5 de départ Q${this.quarter} validé`); },
-    cancel() { document.getElementById('startersModal').classList.remove('show'); }
+
+    toggle(id) {
+        const idx = this.selected.indexOf(id);
+        if (idx >= 0) this.selected.splice(idx, 1);
+        else if (this.selected.length < 5) this.selected.push(id);
+        this.render();
+    },
+
+    confirm() {
+        if (this.selected.length !== 5) return;
+
+        if (this.tab === 'home') {
+            State.starters[this.quarter] = [...this.selected];
+            State.onCourt.home = [...this.selected];
+        } else {
+            State.opponentStarters[this.quarter] = [...this.selected];
+            State.onCourt.away = [...this.selected];
+        }
+
+        // Toujours mettre à jour le roster immédiatement
+        UI.renderRoster();
+
+        // Vérifier si l'autre équipe a ses starters
+        const oppSaved = State.opponentStarters[this.quarter];
+        if (this.tab === 'home' && (!oppSaved || oppSaved.length !== 5)) {
+            this.setTab('away');
+            UI.toast(`✓ NOUS validé — Sélectionnez les adverses`);
+            return;
+        }
+
+        const homeSaved = State.starters[this.quarter];
+        if (this.tab === 'away' && (!homeSaved || homeSaved.length !== 5)) {
+            this.setTab('home');
+            UI.toast(`✓ EUX validé — Sélectionnez les nôtres`);
+            return;
+        }
+
+     
+        State.onCourt.home = [...State.starters[this.quarter]];
+        State.onCourt.away = [...State.opponentStarters[this.quarter]];
+        document.getElementById('startersModal').classList.remove('show');
+        UI.renderRoster();
+        UI.toast(`5 de départ Q${this.quarter} validés`);
+        OfflineManager.save();
+    },
+
+    cancel() {
+        document.getElementById('startersModal').classList.remove('show');
+        // Re-rendre le roster avec l'état actuel de onCourt
+        UI.renderRoster();
+    }
 };
+
 
 // ===== SUBS MODAL =====
 const SubsModal = {
-    homeSelected: { out: null, in: null }, awaySelected: { out: null, in: null },
-    show() { this.homeSelected = { out: null, in: null }; this.awaySelected = { out: null, in: null }; this.render(); document.getElementById('subsModal').classList.add('show'); },
+    homeSwaps: [],  // [{ out: id, in: id }, ...]
+    awaySwaps: [],
+    pendingTeam: null,  // 'home' ou 'away' — quelle équipe est en train de sélectionner
+    pendingOut: null,
+
+    show() {
+        this.homeSwaps = [];
+        this.awaySwaps = [];
+        this.pendingTeam = null;
+        this.pendingOut = null;
+        this.render();
+        document.getElementById('subsModal').classList.add('show');
+    },
     hide() { document.getElementById('subsModal').classList.remove('show'); },
+
+    getSwaps(team) { return team === 'home' ? this.homeSwaps : this.awaySwaps; },
+
+    // IDs déjà impliqués dans un swap pour cette équipe
+    usedOuts(team) { return this.getSwaps(team).map(s => s.out); },
+    usedIns(team) { return this.getSwaps(team).map(s => s.in); },
+
+    selectOut(team, id) {
+        // Si déjà pris dans un swap, retirer ce swap
+        const swaps = this.getSwaps(team);
+        const existIdx = swaps.findIndex(s => s.out === id);
+        if (existIdx >= 0) {
+            swaps.splice(existIdx, 1);
+            this.pendingTeam = null;
+            this.pendingOut = null;
+            this.render();
+            return;
+        }
+        this.pendingTeam = team;
+        this.pendingOut = id;
+        this.render();
+    },
+
+    selectIn(team, id) {
+        // Si déjà pris dans un swap, retirer
+        const swaps = this.getSwaps(team);
+        const existIdx = swaps.findIndex(s => s.in === id);
+        if (existIdx >= 0) {
+            swaps.splice(existIdx, 1);
+            this.render();
+            return;
+        }
+
+        // Si on a un pending pour cette équipe, former la paire
+        if (this.pendingTeam === team && this.pendingOut) {
+            swaps.push({ out: this.pendingOut, in: id });
+            this.pendingTeam = null;
+            this.pendingOut = null;
+            this.render();
+            return;
+        }
+
+        // Sinon, juste highlight (attente du out)
+        this.render();
+    },
+
+    removeSwap(team, idx) {
+        this.getSwaps(team).splice(idx, 1);
+        this.pendingTeam = null;
+        this.pendingOut = null;
+        this.render();
+    },
+
     render() {
-        const renderTeam = (team, sel) => {
+        const renderTeam = (team) => {
             const players = Object.values(State.players).filter(p => p.team === team);
             const onCourt = players.filter(p => State.onCourt[team].includes(p.id));
             const bench = players.filter(p => !State.onCourt[team].includes(p.id));
-            return `<div class="subs-team"><div class="subs-team-title ${team}">${team === 'home' ? '🏠 NOUS' : '🚨 EUX'}</div><div class="subs-label">Sur terrain</div><div class="subs-oncourt">${onCourt.map(p => `<div class="subs-player oncourt ${sel.out === p.id ? 'selected' : ''}" onclick="SubsModal.selectOut('${team}', ${p.id})"><span class="subs-player-num">${p.number}</span><span class="subs-player-name">${p.name}</span><span class="subs-player-stats">${p.stats.pts}p</span></div>`).join('')}</div><div class="subs-label">Banc</div><div class="subs-bench">${bench.map(p => `<div class="subs-player ${sel.in === p.id ? 'selected' : ''}" onclick="SubsModal.selectIn('${team}', ${p.id})"><span class="subs-player-num">${p.number}</span><span class="subs-player-name">${p.name}</span><span class="subs-player-stats">${p.stats.pts}p</span></div>`).join('')}</div></div>`;
+            const swaps = this.getSwaps(team);
+            const outs = this.usedOuts(team);
+            const ins = this.usedIns(team);
+            const isPending = this.pendingTeam === team;
+
+            let html = `<div class="subs-team">`;
+            html += `<div class="subs-team-title ${team}">${team === 'home' ? '🏠 NOUS' : '🚨 EUX'}</div>`;
+
+            // Swaps programmés
+            if (swaps.length > 0) {
+                html += `<div class="subs-label" style="color:var(--accent);">Changements programmés</div>`;
+                swaps.forEach((s, i) => {
+                    const pOut = State.players[s.out], pIn = State.players[s.in];
+                    html += `<div style="display:flex;align-items:center;gap:6px;padding:6px 8px;background:rgba(249,115,22,0.15);border:1px solid rgba(249,115,22,0.4);border-radius:8px;margin-bottom:4px;">
+                        <span style="color:var(--danger);font-weight:800;font-size:0.8rem;">OUT #${pOut?.number || '?'}</span>
+                        <span style="color:var(--text-muted);">→</span>
+                        <span style="color:var(--success);font-weight:800;font-size:0.8rem;">IN #${pIn?.number || '?'}</span>
+                        <button onclick="SubsModal.removeSwap('${team}', ${i})" style="margin-left:auto;background:var(--danger);border:none;color:white;width:22px;height:22px;border-radius:50%;cursor:pointer;font-size:0.7rem;">✕</button>
+                    </div>`;
+                });
+            }
+
+            // Sur terrain
+            html += `<div class="subs-label">Sur terrain — tap pour sortir</div>`;
+            html += `<div class="subs-oncourt">`;
+            onCourt.forEach(p => {
+                const isUsed = outs.includes(p.id);
+                const isPendingOut = isPending && this.pendingOut === p.id;
+                let cls = 'subs-player oncourt';
+                if (isUsed) cls += ' selected';
+                if (isPendingOut) cls += ' selected';
+                html += `<div class="${cls}" onclick="SubsModal.selectOut('${team}', ${p.id})" ${isUsed ? 'style="opacity:0.4;"' : ''}>
+                    <span class="subs-player-num">${p.number}</span>
+                    <span class="subs-player-name">${p.name}</span>
+                    <span class="subs-player-stats">${p.stats.pts}p</span>
+                </div>`;
+            });
+            html += `</div>`;
+
+            // Banc
+            html += `<div class="subs-label">Banc — tap pour entrer</div>`;
+            html += `<div class="subs-bench">`;
+            bench.forEach(p => {
+                const isUsed = ins.includes(p.id);
+                let cls = 'subs-player';
+                if (isUsed) cls += ' selected';
+                html += `<div class="${cls}" onclick="SubsModal.selectIn('${team}', ${p.id})" ${isUsed ? 'style="opacity:0.4;"' : ''}>
+                    <span class="subs-player-num">${p.number}</span>
+                    <span class="subs-player-name">${p.name}</span>
+                    <span class="subs-player-stats">${p.stats.pts}p</span>
+                </div>`;
+            });
+            html += `</div></div>`;
+            return html;
         };
-        document.getElementById('subsContent').innerHTML = renderTeam('home', this.homeSelected) + renderTeam('away', this.awaySelected);
+
+        document.getElementById('subsContent').innerHTML = renderTeam('home') + renderTeam('away');
+
+        // Activer/désactiver le bouton
+        const total = this.homeSwaps.length + this.awaySwaps.length;
+        const btn = document.querySelector('.subs-swap-btn');
+        if (btn) {
+            btn.disabled = total === 0;
+            btn.textContent = total > 0 ? `✓ Appliquer ${total} changement${total > 1 ? 's' : ''}` : '✓ Appliquer les changements';
+            btn.style.opacity = total > 0 ? '1' : '0.4';
+        }
     },
-    selectOut(team, id) { if (team === 'home') this.homeSelected.out = this.homeSelected.out === id ? null : id; else this.awaySelected.out = this.awaySelected.out === id ? null : id; this.render(); },
-    selectIn(team, id) { if (team === 'home') this.homeSelected.in = this.homeSelected.in === id ? null : id; else this.awaySelected.in = this.awaySelected.in === id ? null : id; this.render(); },
+
     executeSwaps() {
-        let swapped = false;
-        if (this.homeSelected.out && this.homeSelected.in) { const idx = State.onCourt.home.indexOf(this.homeSelected.out); if (idx >= 0) { State.onCourt.home[idx] = this.homeSelected.in; GameEngine.log('SUB', this.homeSelected.out, { inId: this.homeSelected.in }); swapped = true; } }
-        if (this.awaySelected.out && this.awaySelected.in) { const idx = State.onCourt.away.indexOf(this.awaySelected.out); if (idx >= 0) { State.onCourt.away[idx] = this.awaySelected.in; GameEngine.log('SUB', this.awaySelected.out, { inId: this.awaySelected.in }); swapped = true; } }
-        if (swapped) { UI.renderRoster(); UI.renderPBP(); TimelineFloat.render(); UI.toast('Changements effectués'); }
+        let count = 0;
+
+        // Exécuter les swaps home
+        this.homeSwaps.forEach(s => {
+            const idx = State.onCourt.home.indexOf(s.out);
+            if (idx >= 0) {
+                State.onCourt.home[idx] = s.in;
+                GameEngine.log('SUB', s.out, { inId: s.in });
+                count++;
+            }
+        });
+
+        // Exécuter les swaps away
+        this.awaySwaps.forEach(s => {
+            const idx = State.onCourt.away.indexOf(s.out);
+            if (idx >= 0) {
+                State.onCourt.away[idx] = s.in;
+                GameEngine.log('SUB', s.out, { inId: s.in });
+                count++;
+            }
+        });
+
+        if (count > 0) {
+            UI.renderRoster(); UI.renderPBP(); TimelineFloat.render();
+            UI.toast(`${count} changement${count > 1 ? 's' : ''} effectué${count > 1 ? 's' : ''}`);
+            OfflineManager.save();
+        }
         this.hide();
     }
 };
 
+
+const OppLineupEditor = {
+    show() {
+        const awayPlayers = Object.values(State.players).filter(p => p.team === 'away');
+        const onCourt = awayPlayers.filter(p => State.onCourt.away.includes(p.id));
+        const bench = awayPlayers.filter(p => !State.onCourt.away.includes(p.id));
+
+        let html = `<div style="text-align:center;margin-bottom:12px;color:var(--text-muted);font-size:0.75rem;">
+            Modifier le 5 adverse sans enregistrer de changement.<br>
+            <span style="color:var(--warning);font-size:0.65rem;">Aucun impact sur le chrono/minutes.</span>
+        </div>`;
+
+        html += `<div style="margin-bottom:10px;"><div style="font-size:0.65rem;color:var(--text-muted);font-weight:700;margin-bottom:6px;">SUR TERRAIN</div>`;
+        onCourt.forEach(p => {
+            html += `<div style="display:flex;align-items:center;gap:8px;padding:6px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:6px;margin-bottom:4px;">
+                <span style="font-weight:800;min-width:30px;">${p.number}</span>
+                <span style="flex:1;font-size:0.8rem;color:var(--text-secondary);">${p.name}</span>
+                <select id="oppSwap_${p.id}" style="background:var(--bg-elevated);border:1px solid var(--border);color:white;padding:4px 8px;border-radius:6px;font-size:0.75rem;">
+                    <option value="">— garder —</option>
+                    ${bench.map(b => `<option value="${b.id}">#${b.number} ${b.name}</option>`).join('')}
+                </select>
+            </div>`;
+        });
+        html += `</div>`;
+
+        UI.showModal('🚨 Lineup Adverse', html, [
+            { text: 'Annuler', action: 'UI.closeModal()', class: '' },
+            { text: '✓ Appliquer', action: 'OppLineupEditor.apply()', class: 'prim' }
+        ], 'g-2');
+    },
+
+    apply() {
+        const awayPlayers = Object.values(State.players).filter(p => p.team === 'away');
+        const onCourt = awayPlayers.filter(p => State.onCourt.away.includes(p.id));
+        let changed = 0;
+
+        onCourt.forEach(p => {
+            const sel = document.getElementById(`oppSwap_${p.id}`);
+            if (sel && sel.value) {
+                const newId = parseInt(sel.value);
+                const idx = State.onCourt.away.indexOf(p.id);
+                if (idx >= 0 && !State.onCourt.away.includes(newId)) {
+                    State.onCourt.away[idx] = newId;
+                    changed++;
+                }
+            }
+        });
+
+        UI.closeModal();
+        if (changed > 0) {
+            UI.renderRoster();
+            UI.toast(`Lineup adverse modifié (${changed} chgmt${changed > 1 ? 's' : ''}) — sans log`);
+            OfflineManager.save();
+        }
+    }
+};
 // ===== TIMELINE FLOAT =====
 const TimelineFloat = {
     render() {
@@ -1133,7 +1425,15 @@ const StatsModal = {
 
 // ===== OFFLINE MANAGER =====
 const OfflineManager = {
-    save() { localStorage.setItem('liveMatchState', JSON.stringify({ match: State.match, players: State.players, actions: State.actions, onCourt: State.onCourt, starters: State.starters, teamFouls: State.teamFouls, scoreHistory: State.scoreHistory, specialFouls: State.specialFouls, savedAt: Date.now() })); },
+    save() {
+        localStorage.setItem('liveMatchState', JSON.stringify({
+            match: State.match, players: State.players, actions: State.actions,
+            onCourt: State.onCourt, starters: State.starters,
+            opponentStarters: State.opponentStarters,
+            teamFouls: State.teamFouls, scoreHistory: State.scoreHistory,
+            specialFouls: State.specialFouls, savedAt: Date.now()
+        }));
+    },
     load() { const s = localStorage.getItem('liveMatchState'); if (!s) return null; try { return JSON.parse(s); } catch { return null; } },
     clear() { localStorage.removeItem('liveMatchState'); }
 };
@@ -1154,21 +1454,31 @@ async function initFirebase() {
 
 // ===== SETUP =====
 const Setup = {
-    init() {
-        const dot = document.getElementById('fbDot'), status = document.getElementById('fbStatus');
-        if (db && firebaseRoster.length > 0) { dot.classList.add('ok'); status.textContent = `✅ ${firebaseRoster.length} joueurs`; }
-        else { dot.classList.add('err'); status.textContent = '❌ Erreur'; }
-        document.getElementById('phaseSelect').innerHTML = firebasePhases.map((p, i) => `<button class="phase-btn ${i === 0 ? 'active' : ''}" onclick="Setup.setPhase('${p.id}', this)">${p.name}</button>`).join('');
-        document.getElementById('matchDate').value = new Date().toISOString().split('T')[0];
-        State.match.phase = firebasePhases[0]?.id || 'phase1';
-        this.renderRoster(); this.renderOpp(); this.checkResume();
-    },
+   
+init() {
+    const dot = document.getElementById('fbDot'), status = document.getElementById('fbStatus');
+    if (db && firebaseRoster.length > 0) { dot.classList.add('ok'); status.textContent = `✅ ${firebaseRoster.length} joueurs`; }
+    else { dot.classList.add('err'); status.textContent = '❌ Erreur'; }
+    document.getElementById('phaseSelect').innerHTML = firebasePhases.map((p, i) => `<button class="phase-btn ${i === 0 ? 'active' : ''}" onclick="Setup.setPhase('${p.id}', this)">${p.name}</button>`).join('');
+    document.getElementById('matchDate').value = new Date().toISOString().split('T')[0];
+    State.match.phase = firebasePhases[0]?.id || 'phase1';
+    this.renderRoster(); this.renderOpp();
+
+    // >>> NOUVEAU : Vérifier si on reprend un match via URL <<<
+    const urlParams = new URLSearchParams(window.location.search);
+    const resumeId = urlParams.get('resume');
+    if (resumeId) {
+        if (this.resumeFromFirebase(resumeId)) return; // Sortir si reprise réussie
+    }
+
+    this.checkResume();
+},
     checkResume() {
         const saved = OfflineManager.load();
         if (saved && saved.actions?.length > 0) {
             if (confirm(`Match en cours (${saved.actions.length} actions). Reprendre ?`)) {
                 Object.assign(State.match, saved.match); State.players = saved.players; State.actions = saved.actions;
-                State.onCourt = saved.onCourt; State.starters = saved.starters; State.teamFouls = saved.teamFouls;
+                State.onCourt = saved.onCourt; State.starters = saved.starters;State.opponentStarters = saved.opponentStarters || { 1: [], 2: [], 3: [], 4: [] }; State.teamFouls = saved.teamFouls;
                 State.scoreHistory = saved.scoreHistory || []; State.specialFouls = saved.specialFouls || { technical: [], unsportsmanlike: [], offensive: [] };
                 document.getElementById('setupScreen').classList.add('hidden'); document.getElementById('app').style.display = 'flex';
                 document.getElementById('lblAway').textContent = State.match.opponent;
@@ -1184,6 +1494,170 @@ const Setup = {
         State.selectedIds = firebaseRoster.map(p => p.id);
         document.getElementById('startBtn').disabled = false;
     },
+resumeFromFirebase(gameId) {
+    const game = firebaseGames.find(g => g.id === gameId);
+    if (!game) {
+        alert('Match introuvable dans Firebase (id: ' + gameId + ')');
+        // Nettoyer l'URL pour ne pas reboucler
+        history.replaceState(null, '', 'live.html');
+        return false;
+    }
+
+    // --- Reconstruction du State.match ---
+    State.match.id = game.id;
+    State.match.date = game.date;
+    State.match.opponent = game.opponent || 'Adversaire';
+    State.match.phase = game.phase || firebasePhases[0]?.id || 'phase1';
+    State.match.isHome = true; // Défaut, non stocké dans le game
+
+    // Déterminer le dernier quarter joué et le temps restant
+    if (game.actions?.length > 0) {
+        const lastAction = game.actions[game.actions.length - 1];
+        State.match.quarter = lastAction.q || 1;
+        State.match.time = lastAction.time ?? 0; // Reprend au chrono de la dernière action
+    } else {
+        State.match.quarter = 1;
+        State.match.time = 600;
+    }
+
+    // --- Reconstruction des joueurs domicile ---
+    State.players = {};
+    if (game.playerStats) {
+        Object.entries(game.playerStats).forEach(([id, stats]) => {
+            const numId = parseInt(id);
+            const rosterPlayer = firebaseRoster.find(p => p.id === numId);
+            if (!rosterPlayer) return;
+            State.players[numId] = {
+                id: numId,
+                number: rosterPlayer.number,
+                name: rosterPlayer.name,
+                team: 'home',
+                stats: {
+                    pts: stats.pts || 0,
+                    oreb: stats.oreb || 0,
+                    dreb: stats.dreb || 0,
+                    ast: stats.ast || 0,
+                    stl: stats.stl || 0,
+                    blk: stats.blk || 0,
+                    tov: stats.tov || 0,
+                    fouls: stats.pf || 0,
+                    foulDrawn: stats.foulDrawn || 0,
+                    fgm: stats.fgm || 0,
+                    fga: stats.fga || 0,
+                    fg3m: stats.threePM || 0,
+                    fg3a: stats.threePA || 0,
+                    ftm: stats.ftm || 0,
+                    fta: stats.fta || 0,
+                    min: (stats.minutes || 0) * 60, // Reconvertir minutes -> secondes
+                    plusMinus: stats.plusMinus || 0
+                }
+            };
+        });
+    }
+
+    // --- Reconstruction des joueurs adverses ---
+    if (game.opponentPlayerStats) {
+        Object.entries(game.opponentPlayerStats).forEach(([id, stats]) => {
+            const numId = parseInt(id);
+            State.players[numId] = {
+                id: numId,
+                number: stats.number || '?',
+                name: stats.name || `Adv #${stats.number || numId}`,
+                team: 'away',
+                stats: {
+                    pts: stats.pts || 0,
+                    oreb: stats.oreb || 0,
+                    dreb: stats.dreb || 0,
+                    ast: stats.ast || 0,
+                    stl: stats.stl || 0,
+                    blk: stats.blk || 0,
+                    tov: stats.tov || 0,
+                    fouls: stats.pf || 0,
+                    foulDrawn: stats.foulDrawn || 0,
+                    fgm: stats.fgm || 0,
+                    fga: stats.fga || 0,
+                    fg3m: stats.threePM || 0,
+                    fg3a: stats.threePA || 0,
+                    ftm: stats.ftm || 0,
+                    fta: stats.fta || 0,
+                    min: (stats.minutes || 0) * 60,
+                    plusMinus: stats.plusMinus || 0
+                }
+            };
+        });
+    }
+
+    // --- Reconstruction des actions ---
+    State.actions = game.actions || [];
+
+    // --- Reconstruction des starters par quarter ---
+    State.starters = game.starters || {};
+
+    // --- Reconstruction du onCourt depuis les dernières SUB ou starters ---
+    const homePlayers = Object.values(State.players).filter(p => p.team === 'home').map(p => p.id);
+    const awayPlayers = Object.values(State.players).filter(p => p.team === 'away').map(p => p.id);
+
+    // Trouver le 5 actuel via les actions SUB (en partant de la fin)
+    const currentQ = State.match.quarter;
+    const qStarters = State.starters[currentQ] || State.starters[1] || homePlayers.slice(0, 5);
+    let homeOnCourt = [...qStarters];
+
+    // Appliquer les SUB du quarter courant chronologiquement
+    State.actions
+        .filter(a => a.type === 'SUB' && (a.q || 1) === currentQ)
+        .forEach(a => {
+            const pid = a.pid;
+            const subOut = a.subOut;
+            if (subOut && homeOnCourt.includes(subOut)) {
+                homeOnCourt = homeOnCourt.filter(id => id !== subOut);
+                if (!homeOnCourt.includes(pid)) homeOnCourt.push(pid);
+            }
+        });
+
+    // S'assurer qu'on a bien 5 joueurs max
+    State.onCourt.home = homeOnCourt.slice(0, 5);
+    State.onCourt.away = awayPlayers.slice(0, 5);
+
+    // --- Reconstruction des fautes d'équipe par quarter ---
+    State.teamFouls = { home: [0, 0, 0, 0, 0], away: [0, 0, 0, 0, 0] };
+    State.actions.filter(a => a.type === 'FOUL').forEach(a => {
+        const p = State.players[a.pid];
+        if (!p) return;
+        const q = (a.q || 1) - 1;
+        if (q >= 0 && q < 5) {
+            State.teamFouls[p.team][q]++;
+        }
+    });
+
+    // --- Reconstruction du scoreHistory ---
+    State.scoreHistory = game.scoreHistory || [];
+    if (State.scoreHistory.length === 0) {
+        // Reconstruire un scoreHistory minimal depuis les actions
+        State.scoreHistory.push({ time: 600, q: 1, home: 0, away: 0 });
+    }
+
+    // --- Reconstruction des fautes spéciales ---
+    State.specialFouls = game.specialFouls || { technical: [], unsportsmanlike: [], offensive: [] };
+
+    // --- Lancement de l'interface ---
+    document.getElementById('setupScreen').classList.add('hidden');
+    document.getElementById('app').style.display = 'flex';
+    document.getElementById('lblAway').textContent = State.match.opponent;
+
+    Court.init();
+    UI.init();
+    WormChart.init();
+    ContextManager.render();
+    TimelineFloat.render();
+
+    // Sauvegarder immédiatement en localStorage pour la reprise standard
+    OfflineManager.save();
+
+    UI.toast(`Match vs ${game.opponent} repris (${State.actions.length} actions)`);
+    // Nettoyer l'URL
+    history.replaceState(null, '', 'live.html');
+    return true;
+},
     toggle(id) { const i = State.selectedIds.indexOf(id); if (i >= 0) State.selectedIds.splice(i, 1); else State.selectedIds.push(id); },
     renderOpp() { document.getElementById('oppRosterList').innerHTML = State.oppPlayers.map((p, i) => `<div class="opp-row"><input value="${p.num}" placeholder="#" onchange="Setup.updateOpp(${i},'num',this.value)"><input value="${p.name}" placeholder="Nom" onchange="Setup.updateOpp(${i},'name',this.value)"><button class="del" onclick="Setup.delOpp(${i})">×</button></div>`).join(''); },
     updateOpp(i, k, v) { State.oppPlayers[i][k] = v; },
@@ -1540,12 +2014,19 @@ const GameEngine = {
         UI.setSyncStatus('syncing');
         const scores = this.getScore();
         const playerStats = {};
-        Object.values(State.players).filter(p => p.team === 'home').forEach(p => { playerStats[p.id] = { pts: p.stats.pts, reb: p.stats.oreb + p.stats.dreb, oreb: p.stats.oreb, dreb: p.stats.dreb, ast: p.stats.ast, stl: p.stats.stl, blk: p.stats.blk, tov: p.stats.tov, fga: p.stats.fga, fgm: p.stats.fgm, threePA: p.stats.fg3a, threePM: p.stats.fg3m, fta: p.stats.fta, ftm: p.stats.ftm, pf: p.stats.fouls, minutes: Math.round(p.stats.min / 60), plusMinus: p.stats.plusMinus }; });
+        Object.values(State.players).filter(p => p.team === 'home').forEach(p => { playerStats[p.id] = { pts: p.stats.pts, reb: p.stats.oreb + p.stats.dreb, oreb: p.stats.oreb, dreb: p.stats.dreb, ast: p.stats.ast, stl: p.stats.stl, blk: p.stats.blk, tov: p.stats.tov, fga: p.stats.fga, fgm: p.stats.fgm, threePA: p.stats.fg3a, threePM: p.stats.fg3m, fta: p.stats.fta, ftm: p.stats.ftm, pf: p.stats.fouls, minutes: Math.round(p.stats.min / 60), plusMinus: p.stats.plusMinus,  foulDrawn: p.stats.foulDrawn || 0, blkAgainst: p.stats.blkAgainst || 0 }; });
         const opponentStats = { pts: scores.away, reb: 0, oreb: 0, tov: 0, fouls: 0, fga: 0, fgm: 0 };
         const opponentPlayerStats = {};
-        Object.values(State.players).filter(p => p.team === 'away').forEach(p => { opponentStats.reb += p.stats.oreb + p.stats.dreb; opponentStats.oreb += p.stats.oreb; opponentStats.tov += p.stats.tov; opponentStats.fouls += p.stats.fouls; opponentStats.fga += p.stats.fga + p.stats.fg3a; opponentStats.fgm += p.stats.fgm + p.stats.fg3m; opponentPlayerStats[p.id] = { pts: p.stats.pts, reb: p.stats.oreb + p.stats.dreb, oreb: p.stats.oreb, dreb: p.stats.dreb, ast: p.stats.ast, stl: p.stats.stl, blk: p.stats.blk, tov: p.stats.tov, fga: p.stats.fga, fgm: p.stats.fgm, threePA: p.stats.fg3a, threePM: p.stats.fg3m, fta: p.stats.fta, ftm: p.stats.ftm, pf: p.stats.fouls, minutes: Math.round(p.stats.min / 60), plusMinus: p.stats.plusMinus, number: p.number, name: p.name }; });
-        const game = { id: State.match.id.toString(36), date: State.match.date, opponent: State.match.opponent, homeScore: scores.home, awayScore: scores.away, phase: State.match.phase, playerStats, opponentStats, opponentPlayerStats, starters: State.starters, actions: State.actions, specialFouls: State.specialFouls };
-        const idx = firebaseGames.findIndex(g => g.id === game.id);
+        Object.values(State.players).filter(p => p.team === 'away').forEach(p => { opponentStats.reb += p.stats.oreb + p.stats.dreb; opponentStats.oreb += p.stats.oreb; opponentStats.tov += p.stats.tov; opponentStats.fouls += p.stats.fouls; opponentStats.fga += p.stats.fga + p.stats.fg3a; opponentStats.fgm += p.stats.fgm + p.stats.fg3m; opponentPlayerStats[p.id] = { pts: p.stats.pts, reb: p.stats.oreb + p.stats.dreb, oreb: p.stats.oreb, dreb: p.stats.dreb, ast: p.stats.ast, stl: p.stats.stl, blk: p.stats.blk, tov: p.stats.tov, fga: p.stats.fga, fgm: p.stats.fgm, threePA: p.stats.fg3a, threePM: p.stats.fg3m, fta: p.stats.fta, ftm: p.stats.ftm, pf: p.stats.fouls, minutes: Math.round(p.stats.min / 60), plusMinus: p.stats.plusMinus, number: p.number, name: p.name, foulDrawn: p.stats.foulDrawn || 0, blkAgainst: p.stats.blkAgainst || 0   }; });
+        const game = {
+        id: State.match.id.toString(36), date: State.match.date,
+        opponent: State.match.opponent, homeScore: scores.home, awayScore: scores.away,
+        phase: State.match.phase, playerStats, opponentStats, opponentPlayerStats,
+        starters: State.starters,
+        opponentStarters: State.opponentStarters,
+        actions: State.actions,
+        specialFouls: State.specialFouls
+    };        const idx = firebaseGames.findIndex(g => g.id === game.id);
         if (idx >= 0) firebaseGames[idx] = game; else firebaseGames.unshift(game);
         try { await db.collection('team_data').doc('games').set({ list: firebaseGames }); UI.toast('✅ Sauvegardé !'); UI.setSyncStatus('online'); OfflineManager.clear(); }
         catch (e) { UI.toast('Erreur sauvegarde', 'error'); UI.setSyncStatus('error'); }
@@ -1574,7 +2055,7 @@ const WormChart = {
         ctx.clearRect(0, 0, w, h);
         if (State.scoreHistory.length < 2) return;
         const data = State.scoreHistory, maxDiff = Math.max(10, ...data.map(d => Math.abs(d.home - d.away))), midY = h / 2;
-        ctx.strokeStyle = '#334155'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, midY); ctx.lineTo(w, midY); ctx.stroke();
+        ctx.strokeStyle = '#2a2a4a'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, midY); ctx.lineTo(w, midY); ctx.stroke();
         ctx.beginPath(); ctx.strokeStyle = 'var(--home-color)'; ctx.lineWidth = 3;
         data.forEach((d, i) => { const x = (i / (data.length - 1)) * w, diff = d.home - d.away, y = midY - (diff / maxDiff) * (h / 2 - 6); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
         ctx.stroke();

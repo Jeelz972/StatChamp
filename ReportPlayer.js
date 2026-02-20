@@ -4,8 +4,7 @@
 
 // --- CONFIGURATION ---
 // ⚠️ Collez votre clé API Google Gemini ci-dessous
-const GEMINI_API_KEY = "AIzaSyBNE1nYL3s-Gyz793HpXN9jQrUwPVsNpZ4"; 
-// --- UTILITAIRE : Gestion des Dates ---
+const GEMINI_API_KEY = localStorage.getItem('gemini_api_key') || '';// --- UTILITAIRE : Gestion des Dates ---
 const parseFrenchDate = (dateStr) => {
     if (!dateStr) return new Date(0);
     if (dateStr.match(/^\d{1,2}\/\d{1,2}\/\d{4}/)) {
@@ -44,43 +43,23 @@ const AnalysisEngine = {
 
     // --- ESTIMATION DES POSSESSIONS ---
     // Utilise les stats adverses si disponibles, sinon estimation symétrique
-    _estimatePoss: (teamTotals, oppTotals) => {
-        const t = teamTotals;
-        // Cas 1 : on a les stats adverses (oppFGA, oppOREB, etc.)
-        if (oppTotals && oppTotals.fga > 0) {
-            const tORB_pct = (t.oreb + (oppTotals.dreb || 0)) > 0
-                ? t.oreb / (t.oreb + (oppTotals.dreb || 0))
-                : 0;
-            const oORB_pct = ((oppTotals.oreb || 0) + (t.dreb || 0)) > 0
-                ? (oppTotals.oreb || 0) / ((oppTotals.oreb || 0) + (t.dreb || 0))
-                : 0;
-            const tPoss = t.fga + 0.4 * t.fta - 1.07 * tORB_pct * (t.fga - t.fgm) + t.tov;
-            const oPoss = oppTotals.fga + 0.4 * (oppTotals.fta || 0)
-                - 1.07 * oORB_pct * (oppTotals.fga - (oppTotals.fgm || 0))
-                + (oppTotals.tov || 0);
-            // Moyenne des deux estimations (méthode standard Basketball-Reference)
-            return Math.max(1, (tPoss + oPoss) / 2);
-        }
-        // Cas 2 : pas de données adverses — estimation par l'équipe seule
-        // Formule simplifiée sans ORB% adverse (on ignore le terme correctif)
-        return Math.max(1, t.fga + 0.44 * t.fta + t.tov - t.oreb);
+   _estimatePoss: (teamTotals, oppTotals) => {
+        return window.StatsEngine.possAdvanced(teamTotals, oppTotals);
     },
+    _impact: (playerStats) => {
+        const Ois = playerStats.avg.pts + ( playerStats.avg.ast * 1.5 ) + (playerStats.avg.reb * 1.2)+(playerStats.avg.oreb * 1.2)+(playerStats.avg.fte *1.2) - (playerStats.avg.tov * 1.5);
+        const Dis = (playerStats.avg.stl * 2)+(playerStats.avg.blk * 2)+playerStats.avg.dreb-(playerStats.avg.fouls *0.7)+(playerStats.avg.plusMinus * 0.3);
+        const Impact = ((Ois + Dis)/playerStats.avg.min)*40;
+        return Impact;
 
+    },
     // --- CALCUL NetRtg PAR MATCH ---
     // Retourne un NetRtg normalisé /100 poss pour un joueur dans un match donné
     _calcPlayerNetRtg: (playerStat, teamTotals, oppTotals, teamMin) => {
         const pMin = parseFloat(playerStat.min || playerStat.minutes || 0);
-        if (pMin <= 0 || teamMin <= 0) return 0;
-
-        const poss = AnalysisEngine._estimatePoss(teamTotals, oppTotals);
+        const poss = window.StatsEngine.possAdvanced(teamTotals, oppTotals);
         const pm = parseFloat(playerStat.plusMinus || 0);
-
-        // Possessions pendant le temps de jeu du joueur (prorata minutes)
-        const playerPoss = poss * (pMin / (teamMin / 5));
-        if (playerPoss <= 0) return 0;
-
-        // Net Rating = +/- normalisé à 100 possessions
-        return (pm / playerPoss) * 100;
+        return window.StatsEngine.playerNetRtg(pm, poss, pMin, teamMin);
     },
 
     // --- PROCESSEUR PRINCIPAL (modifié) ---
@@ -200,16 +179,37 @@ const AnalysisEngine = {
             avg.fgPct = avg.fga > 0 ? (avg.fgm / avg.fga) * 100 : 0;
             avg.threePct = avg.threea > 0 ? (avg.threem / avg.threea) * 100 : 0;
             avg.ftPct = avg.fta > 0 ? (avg.ftm / avg.fta) * 100 : 0;
-            avg.TS = avg.fga > 0 ? (sum('pts') / (2 * (avg.fga + 0.44 * avg.fta))) * 100 : 0;
-            avg.eFG = avg.fga > 0 ? (avg.fgm + 0.5 * avg.threem) / avg.fga * 100 : 0;
             avg.threePAr = avg.fga > 0 ? avg.threea / avg.fga : 0;
             avg.FTr = avg.fga > 0 ? avg.fta / avg.fga : 0;
-            avg.astTov = avg.tov > 0 ? avg.ast / avg.tov : avg.ast;
-            avg.pf36 = avg.min > 0 ? (avg.fouls / avg.min) * 36 : 0;
+            avg.TS = window.StatsEngine.TS(sum('pts'), avg.fga, avg.fta);
+            avg.eFG = window.StatsEngine.eFG(avg.fgm, avg.threem, avg.fga);
+            avg.astTov = window.StatsEngine.astTovRatio(avg.ast, avg.tov);
+            avg.pf36 = window.StatsEngine.per36(avg.fouls, avg.min);
+            // --- FTE : données réelles + estimation pour les matchs sans tracking ---
+            const trackedLogs = p.logs.filter(l => l._hasFteData);
+            const untrackedLogs = p.logs.filter(l => !l._hasFteData);
+            let totalFte;
+            if (trackedLogs.length > 0) {
+                const trackedFte = trackedLogs.reduce((a, l) => a + (l.foulDrawn || 0), 0);
+                const trackedMin = trackedLogs.reduce((a, l) => a + (l.min || 0), 0);
+                const ftePerMin = trackedMin > 0 ? trackedFte / trackedMin : 0;
+                const estimatedFte = untrackedLogs.reduce((a, l) => a + ftePerMin * (l.min || 0), 0);
+                totalFte = trackedFte + estimatedFte;
+            } else {
+                // Aucun match avec tracking FTE — fallback FTA/2
+                totalFte = sum('fta') / 2;
+            }
+            avg.fte = totalFte / gp;
+
+            // --- IMPACT TOTAL = (OIS + DIS) / MIN × 30 ---
+            const dreb_pg = avg.reb - avg.oreb;
+            const DIS = (avg.stl * 2.5) + (avg.blk * 2) + (dreb_pg * 1.2) - (avg.fouls * 0.8) + (avg.plusMinus * 0.5);
+            const OIS = avg.pts + (2 * avg.ast) + (1.5 * avg.oreb) + (1.2 * avg.fte) - (2 * avg.tov);
+            avg.impactTotal = avg.min > 0 ? ((OIS + DIS) / avg.min)*100: 0;
 
             return { ...p, avg };
-        }).sort((a, b) => b.avg.eff - a.avg.eff);
-    },
+                    }).sort((a, b) => b.avg.eff - a.avg.eff);
+                },
 
     // --- ARCHETYPE (inchangé) ---
     getArchetype: (avg) => {
@@ -332,12 +332,71 @@ const ScoutingRadar = ({ avg }) => {
     const c=60, r=40, poly=(d,f)=>d.map((s,i)=>{const a=(Math.PI*2*i)/5-Math.PI/2,v=f?f(s.v):r;return`${c+Math.cos(a)*v},${c+Math.sin(a)*v}`}).join(" ");
     return (
         <svg viewBox="0 0 120 120" className="w-full h-40 filter drop-shadow-lg">
-            {[0.2,0.4,0.6,0.8,1].map((k,i)=><polygon key={i} points={poly(stats,()=>r*k)} fill={i%2?"#0f172a":"#1e293b"} stroke="#334155" strokeWidth="0.5"/>)}
-            <polygon points={poly(stats,v=>r*v)} fill="rgba(99,102,241,0.5)" stroke="#6366f1" strokeWidth="2"/>
+            {[0.2,0.4,0.6,0.8,1].map((k,i)=><polygon key={i} points={poly(stats,()=>r*k)} fill={i%2?"#0f172a":"#1e1e3a"} stroke="#334155" strokeWidth="0.5"/>)}
+            <polygon points={poly(stats,v=>r*v)} fill="rgba(212,165,116,0.4)" stroke="#d4a574" strokeWidth="2"/>
             {stats.map((s,i)=>{const a=(Math.PI*2*i)/5-Math.PI/2;return<text key={i} x={c+Math.cos(a)*(r+14)} y={c+Math.sin(a)*(r+10)} fontSize="7" fontWeight="bold" fill="#94a3b8" textAnchor="middle">{s.l}</text>})}
         </svg>
     );
 };
+
+function calcFiveManLineups(playerId, games, roster) {
+    const MIN_POSS = 8;
+    const homeIds = new Set(roster.map(p => p.id || parseInt(p.id)));
+    const lineupMap = {};
+
+    games.forEach(game => {
+        if (!game.actions || !game.actions.length) return;
+        if (!game.actions[0].onCourt) return;
+        game.actions.forEach(a => {
+            if (!a.onCourt) return;
+            const homeOnCourt = a.onCourt.filter(id => homeIds.has(id)).sort((x, y) => x - y);
+            if (homeOnCourt.length !== 5) return;
+            if (!homeOnCourt.includes(playerId)) return;
+            
+            const key = homeOnCourt.join('-');
+            if (!lineupMap[key]) lineupMap[key] = { ids: homeOnCourt, actions: 0, pts: 0, ptsConceded: 0, fga: 0, fta: 0, tov: 0, orb: 0, oppFga: 0, oppFta: 0, oppTov: 0, oppOrb: 0 };
+            const m = lineupMap[key];
+            const isHome = homeIds.has(a.pid);
+            
+            m.actions++;
+            if (a.type === 'SHOT') {
+                if (isHome) { m.fga++; if (a.made) m.pts += a.val; }
+                else { m.oppFga++; if (a.made) m.ptsConceded += a.val; }
+            }
+            if (a.type === 'FT') {
+                if (isHome) { m.fta += (a.ftAtt || 0); m.pts += (a.ftMade || 0); }
+                else { m.oppFta += (a.ftAtt || 0); m.ptsConceded += (a.ftMade || 0); }
+            }
+            if (a.type === 'TOV') { if (isHome) m.tov++; else m.oppTov++; }
+            if (a.type === 'OREB') { if (isHome) m.orb++; else m.oppOrb++; }
+        });
+    });
+
+    const results = Object.values(lineupMap)
+        .map(m => {
+            const poss = Math.max(1, m.fga + 0.44 * m.fta + m.tov - m.orb);
+            const oppPoss = Math.max(1, m.oppFga + 0.44 * m.oppFta + m.oppTov - m.oppOrb);
+            const avgPoss = (poss + oppPoss) / 2;
+            if (avgPoss < MIN_POSS) return null;
+            
+            const ortg = Math.round((m.pts / avgPoss) * 100);
+            const drtg = Math.round((m.ptsConceded / avgPoss) * 100);
+            const names = m.ids.map(id => {
+                const p = roster.find(r => (r.id || parseInt(r.id)) === id);
+                return p ? ('#' + (p.number || '?')) : '#' + id;
+            });
+            
+            return { ids: m.ids, names, poss: Math.round(avgPoss), ortg, drtg, netRtg: ortg - drtg, pm: m.pts - m.ptsConceded, lowSample: avgPoss < 20 };
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.netRtg - a.netRtg);
+
+    return {
+        best: results.slice(0, 5),
+        worst: results.slice(-5).reverse(),
+        total: results.length
+    };
+}
 
 // =================================================================================
 // 4. COMPOSANT PRINCIPAL
@@ -353,7 +412,123 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
         if (propRoster) setPlayers(AnalysisEngine.processPlayerData(propGames || [], propRoster));
     }, [propGames, propRoster]);
 
-    React.useEffect(() => { setAiNarrative(null); setIsAiLoading(false); }, [selectedId]);
+    
+React.useEffect(() => { 
+    setAiNarrative(null); 
+    setIsAiLoading(false); 
+
+    // Guard 1 : pas de joueur sélectionné
+    if (!selectedId) return;
+
+    // Guard 2 : players pas encore chargés
+    if (!players || players.length === 0) return;
+
+    // Guard 3 : recherche du joueur — avec protection de type sur l'id
+    const player = players.find(p => 
+        p.id === selectedId || 
+        String(p.id) === String(selectedId) || 
+        Number(p.id) === Number(selectedId)
+    );
+
+    // Guard 4 : joueur non trouvé OU structure incomplète
+
+    if (!player || !player.info || !player.logs || player.logs.length === 0) {
+        setAiNarrative('Données insuffisantes pour générer une analyse.');
+        setIsAiLoading(false);
+        return;
+    }
+
+    setIsAiLoading(true);
+
+    if (!GEMINI_API_KEY) { 
+        setAiNarrative('Clé API Gemini non configurée. Allez dans Paramètres pour la saisir.'); 
+        setIsAiLoading(false); 
+        return; 
+    }
+
+    const abortCtrl = new AbortController();
+
+    const buildPrompt = (p) => {
+        const b = getBenchmarks();
+        const info = p.info || {};
+        const avg = p.avg || {};
+        return `Tu es un analyste basketball professionnel. Niveau de compétition : ${b.label}.
+Analyse le profil suivant et produis une synthèse en FRANÇAIS de 4-5 phrases maximum.
+Sois direct, factuel, et identifie 1-2 forces clés et 1 axe de progression prioritaire.
+Ne répète pas les chiffres bruts, interprète-les.
+
+JOUEUR : ${info.name || 'Inconnu'} | #${info.number || '?'} | Poste : ${info.pos || 'N/A'}
+MATCHS JOUÉS : ${p.logs.length}
+ARCHÉTYPE DÉTECTÉ : ${AnalysisEngine.getArchetype ? AnalysisEngine.getArchetype(avg) : 'N/A'}
+
+MOYENNES PAR MATCH :
+- Points: ${avg.pts || 0} | Rebonds: ${avg.reb || 0} | Passes: ${avg.ast || 0}
+- Minutes: ${avg.min || 0} | Évaluation: ${avg.eff || 0}
+- TS%: ${avg.TS || 0} | Usage%: ${avg.usage || 0}
+- FG%: ${avg.fgPct || 0} | 3P%: ${avg.threePct || 0} (${avg.threePA || 0} tent./m)
+- LF%: ${avg.ftPct || 0}
+- Interceptions: ${avg.stl || 0} | Contres: ${avg.blk || 0}
+- Balles perdues: ${avg.tov || 0} | Ratio AST/TOV: ${avg.astTov || 0}
+- +/-: ${avg.plusMinus || 0} | NetRtg: ${avg.netRtg || 0}
+- Fautes/36: ${avg.pf36 || 'N/A'}
+- Impact Total: ${avg.impactTotal != null ? avg.impactTotal.toFixed(1) : 'N/A'}
+
+BENCHMARKS NIVEAU ${b.label} :
+- TS% bon: ${b.ts_good} | élite: ${b.ts_elite}
+- Usage haut: ${b.usage_high} | 3P% bon: ${b.threePct_good}`;
+    };
+
+    (async () => {
+        try {
+            const res = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: abortCtrl.signal,
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: buildPrompt(player) }] }],
+                        generationConfig: {
+                            temperature: 0.4,
+                            maxOutputTokens: 300,
+                            topP: 0.8
+                        },
+                        safetySettings: [
+                            { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+                            { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+                            { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+                            { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }
+                        ]
+                    })
+                }
+            );
+
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData?.error?.message || `HTTP ${res.status}`);
+            }
+
+            const data = await res.json();
+            const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+            if (text) {
+                setAiNarrative(text.trim());
+            } else {
+                setAiNarrative('Analyse indisponible (réponse vide).');
+            }
+        } catch (err) {
+            if (err.name === 'AbortError') return;
+            console.error('Gemini API error:', err);
+            setAiNarrative(`Erreur API : ${err.message}`);
+        } finally {
+            setIsAiLoading(false);
+        }
+    })();
+
+    return () => abortCtrl.abort();
+
+// CORRECTION CRITIQUE : players ajouté aux dépendances
+}, [selectedId, players]);
 
     if (!currentUser || (currentUser.role !== 'coach' && currentUser.role !== 'admin')) return null;
 
@@ -361,7 +536,7 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
         return (
             <div className="fixed inset-0 z-[60] bg-slate-950 flex flex-col font-sans text-slate-200">
                 <div className="p-4 border-b border-slate-800 bg-slate-900 flex justify-between items-center shadow-lg z-10">
-                    <div><h1 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-400 uppercase tracking-tighter">Scouting<span className="text-white">Pro</span></h1><p className="text-slate-400 text-xs mt-1">{players.length} Profils</p></div>
+                    <div><h1 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-orange-300 uppercase tracking-tighter">Scouting<span className="text-white">Pro</span></h1><p className="text-slate-400 text-xs mt-1">{players.length} Profils</p></div>
                     <button onClick={onClose} className="bg-slate-800 text-slate-300 px-4 py-2 rounded-lg hover:text-white border border-slate-700">Fermer</button>
                 </div>
                 <div className="flex-1 overflow-y-auto p-6 bg-slate-950">
@@ -426,7 +601,7 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
 
                 <div className={`border p-6 rounded-xl relative overflow-hidden ${aiNarrative ? 'bg-indigo-900/20 border-indigo-500/40' : 'bg-slate-900 border-slate-800'}`}>
                     <h3 className={`${aiNarrative ? 'text-indigo-400' : 'text-slate-400'} font-bold uppercase text-xs mb-2 flex items-center gap-2`}>
-                        <span className="text-lg">{aiNarrative ? '🤖' : '📝'}</span> {aiNarrative ? 'Synthèse Gemini AI' : 'Note Rapide'}
+                        <span className="text-lg">{aiNarrative ? '🤖' : '📝'}</span> {aiNarrative ? 'Synthèse' : 'Note Rapide'}
                     </h3>
                     <p className="text-slate-200 text-lg leading-relaxed font-medium">{isAiLoading ? <span className="animate-pulse">Analyse IA en cours...</span> : narrativeText}</p>
                 </div>
@@ -438,6 +613,15 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
                     </div>
                     <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-xl p-6">
                         <div className="flex justify-between items-center mb-6"><h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest"><span className="text-indigo-400">Advanced</span> Metrics</h3><span className="text-xs font-mono text-slate-600 bg-slate-950 px-2 py-1 rounded">{p.logs.length} Matchs</span></div>
+                        <div className="bg-gradient-to-r from-indigo-950/50 to-cyan-950/50 p-4 rounded-xl border border-indigo-500/30 mb-6 flex items-center justify-between">
+                            <div>
+                                <div className="text-xs font-bold text-indigo-400 uppercase tracking-widest">Impact Total</div>
+                                <div className="text-[12Spx] text-slate-500 mt-0.5">Elite ≥ 110 Bon ≥ 85 Correct ≥ 60 Faible ≤ 59</div>
+                            </div>
+                            <div className={`text-3xl font-black ${p.avg.impactTotal > 110 ? 'text-blue-400': p.avg.impactTotal > 85 ? 'text-green-400' : p.avg.impactTotal > 59 ? 'text-white' : 'text-red-400'}`}>
+                                {p.avg.impactTotal.toFixed(1)}
+                            </div>
+                        </div>
                         <div className="grid grid-cols-4 gap-4 mb-6">
                             <div className="bg-slate-950/50 p-3 rounded border border-slate-800/50 text-center"><div className={`text-xl font-bold ${p.avg.TS>58?'text-green-400':'text-white'}`}>{p.avg.TS.toFixed(0)}%</div><div className="text-[10px] uppercase text-slate-500">True Shooting</div></div>
                             <div className="bg-slate-950/50 p-3 rounded border border-slate-800/50 text-center"><div className="text-xl font-bold text-white">{p.avg.eFG.toFixed(0)}%</div><div className="text-[10px] uppercase text-slate-500">eFG%</div></div>
@@ -485,6 +669,61 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
                             ))}
                         </tbody>
                     </table>
+                    {(() => {
+    // Adapter `player.id` selon le nom exact de la variable du joueur dans votre composant (ex: p.id, selectedPlayer.id)
+    const currentPlayerId = typeof p !== 'undefined' ? p.id : player.id; const lineups = calcFiveManLineups(currentPlayerId, propGames, propRoster);
+    
+    if (lineups.total === 0) return null;
+    
+    const renderLineup = (lu, idx) => (
+        <div key={idx} className="flex items-center gap-2 p-2 bg-slate-950/50 rounded border border-slate-800/50">
+            <div className="flex-1 min-w-0">
+                <div className="text-xs text-white font-medium">{lu.names.join(' ')}</div>
+                <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[10px] text-slate-500">{lu.poss} poss</span>
+                    {lu.lowSample && <span className="text-[9px] bg-amber-900/30 text-amber-400 px-1 rounded">Faible éch.</span>}
+                </div>
+            </div>
+            <div className="text-center px-2">
+                <div className="text-[10px] text-slate-500">ORtg</div>
+                <div className="text-xs font-bold text-purple-400">{lu.ortg}</div>
+            </div>
+            <div className="text-center px-2">
+                <div className="text-[10px] text-slate-500">DRtg</div>
+                <div className="text-xs font-bold text-red-400">{lu.drtg}</div>
+            </div>
+            <div className="text-center px-2">
+                <div className={`text-sm font-bold ${lu.netRtg >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {lu.netRtg > 0 ? '+' : ''}{lu.netRtg}
+                </div>
+                <div className="text-[10px] text-slate-500">Net</div>
+            </div>
+        </div>
+    );
+    
+    return (
+        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden mt-6">
+            <div className="p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+                <h3 className="text-xs font-bold text-slate-400 uppercase">Lineups 5-Man</h3>
+                <span className="text-[10px] text-slate-600">{lineups.total} combos analysés (matchs PBP uniquement)</span>
+            </div>
+            <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                {lineups.best.length > 0 && (
+                    <div>
+                        <h4 className="text-xs text-green-400 uppercase font-bold mb-2">Meilleurs lineups</h4>
+                        <div className="space-y-1">{lineups.best.map(renderLineup)}</div>
+                    </div>
+                )}
+                {lineups.worst.length > 0 && (
+                    <div>
+                        <h4 className="text-xs text-red-400 uppercase font-bold mb-2">Pires lineups</h4>
+                        <div className="space-y-1">{lineups.worst.map(renderLineup)}</div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+})()}
                 </div>
             </div>
         </div>

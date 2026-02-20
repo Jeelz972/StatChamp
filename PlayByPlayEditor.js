@@ -415,33 +415,49 @@
     // UI COMPONENTS
     // ========================================================
     function ZoneSelector({ onSelect, onCancel }) {
-        return React.createElement('div', {
-            style: { position: 'fixed', inset: 0, zIndex: 100002, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center' },
-            onClick: e => { if (e.target === e.currentTarget) onCancel(); }
-        },
-            React.createElement('div', { className: 'bg-slate-800 rounded-xl p-5 border border-slate-600 max-w-md w-full mx-4' },
-                React.createElement('h3', { className: 'text-white font-bold mb-4 text-sm' }, 'Selectionner la zone de tir'),
-                React.createElement('div', { className: 'grid grid-cols-3 gap-2' },
-                    SHOT_ZONES.map(z => React.createElement('button', {
-                        key: z.id, className: `px-3 py-2 rounded text-xs font-semibold cursor-pointer border transition-all ${z.val === 3 ? 'bg-purple-900 border-purple-600 hover:bg-purple-700 text-purple-200' : 'bg-blue-900 border-blue-600 hover:bg-blue-700 text-blue-200'}`,
-                        onClick: () => onSelect(z)
-                    }, z.label))
-                ),
-                React.createElement('button', { className: 'mt-4 w-full py-2 rounded bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer hover:bg-slate-600', onClick: onCancel }, 'Annuler')
-            )
+        return (
+            <div
+                style={{ position: 'fixed', inset: 0, zIndex: 100002, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                onClick={e => { if (e.target === e.currentTarget) onCancel(); }}
+            >
+                <div className="bg-slate-800 rounded-xl p-5 border border-slate-600 max-w-md w-full mx-4">
+                    <h3 className="text-white font-bold mb-4 text-sm">Selectionner la zone de tir</h3>
+                    <div className="grid grid-cols-3 gap-2">
+                        {SHOT_ZONES.map(z => (
+                            <button
+                                key={z.id}
+                                className={`px-3 py-2 rounded text-xs font-semibold cursor-pointer border transition-all ${z.val === 3 ? 'bg-purple-900 border-purple-600 hover:bg-purple-700 text-purple-200' : 'bg-blue-900 border-blue-600 hover:bg-blue-700 text-blue-200'}`}
+                                onClick={() => onSelect(z)}
+                            >
+                                {z.label}
+                            </button>
+                        ))}
+                    </div>
+                    <button className="mt-4 w-full py-2 rounded bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer hover:bg-slate-600" onClick={onCancel}>Annuler</button>
+                </div>
+            </div>
         );
     }
 
     function CombinedPlayerSelect({ value, onChange, homePlayers, oppPlayers, allowNone, className }) {
-        return React.createElement('select', {
-            className: (className || SEL) + ' w-full', value: value ?? '',
-            onChange: e => { const v = e.target.value; onChange(v === '' ? null : v === 'OPP' ? 'OPP' : parseInt(v)); }
-        },
-            allowNone && React.createElement('option', { value: '' }, '— Aucun —'),
-            React.createElement('optgroup', { label: 'Domicile' }, homePlayers.map(p => React.createElement('option', { key: p.id, value: p.id }, `#${p.number} ${p.name}`))),
-            oppPlayers.length > 0
-                ? React.createElement('optgroup', { label: 'Adversaire' }, oppPlayers.map(p => React.createElement('option', { key: p.id, value: p.id }, `#${p.number} ${p.name}`)))
-                : React.createElement('option', { value: 'OPP' }, 'Adversaire (generique)')
+        return (
+            <select
+                className={(className || SEL) + ' w-full'}
+                value={value ?? ''}
+                onChange={e => { const v = e.target.value; onChange(v === '' ? null : v === 'OPP' ? 'OPP' : parseInt(v)); }}
+            >
+                {allowNone && <option value="">— Aucun —</option>}
+                <optgroup label="Domicile">
+                    {homePlayers.map(p => <option key={p.id} value={p.id}>{`#${p.number} ${p.name}`}</option>)}
+                </optgroup>
+                {oppPlayers.length > 0 ? (
+                    <optgroup label="Adversaire">
+                        {oppPlayers.map(p => <option key={p.id} value={p.id}>{`#${p.number} ${p.name}`}</option>)}
+                    </optgroup>
+                ) : (
+                    <option value="OPP">Adversaire (generique)</option>
+                )}
+            </select>
         );
     }
 
@@ -449,49 +465,55 @@
     function MinutesAuditModal({ intervals, players, oppPlayers, onClose }) {
         const formatTime = (t) => `${Math.floor(t/60).toString().padStart(2,'0')}:${(t%60).toString().padStart(2,'0')}`;
 
-        return React.createElement('div', {
-            style: { position: 'fixed', inset: 0, zIndex: 100005, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center' },
-            onClick: e => { if (e.target === e.currentTarget) onClose(); }
-        },
-            React.createElement('div', { className: 'bg-slate-800 rounded-xl p-5 border border-slate-600 max-w-3xl w-full mx-4 max-h-[90vh] flex flex-col' },
-                React.createElement('div', { className: 'flex justify-between items-center mb-4' },
-                    React.createElement('h3', { className: 'text-white font-bold' }, 'Verification Temps de Jeu (Tous)'),
-                    React.createElement('div', { className: 'flex gap-2' },
-                        React.createElement('button', { className: 'px-3 py-1 bg-green-600 text-white rounded text-xs font-bold hover:bg-green-500', onClick: () => exportMinutesAuditCSV(intervals, players, oppPlayers) }, 'Export'),
-                        React.createElement('button', { className: 'text-slate-400 hover:text-white', onClick: onClose }, 'X')
-                    )
-                ),
-                React.createElement('div', { className: 'overflow-y-auto flex-1 bg-slate-900 rounded border border-slate-700 p-2' },
-                    Object.entries(intervals).map(([pid, list]) => {
-                        const numPid = parseInt(pid);
-                        const isOpp = isOpponent(numPid);
-                        const p = isOpp ? oppPlayers.find(x => x.id === numPid) : players.find(x => x.id === numPid);
+        return (
+            <div
+                style={{ position: 'fixed', inset: 0, zIndex: 100005, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+            >
+                <div className="bg-slate-800 rounded-xl p-5 border border-slate-600 max-w-3xl w-full mx-4 max-h-[90vh] flex flex-col">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-white font-bold">Verification Temps de Jeu (Tous)</h3>
+                        <div className="flex gap-2">
+                            <button className="px-3 py-1 bg-green-600 text-white rounded text-xs font-bold hover:bg-green-500" onClick={() => exportMinutesAuditCSV(intervals, players, oppPlayers)}>Export</button>
+                            <button className="text-slate-400 hover:text-white" onClick={onClose}>X</button>
+                        </div>
+                    </div>
+                    <div className="overflow-y-auto flex-1 bg-slate-900 rounded border border-slate-700 p-2">
+                        {Object.entries(intervals).map(([pid, list]) => {
+                            const numPid = parseInt(pid);
+                            const isOpp = isOpponent(numPid);
+                            const p = isOpp ? oppPlayers.find(x => x.id === numPid) : players.find(x => x.id === numPid);
 
-                        if (!p && !isOpp) return null;
+                            if (!p && !isOpp) return null;
 
-                        const totalSec = list.reduce((sum, i) => sum + i.duration, 0);
-                        const totalMin = Math.round(totalSec / 60);
+                            const totalSec = list.reduce((sum, i) => sum + i.duration, 0);
+                            const totalMin = Math.round(totalSec / 60);
 
-                        return React.createElement('div', { key: pid, className: `mb-4 border-b pb-2 ${isOpp ? 'border-red-900/50' : 'border-slate-700'}` },
-                            React.createElement('div', { className: 'flex justify-between items-center mb-1' },
-                                React.createElement('span', { className: `font-bold ${isOpp ? 'text-red-400' : 'text-orange-400'}` },
-                                    p ? `#${p.number} ${p.name}` : `Joueur ${pid}`
-                                ),
-                                React.createElement('span', { className: 'text-sm text-white font-mono' }, `${totalMin} min (${totalSec}s)`)
-                            ),
-                            React.createElement('div', { className: 'grid grid-cols-4 gap-2 text-[10px] text-slate-400 uppercase font-bold bg-slate-800 p-1 rounded mb-1' },
-                                React.createElement('div', null, 'QT'), React.createElement('div', null, 'Entree'), React.createElement('div', null, 'Sortie'), React.createElement('div', { className: 'text-right' }, 'Duree')
-                            ),
-                            list.map((iv, idx) => React.createElement('div', { key: idx, className: 'grid grid-cols-4 gap-2 text-xs text-slate-300 p-1 border-b border-slate-800/50' },
-                                React.createElement('div', null, `Q${iv.q}`),
-                                React.createElement('div', { className: 'text-green-400' }, formatTime(iv.start)),
-                                React.createElement('div', { className: 'text-red-400' }, formatTime(iv.end)),
-                                React.createElement('div', { className: 'text-right font-mono' }, formatTime(iv.duration))
-                            ))
-                        );
-                    })
-                )
-            )
+                            return (
+                                <div key={pid} className={`mb-4 border-b pb-2 ${isOpp ? 'border-red-900/50' : 'border-slate-700'}`}>
+                                    <div className="flex justify-between items-center mb-1">
+                                        <span className={`font-bold ${isOpp ? 'text-red-400' : 'text-orange-400'}`}>
+                                            {p ? `#${p.number} ${p.name}` : `Joueur ${pid}`}
+                                        </span>
+                                        <span className="text-sm text-white font-mono">{`${totalMin} min (${totalSec}s)`}</span>
+                                    </div>
+                                    <div className="grid grid-cols-4 gap-2 text-[10px] text-slate-400 uppercase font-bold bg-slate-800 p-1 rounded mb-1">
+                                        <div>QT</div><div>Entree</div><div>Sortie</div><div className="text-right">Duree</div>
+                                    </div>
+                                    {list.map((iv, idx) => (
+                                        <div key={idx} className="grid grid-cols-4 gap-2 text-xs text-slate-300 p-1 border-b border-slate-800/50">
+                                            <div>{`Q${iv.q}`}</div>
+                                            <div className="text-green-400">{formatTime(iv.start)}</div>
+                                            <div className="text-red-400">{formatTime(iv.end)}</div>
+                                            <div className="text-right font-mono">{formatTime(iv.duration)}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            </div>
         );
     }
 
@@ -523,59 +545,65 @@
             onSave(editedHome, editedOpp);
         };
 
-        return React.createElement('div', {
-            style: { position: 'fixed', inset: 0, zIndex: 100005, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center' },
-            onClick: e => { if (e.target === e.currentTarget) onClose(); }
-        },
-            React.createElement('div', { className: 'bg-slate-800 rounded-xl p-5 border border-slate-600 max-w-2xl w-full mx-4 flex flex-col max-h-[90vh]' },
-                React.createElement('div', { className: 'flex justify-between items-center mb-4 border-b border-slate-700 pb-2' },
-                    React.createElement('h3', { className: 'text-white font-bold text-lg' }, 'Modifier les 5 de Depart'),
-                    React.createElement('button', { className: 'text-slate-400 hover:text-white text-xl', onClick: onClose }, 'X')
-                ),
-                React.createElement('div', { className: 'flex gap-2 mb-4 bg-slate-900 p-1 rounded' },
-                    React.createElement('button', {
-                        className: `flex-1 py-2 text-sm font-bold rounded ${activeTab === 'HOME' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`,
-                        onClick: () => setActiveTab('HOME')
-                    }, 'Domicile'),
-                    React.createElement('button', {
-                        className: `flex-1 py-2 text-sm font-bold rounded ${activeTab === 'OPP' ? 'bg-red-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`,
-                        onClick: () => setActiveTab('OPP')
-                    }, 'Adversaire')
-                ),
-                React.createElement('div', { className: 'flex gap-2 mb-4 overflow-x-auto pb-2' },
-                    quarters.map(q => React.createElement('button', {
-                        key: q,
-                        className: `px-4 py-2 rounded font-bold text-sm transition-colors ${activeQ === q ? 'bg-orange-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`,
-                        onClick: () => setActiveQ(q)
-                    }, q <= 4 ? `Q${q}` : `OT${q - 4}`))
-                ),
-                React.createElement('div', { className: 'text-sm text-slate-400 mb-2 italic' },
-                    `Titulaires ${activeTab === 'HOME' ? 'Domicile' : 'Adversaire'} pour ${activeQ <= 4 ? 'Q' + activeQ : 'OT'} (${currentList.length} selectionnes)`
-                ),
-                React.createElement('div', { className: 'flex-1 overflow-y-auto bg-slate-900 rounded border border-slate-700 p-2 grid grid-cols-2 sm:grid-cols-3 gap-2' },
-                    currentPlayers.map(p => {
-                        const isSelected = currentList.includes(p.id);
-                        return React.createElement('div', {
-                            key: p.id,
-                            className: `p-2 rounded border cursor-pointer flex items-center gap-2 select-none ${isSelected ? 'bg-blue-900/50 border-blue-500' : 'bg-slate-800 border-slate-700 hover:border-slate-500'}`,
-                            onClick: () => togglePlayer(activeTab, activeQ, p.id)
-                        },
-                            React.createElement('div', { className: `w-4 h-4 rounded border flex items-center justify-center ${isSelected ? 'bg-blue-500 border-blue-500' : 'border-slate-500'}` },
-                                isSelected && React.createElement('span', { className: 'text-white text-xs font-bold' }, 'V')
-                            ),
-                            React.createElement('span', { className: 'font-mono font-bold text-white' }, `#${p.number}`),
-                            React.createElement('span', { className: 'text-slate-300 text-xs truncate' }, p.name)
-                        );
-                    })
-                ),
-                React.createElement('div', { className: 'mt-4 flex justify-end gap-2' },
-                    React.createElement('button', { className: 'px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-bold rounded', onClick: onClose }, 'Annuler'),
-                    React.createElement('button', {
-                        className: 'px-4 py-2 bg-green-600 hover:bg-green-500 text-white text-sm font-bold rounded',
-                        onClick: handleSave
-                    }, 'Valider & Recalculer')
-                )
-            )
+        return (
+            <div
+                style={{ position: 'fixed', inset: 0, zIndex: 100005, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+            >
+                <div className="bg-slate-800 rounded-xl p-5 border border-slate-600 max-w-2xl w-full mx-4 flex flex-col max-h-[90vh]">
+                    <div className="flex justify-between items-center mb-4 border-b border-slate-700 pb-2">
+                        <h3 className="text-white font-bold text-lg">Modifier les 5 de Depart</h3>
+                        <button className="text-slate-400 hover:text-white text-xl" onClick={onClose}>X</button>
+                    </div>
+                    <div className="flex gap-2 mb-4 bg-slate-900 p-1 rounded">
+                        <button
+                            className={`flex-1 py-2 text-sm font-bold rounded ${activeTab === 'HOME' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
+                            onClick={() => setActiveTab('HOME')}
+                        >Domicile</button>
+                        <button
+                            className={`flex-1 py-2 text-sm font-bold rounded ${activeTab === 'OPP' ? 'bg-red-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
+                            onClick={() => setActiveTab('OPP')}
+                        >Adversaire</button>
+                    </div>
+                    <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
+                        {quarters.map(q => (
+                            <button
+                                key={q}
+                                className={`px-4 py-2 rounded font-bold text-sm transition-colors ${activeQ === q ? 'bg-orange-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
+                                onClick={() => setActiveQ(q)}
+                            >{q <= 4 ? `Q${q}` : `OT${q - 4}`}</button>
+                        ))}
+                    </div>
+                    <div className="text-sm text-slate-400 mb-2 italic">
+                        {`Titulaires ${activeTab === 'HOME' ? 'Domicile' : 'Adversaire'} pour ${activeQ <= 4 ? 'Q' + activeQ : 'OT'} (${currentList.length} selectionnes)`}
+                    </div>
+                    <div className="flex-1 overflow-y-auto bg-slate-900 rounded border border-slate-700 p-2 grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {currentPlayers.map(p => {
+                            const isSelected = currentList.includes(p.id);
+                            return (
+                                <div
+                                    key={p.id}
+                                    className={`p-2 rounded border cursor-pointer flex items-center gap-2 select-none ${isSelected ? 'bg-blue-900/50 border-blue-500' : 'bg-slate-800 border-slate-700 hover:border-slate-500'}`}
+                                    onClick={() => togglePlayer(activeTab, activeQ, p.id)}
+                                >
+                                    <div className={`w-4 h-4 rounded border flex items-center justify-center ${isSelected ? 'bg-blue-500 border-blue-500' : 'border-slate-500'}`}>
+                                        {isSelected && <span className="text-white text-xs font-bold">V</span>}
+                                    </div>
+                                    <span className="font-mono font-bold text-white">{`#${p.number}`}</span>
+                                    <span className="text-slate-300 text-xs truncate">{p.name}</span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                    <div className="mt-4 flex justify-end gap-2">
+                        <button className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-bold rounded" onClick={onClose}>Annuler</button>
+                        <button
+                            className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white text-sm font-bold rounded"
+                            onClick={handleSave}
+                        >Valider & Recalculer</button>
+                    </div>
+                </div>
+            </div>
         );
     }
 
@@ -611,38 +639,108 @@
             onAdd(action);
         };
 
-        return React.createElement('div', {
-            style: { position: 'fixed', inset: 0, zIndex: 100002, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center' },
-            onClick: e => { if (e.target === e.currentTarget) onCancel(); }
-        },
-            showZone && React.createElement(ZoneSelector, { onSelect: z => { setZone(z); setVal(z.val); setShowZone(false); }, onCancel: () => setShowZone(false) }),
-            React.createElement('div', { className: 'bg-slate-800 rounded-xl p-5 border border-slate-600 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto' },
-                React.createElement('h3', { className: 'text-white font-bold mb-4 text-sm' }, 'Ajouter une action'),
-                React.createElement('div', { className: 'grid grid-cols-2 gap-3 mb-3' },
-                    React.createElement('div', null,
-                        React.createElement('div', { className: LBL }, 'Type'),
-                        React.createElement('select', { className: SEL + ' w-full', value: type, onChange: e => { setType(e.target.value); setVictim(null); setSubOut(null); } }, ACTION_TYPES.map(t => React.createElement('option', { key: t.value, value: t.value }, t.label)))
-                    ),
-                    React.createElement('div', null,
-                        React.createElement('div', { className: LBL }, type === 'SUB' ? 'Joueur ENTRANT' : 'Joueur'),
-                        React.createElement(CombinedPlayerSelect, { value: pid === '' ? null : (pid === 'OPP' ? 'OPP' : parseInt(pid)), onChange: v => setPid(v ?? ''), homePlayers, oppPlayers, allowNone: true })
-                    )
-                ),
-                React.createElement('div', { className: 'grid grid-cols-2 gap-3 mb-3' },
-                    React.createElement('div', null, React.createElement('div', { className: LBL }, 'Quart-temps'), React.createElement('select', { className: SEL + ' w-full', value: q, onChange: e => setQ(parseInt(e.target.value)) }, quarters.map(qn => React.createElement('option', { key: qn, value: qn }, qn <= 4 ? `Q${qn}` : `OT${qn - 4}`)))),
-                    React.createElement('div', null, React.createElement('div', { className: LBL }, 'Chrono'), React.createElement('div', { className: 'flex gap-1 items-center' }, React.createElement('input', { type: 'number', min: 0, max: 10, className: SEL + ' w-12 text-center', value: timeMin, onChange: e => setTimeMin(parseInt(e.target.value) || 0) }), React.createElement('span', { className: 'text-slate-400 font-bold' }, ':'), React.createElement('input', { type: 'number', min: 0, max: 59, className: SEL + ' w-12 text-center', value: timeSec, onChange: e => setTimeSec(parseInt(e.target.value) || 0) })))
-                ),
-                type === 'SHOT' && React.createElement('div', { className: 'flex gap-3 mb-3 items-end flex-wrap' },
-                    React.createElement('div', null, React.createElement('div', { className: LBL }, 'Valeur'), React.createElement('div', { className: 'flex gap-1' }, [2, 3].map(v => React.createElement('button', { key: v, className: `px-3 py-1.5 rounded text-xs font-bold cursor-pointer ${val === v ? 'bg-orange-500 text-white' : 'bg-slate-700 text-slate-300'}`, onClick: () => setVal(v) }, `${v}pts`)))),
-                    React.createElement('div', null, React.createElement('div', { className: LBL }, 'Resultat'), React.createElement('div', { className: 'flex gap-1' }, React.createElement('button', { className: `px-3 py-1.5 rounded text-xs font-bold cursor-pointer ${made ? 'bg-green-600 text-white' : 'bg-slate-700 text-slate-300'}`, onClick: () => setMade(true) }, 'Marque'), React.createElement('button', { className: `px-3 py-1.5 rounded text-xs font-bold cursor-pointer ${!made ? 'bg-red-600 text-white' : 'bg-slate-700 text-slate-300'}`, onClick: () => setMade(false) }, 'Rate'))),
-                    React.createElement('button', { className: 'px-3 py-1.5 rounded text-xs font-bold cursor-pointer bg-slate-700 text-slate-300 hover:bg-slate-600', onClick: () => setShowZone(true) }, zone ? zone.label : 'Zone')
-                ),
-                type === 'FT' && React.createElement('div', { className: 'flex gap-3 mb-3 items-end' }, React.createElement('div', null, React.createElement('div', { className: LBL }, 'Tentes'), React.createElement('input', { type: 'number', min: 0, max: 3, className: SEL + ' w-14 text-center', value: ftAtt, onChange: e => setFtAtt(parseInt(e.target.value) || 0) })), React.createElement('div', null, React.createElement('div', { className: LBL }, 'Reussis'), React.createElement('input', { type: 'number', min: 0, max: 3, className: SEL + ' w-14 text-center', value: ftMade, onChange: e => setFtMade(parseInt(e.target.value) || 0) }))),
-                type === 'FOUL' && React.createElement('div', { className: 'mb-3 space-y-3' }, React.createElement('div', null, React.createElement('div', { className: LBL }, 'Type'), React.createElement('div', { className: 'flex gap-1 flex-wrap' }, FOUL_TYPES.map(ft => React.createElement('button', { key: ft.value, className: `px-3 py-1.5 rounded text-xs font-bold cursor-pointer border transition-all ${foulType === ft.value ? ft.color + ' border-white text-white' : 'bg-slate-800 border-slate-600 text-slate-400 hover:border-slate-400'}`, onClick: () => setFoulType(ft.value) }, ft.label)))), React.createElement('div', null, React.createElement('div', { className: LBL }, 'Provoquee par'), React.createElement(CombinedPlayerSelect, { value: victim, onChange: setVictim, homePlayers, oppPlayers, allowNone: true }))),
-                type === 'BLK' && React.createElement('div', { className: 'mb-3' }, React.createElement('div', { className: LBL }, 'Contre'), React.createElement(CombinedPlayerSelect, { value: victim, onChange: setVictim, homePlayers, oppPlayers, allowNone: true })),
-                type === 'SUB' && React.createElement('div', { className: 'mb-3' }, React.createElement('div', { className: LBL }, 'SORTANT'), React.createElement(CombinedPlayerSelect, { value: subOut, onChange: setSubOut, homePlayers, oppPlayers, allowNone: true })),
-                React.createElement('div', { className: 'flex gap-2 justify-end mt-4' }, React.createElement('button', { className: 'px-4 py-2 rounded bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer hover:bg-slate-600', onClick: onCancel }, 'Annuler'), React.createElement('button', { className: 'px-4 py-2 rounded bg-orange-500 text-white text-xs font-semibold cursor-pointer hover:bg-orange-600 disabled:opacity-40', onClick: handleSubmit, disabled: !pid && pid !== 0 }, 'Ajouter'))
-            )
+        return (
+            <div
+                style={{ position: 'fixed', inset: 0, zIndex: 100002, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                onClick={e => { if (e.target === e.currentTarget) onCancel(); }}
+            >
+                {showZone && <ZoneSelector onSelect={z => { setZone(z); setVal(z.val); setShowZone(false); }} onCancel={() => setShowZone(false)} />}
+                <div className="bg-slate-800 rounded-xl p-5 border border-slate-600 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
+                    <h3 className="text-white font-bold mb-4 text-sm">Ajouter une action</h3>
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                        <div>
+                            <div className={LBL}>Type</div>
+                            <select className={SEL + ' w-full'} value={type} onChange={e => { setType(e.target.value); setVictim(null); setSubOut(null); }}>
+                                {ACTION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <div className={LBL}>{type === 'SUB' ? 'Joueur ENTRANT' : 'Joueur'}</div>
+                            <CombinedPlayerSelect value={pid === '' ? null : (pid === 'OPP' ? 'OPP' : parseInt(pid))} onChange={v => setPid(v ?? '')} homePlayers={homePlayers} oppPlayers={oppPlayers} allowNone={true} />
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                        <div>
+                            <div className={LBL}>Quart-temps</div>
+                            <select className={SEL + ' w-full'} value={q} onChange={e => setQ(parseInt(e.target.value))}>
+                                {quarters.map(qn => <option key={qn} value={qn}>{qn <= 4 ? `Q${qn}` : `OT${qn - 4}`}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <div className={LBL}>Chrono</div>
+                            <div className="flex gap-1 items-center">
+                                <input type="number" min="0" max="10" className={SEL + ' w-12 text-center'} value={timeMin} onChange={e => setTimeMin(parseInt(e.target.value) || 0)} />
+                                <span className="text-slate-400 font-bold">:</span>
+                                <input type="number" min="0" max="59" className={SEL + ' w-12 text-center'} value={timeSec} onChange={e => setTimeSec(parseInt(e.target.value) || 0)} />
+                            </div>
+                        </div>
+                    </div>
+                    {type === 'SHOT' && (
+                        <div className="flex gap-3 mb-3 items-end flex-wrap">
+                            <div>
+                                <div className={LBL}>Valeur</div>
+                                <div className="flex gap-1">
+                                    {[2, 3].map(v => (
+                                        <button key={v} className={`px-3 py-1.5 rounded text-xs font-bold cursor-pointer ${val === v ? 'bg-orange-500 text-white' : 'bg-slate-700 text-slate-300'}`} onClick={() => setVal(v)}>{`${v}pts`}</button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div>
+                                <div className={LBL}>Resultat</div>
+                                <div className="flex gap-1">
+                                    <button className={`px-3 py-1.5 rounded text-xs font-bold cursor-pointer ${made ? 'bg-green-600 text-white' : 'bg-slate-700 text-slate-300'}`} onClick={() => setMade(true)}>Marque</button>
+                                    <button className={`px-3 py-1.5 rounded text-xs font-bold cursor-pointer ${!made ? 'bg-red-600 text-white' : 'bg-slate-700 text-slate-300'}`} onClick={() => setMade(false)}>Rate</button>
+                                </div>
+                            </div>
+                            <button className="px-3 py-1.5 rounded text-xs font-bold cursor-pointer bg-slate-700 text-slate-300 hover:bg-slate-600" onClick={() => setShowZone(true)}>{zone ? zone.label : 'Zone'}</button>
+                        </div>
+                    )}
+                    {type === 'FT' && (
+                        <div className="flex gap-3 mb-3 items-end">
+                            <div>
+                                <div className={LBL}>Tentes</div>
+                                <input type="number" min="0" max="3" className={SEL + ' w-14 text-center'} value={ftAtt} onChange={e => setFtAtt(parseInt(e.target.value) || 0)} />
+                            </div>
+                            <div>
+                                <div className={LBL}>Reussis</div>
+                                <input type="number" min="0" max="3" className={SEL + ' w-14 text-center'} value={ftMade} onChange={e => setFtMade(parseInt(e.target.value) || 0)} />
+                            </div>
+                        </div>
+                    )}
+                    {type === 'FOUL' && (
+                        <div className="mb-3 space-y-3">
+                            <div>
+                                <div className={LBL}>Type</div>
+                                <div className="flex gap-1 flex-wrap">
+                                    {FOUL_TYPES.map(ft => (
+                                        <button key={ft.value} className={`px-3 py-1.5 rounded text-xs font-bold cursor-pointer border transition-all ${foulType === ft.value ? ft.color + ' border-white text-white' : 'bg-slate-800 border-slate-600 text-slate-400 hover:border-slate-400'}`} onClick={() => setFoulType(ft.value)}>{ft.label}</button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div>
+                                <div className={LBL}>Provoquee par</div>
+                                <CombinedPlayerSelect value={victim} onChange={setVictim} homePlayers={homePlayers} oppPlayers={oppPlayers} allowNone={true} />
+                            </div>
+                        </div>
+                    )}
+                    {type === 'BLK' && (
+                        <div className="mb-3">
+                            <div className={LBL}>Contre</div>
+                            <CombinedPlayerSelect value={victim} onChange={setVictim} homePlayers={homePlayers} oppPlayers={oppPlayers} allowNone={true} />
+                        </div>
+                    )}
+                    {type === 'SUB' && (
+                        <div className="mb-3">
+                            <div className={LBL}>SORTANT</div>
+                            <CombinedPlayerSelect value={subOut} onChange={setSubOut} homePlayers={homePlayers} oppPlayers={oppPlayers} allowNone={true} />
+                        </div>
+                    )}
+                    <div className="flex gap-2 justify-end mt-4">
+                        <button className="px-4 py-2 rounded bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer hover:bg-slate-600" onClick={onCancel}>Annuler</button>
+                        <button className="px-4 py-2 rounded bg-orange-500 text-white text-xs font-semibold cursor-pointer hover:bg-orange-600 disabled:opacity-40" onClick={handleSubmit} disabled={!pid && pid !== 0}>Ajouter</button>
+                    </div>
+                </div>
+            </div>
         );
     }
 
@@ -656,8 +754,10 @@
 
         const [filterQ, setFilterQ] = useState(0);
         const [filterPid, setFilterPid] = useState('all');
+        const [filterType, setFilterType] = useState('all');
         const [editingId, setEditingId] = useState(null);
         const [editData, setEditData] = useState({});
+        const [editDate, setEditDate] = useState('');
         const [showAddForm, setShowAddForm] = useState(false);
         const [showZoneFor, setShowZoneFor] = useState(null);
         const [dirty, setDirty] = useState(false);
@@ -677,223 +777,232 @@
             setCurrentOppStarters(game?.opponentStarters || {});
 
             setDirty(false);
-
-            // ============================================================
-// DEBUG MINUTES — Coller dans la console ou ajouter en bas de PlayByPlayEditor.js
-// Usage : window.debugMinutes(game)
-//   - game = objet match complet (avec actions, starters, opponentStarters, etc.)
-//   - Affiche dans la console chaque segment de temps credite par joueur
-// ============================================================
-
-window.debugMinutes = function(game) {
-    if (!game) { console.error('Usage: debugMinutes(game) — passer un objet match'); return; }
-
-    const QT_DURATION = 600;
-    const fmt = (s) => `${Math.floor(s/60)}:${(s%60).toString().padStart(2,'0')}`;
-
-    function isOpp(pid) {
-        if (pid === 'OPP') return true;
-        const n = typeof pid === 'number' ? pid : parseInt(pid);
-        return !isNaN(n) && n >= 1000;
-    }
-
-    function pid(val) {
-        if (val === 'OPP') return 'OPP';
-        const p = parseInt(val);
-        return isNaN(p) ? val : p;
-    }
-
-    // Extraire les noms pour l'affichage
-    const names = {};
-    if (game.playerStats) {
-        Object.entries(game.playerStats).forEach(([id, s]) => {
-            names[id] = `#${s.number || id} ${s.name || ''}`.trim();
-        });
-    }
-    if (game.opponentPlayerStats) {
-        Object.entries(game.opponentPlayerStats).forEach(([id, s]) => {
-            names[id] = `[OPP] #${s.number || (parseInt(id) - 1000)} ${s.name || ''}`.trim();
-        });
-    }
-    const pName = (id) => names[id] || `#${id}`;
-
-    const homeStarters = game.starters || {};
-    const oppStarters = game.opponentStarters || {};
-    const actions = game.actions || [];
-    const allSubs = actions.filter(a => a.type === 'SUB');
-
-    // Detecter les QTs presents
-    const qSet = new Set(actions.map(a => a.q || 1));
-    [1,2,3,4].forEach(q => qSet.add(q));
-    const quarters = Array.from(qSet).sort((a,b) => a - b);
-
-    console.log('%c=== DEBUG MINUTES ===', 'color: #f97316; font-size: 16px; font-weight: bold');
-    console.log(`Match: ${game.opponent || '?'} | ${actions.length} actions | ${allSubs.length} SUBs`);
-    console.log('Quarters detectes:', quarters);
-
-    // ---------- DIAGNOSTIC DES DONNEES BRUTES ----------
-    console.group('%c1. DONNEES BRUTES', 'color: #60a5fa; font-weight: bold');
-    
-    console.log('%cStarters Domicile:', 'color: #3b82f6');
-    quarters.forEach(q => {
-        const s = homeStarters[q] || [];
-        const label = s.length ? s.map(id => pName(id)).join(', ') : '⚠️ VIDE';
-        console.log(`  Q${q}: [${s.length}] ${label}`);
-    });
-
-    console.log('%cStarters Adversaire:', 'color: #ef4444');
-    quarters.forEach(q => {
-        const s = oppStarters[q] || [];
-        const label = s.length ? s.map(id => pName(id)).join(', ') : '⚠️ VIDE';
-        console.log(`  Q${q}: [${s.length}] ${label}`);
-    });
-
-    console.log('%cTous les SUBs (chronologique):', 'color: #a78bfa');
-    const sortedSubs = [...allSubs].sort((a,b) => {
-        if ((a.q||1) !== (b.q||1)) return (a.q||1) - (b.q||1);
-        return (b.time||0) - (a.time||0);
-    });
-    sortedSubs.forEach(s => {
-        const p = pid(s.pid ?? s.playerId);
-        const out = pid(s.subOut);
-        const team = isOpp(p) ? '🔴OPP' : '🔵HOME';
-        console.log(`  Q${s.q||1} ${fmt(s.time||0)} | ${team} | IN: ${pName(p)} | OUT: ${pName(out)}`);
-    });
-    console.groupEnd();
-
-    // ---------- SIMULATION PAS A PAS ----------
-    const totals = {};
-
-    function simulateTeam(teamLabel, startersData, belongsFn, color) {
-        console.group(`%c2. SIMULATION ${teamLabel}`, `color: ${color}; font-weight: bold`);
-
-        quarters.forEach(q => {
-            const starters = (startersData[q] || []).map(pid);
-            const onCourt = new Set(starters);
-
-            if (starters.length === 0) {
-                console.warn(`  Q${q}: ⚠️ Aucun starter — tout le QT sera non comptabilise`);
-                return;
-            }
-
-            // Filtrer les SUBs de cette equipe pour ce QT
-            const qSubs = actions
-                .filter(a => (a.q||1) === q && a.type === 'SUB' && belongsFn(pid(a.pid ?? a.playerId)))
-                .map(a => ({...a, time: a.time || 0}))
-                .sort((a,b) => b.time - a.time);
-
-            console.group(`Q${q} — ${starters.length} starters, ${qSubs.length} SUBs`);
-            console.log(`  Starters: ${starters.map(pName).join(', ')}`);
-
-            let lastTime = QT_DURATION;
-            let segIdx = 0;
-
-            qSubs.forEach(sub => {
-                const currentTime = sub.time;
-                const duration = lastTime - currentTime;
-                const pIn = pid(sub.pid ?? sub.playerId);
-                const pOut = pid(sub.subOut);
-
-                segIdx++;
-                const courtList = Array.from(onCourt).map(pName).join(', ');
-
-                if (duration > 0) {
-                    console.log(
-                        `  Seg${segIdx}: ${fmt(lastTime)} → ${fmt(currentTime)} = %c${fmt(duration)} (${duration}s)%c | Sur terrain: [${courtList}]`,
-                        'color: #22c55e; font-weight: bold', 'color: inherit'
-                    );
-                    onCourt.forEach(p => { totals[p] = (totals[p] || 0) + duration; });
-                } else if (duration === 0) {
-                    console.log(`  Seg${segIdx}: ${fmt(lastTime)} → ${fmt(currentTime)} = 0s (SUB simultane)`);
+            if (game?.date) {
+                const parts = game.date.split('/');
+                if (parts.length === 3) {
+                    setEditDate(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
                 } else {
-                    console.warn(`  Seg${segIdx}: ⚠️ DUREE NEGATIVE ${duration}s — lastTime=${fmt(lastTime)} sub.time=${fmt(currentTime)}`);
+                    setEditDate(game.date); // fallback ISO
                 }
-
-                console.log(`    ↪ IN: ${pName(pIn)} | OUT: ${pName(pOut)}`);
-
-                if (pOut) {
-                    if (!onCourt.has(pOut)) {
-                        console.warn(`    ⚠️ ${pName(pOut)} n'etait PAS sur le terrain au moment du SUB!`);
-                    }
-                    onCourt.delete(pOut);
-                }
-                if (pIn) {
-                    if (onCourt.has(pIn)) {
-                        console.warn(`    ⚠️ ${pName(pIn)} etait DEJA sur le terrain!`);
-                    }
-                    onCourt.add(pIn);
-                }
-
-                lastTime = currentTime;
-            });
-
-            // Segment final
-            if (lastTime > 0) {
-                segIdx++;
-                const courtList = Array.from(onCourt).map(pName).join(', ');
-                console.log(
-                    `  Seg${segIdx}: ${fmt(lastTime)} → 0:00 = %c${fmt(lastTime)} (${lastTime}s)%c | Sur terrain: [${courtList}]`,
-                    'color: #22c55e; font-weight: bold', 'color: inherit'
-                );
-                onCourt.forEach(p => { totals[p] = (totals[p] || 0) + lastTime; });
+            } else {
+                setEditDate('');
             }
+            // ============================================================
+            // DEBUG MINUTES — Coller dans la console ou ajouter en bas de PlayByPlayEditor.js
+            // Usage : window.debugMinutes(game)
+            //   - game = objet match complet (avec actions, starters, opponentStarters, etc.)
+            //   - Affiche dans la console chaque segment de temps credite par joueur
+            // ============================================================
 
-            // Verification : le total des segments doit = 600s
-            const totalSeg = QT_DURATION; // devrait toujours etre 600
-            console.log(`  Total Q${q}: ${fmt(QT_DURATION)} attendu`);
-            console.groupEnd();
-        });
+            window.debugMinutes = function (game) {
+                if (!game) { console.error('Usage: debugMinutes(game) — passer un objet match'); return; }
 
-        console.groupEnd();
-    }
+                const QT_DURATION = 600;
+                const fmt = (s) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 
-    simulateTeam('DOMICILE', homeStarters, p => !isOpp(p), '#3b82f6');
-    simulateTeam('ADVERSAIRE', oppStarters, p => isOpp(p), '#ef4444');
+                function isOpp(pid) {
+                    if (pid === 'OPP') return true;
+                    const n = typeof pid === 'number' ? pid : parseInt(pid);
+                    return !isNaN(n) && n >= 1000;
+                }
 
-    // ---------- RESUME FINAL ----------
-    console.group('%c3. RESUME FINAL (secondes → minutes)', 'color: #f97316; font-weight: bold');
+                function pid(val) {
+                    if (val === 'OPP') return 'OPP';
+                    const p = parseInt(val);
+                    return isNaN(p) ? val : p;
+                }
 
-    const homeEntries = [];
-    const oppEntries = [];
+                // Extraire les noms pour l'affichage
+                const names = {};
+                if (game.playerStats) {
+                    Object.entries(game.playerStats).forEach(([id, s]) => {
+                        names[id] = `#${s.number || id} ${s.name || ''}`.trim();
+                    });
+                }
+                if (game.opponentPlayerStats) {
+                    Object.entries(game.opponentPlayerStats).forEach(([id, s]) => {
+                        names[id] = `[OPP] #${s.number || (parseInt(id) - 1000)} ${s.name || ''}`.trim();
+                    });
+                }
+                const pName = (id) => names[id] || `#${id}`;
 
-    Object.entries(totals).forEach(([id, sec]) => {
-        const entry = { id, name: pName(id), seconds: sec, minutes: Math.round(sec / 60), exact: (sec / 60).toFixed(1) };
-        if (isOpp(parseInt(id))) oppEntries.push(entry);
-        else homeEntries.push(entry);
-    });
+                const homeStarters = game.starters || {};
+                const oppStarters = game.opponentStarters || {};
+                const actions = game.actions || [];
+                const allSubs = actions.filter(a => a.type === 'SUB');
 
-    homeEntries.sort((a,b) => b.seconds - a.seconds);
-    oppEntries.sort((a,b) => b.seconds - a.seconds);
+                // Detecter les QTs presents
+                const qSet = new Set(actions.map(a => a.q || 1));
+                [1, 2, 3, 4].forEach(q => qSet.add(q));
+                const quarters = Array.from(qSet).sort((a, b) => a - b);
 
-    console.log('%cDomicile:', 'color: #3b82f6; font-weight: bold');
-    console.table(homeEntries.map(e => ({ Joueur: e.name, Secondes: e.seconds, 'Min (arrondi)': e.minutes, 'Min (exact)': e.exact })));
+                console.log('%c=== DEBUG MINUTES ===', 'color: #f97316; font-size: 16px; font-weight: bold');
+                console.log(`Match: ${game.opponent || '?'} | ${actions.length} actions | ${allSubs.length} SUBs`);
+                console.log('Quarters detectes:', quarters);
 
-    if (oppEntries.length) {
-        console.log('%cAdversaire:', 'color: #ef4444; font-weight: bold');
-        console.table(oppEntries.map(e => ({ Joueur: e.name, Secondes: e.seconds, 'Min (arrondi)': e.minutes, 'Min (exact)': e.exact })));
-    }
+                // ---------- DIAGNOSTIC DES DONNEES BRUTES ----------
+                console.group('%c1. DONNEES BRUTES', 'color: #60a5fa; font-weight: bold');
 
-    // Verification par QT: chaque joueur starter sans SUB = 600s
-    const maxExpected = quarters.length * QT_DURATION;
-    const anomalies = Object.entries(totals).filter(([id, sec]) => sec > maxExpected || sec < 0);
-    if (anomalies.length) {
-        console.warn('%c⚠️ ANOMALIES:', 'color: #ef4444; font-weight: bold');
-        anomalies.forEach(([id, sec]) => {
-            console.warn(`  ${pName(id)}: ${sec}s (${(sec/60).toFixed(1)} min) — max attendu: ${maxExpected}s`);
-        });
-    } else {
-        console.log('%c✅ Aucune anomalie detectee', 'color: #22c55e');
-    }
+                console.log('%cStarters Domicile:', 'color: #3b82f6');
+                quarters.forEach(q => {
+                    const s = homeStarters[q] || [];
+                    const label = s.length ? s.map(id => pName(id)).join(', ') : '⚠️ VIDE';
+                    console.log(`  Q${q}: [${s.length}] ${label}`);
+                });
 
-    console.groupEnd();
+                console.log('%cStarters Adversaire:', 'color: #ef4444');
+                quarters.forEach(q => {
+                    const s = oppStarters[q] || [];
+                    const label = s.length ? s.map(id => pName(id)).join(', ') : '⚠️ VIDE';
+                    console.log(`  Q${q}: [${s.length}] ${label}`);
+                });
 
-    // Retourner les donnees pour inspection manuelle
-    return { totals, homeEntries, oppEntries, quarters, homeStarters, oppStarters, subs: sortedSubs };
-};
+                console.log('%cTous les SUBs (chronologique):', 'color: #a78bfa');
+                const sortedSubs = [...allSubs].sort((a, b) => {
+                    if ((a.q || 1) !== (b.q || 1)) return (a.q || 1) - (b.q || 1);
+                    return (b.time || 0) - (a.time || 0);
+                });
+                sortedSubs.forEach(s => {
+                    const p = pid(s.pid ?? s.playerId);
+                    const out = pid(s.subOut);
+                    const team = isOpp(p) ? '🔴OPP' : '🔵HOME';
+                    console.log(`  Q${s.q || 1} ${fmt(s.time || 0)} | ${team} | IN: ${pName(p)} | OUT: ${pName(out)}`);
+                });
+                console.groupEnd();
 
-// Raccourci pour appeler depuis l'editeur PBP (si le game est dans le state React)
-// Usage alternatif : debugMinutes(monObjetGame)
-console.log('debugMinutes() pret. Usage: debugMinutes(game)');
+                // ---------- SIMULATION PAS A PAS ----------
+                const totals = {};
+
+                function simulateTeam(teamLabel, startersData, belongsFn, color) {
+                    console.group(`%c2. SIMULATION ${teamLabel}`, `color: ${color}; font-weight: bold`);
+
+                    quarters.forEach(q => {
+                        const starters = (startersData[q] || []).map(pid);
+                        const onCourt = new Set(starters);
+
+                        if (starters.length === 0) {
+                            console.warn(`  Q${q}: ⚠️ Aucun starter — tout le QT sera non comptabilise`);
+                            return;
+                        }
+
+                        // Filtrer les SUBs de cette equipe pour ce QT
+                        const qSubs = actions
+                            .filter(a => (a.q || 1) === q && a.type === 'SUB' && belongsFn(pid(a.pid ?? a.playerId)))
+                            .map(a => ({ ...a, time: a.time || 0 }))
+                            .sort((a, b) => b.time - a.time);
+
+                        console.group(`Q${q} — ${starters.length} starters, ${qSubs.length} SUBs`);
+                        console.log(`  Starters: ${starters.map(pName).join(', ')}`);
+
+                        let lastTime = QT_DURATION;
+                        let segIdx = 0;
+
+                        qSubs.forEach(sub => {
+                            const currentTime = sub.time;
+                            const duration = lastTime - currentTime;
+                            const pIn = pid(sub.pid ?? sub.playerId);
+                            const pOut = pid(sub.subOut);
+
+                            segIdx++;
+                            const courtList = Array.from(onCourt).map(pName).join(', ');
+
+                            if (duration > 0) {
+                                console.log(
+                                    `  Seg${segIdx}: ${fmt(lastTime)} → ${fmt(currentTime)} = %c${fmt(duration)} (${duration}s)%c | Sur terrain: [${courtList}]`,
+                                    'color: #22c55e; font-weight: bold', 'color: inherit'
+                                );
+                                onCourt.forEach(p => { totals[p] = (totals[p] || 0) + duration; });
+                            } else if (duration === 0) {
+                                console.log(`  Seg${segIdx}: ${fmt(lastTime)} → ${fmt(currentTime)} = 0s (SUB simultane)`);
+                            } else {
+                                console.warn(`  Seg${segIdx}: ⚠️ DUREE NEGATIVE ${duration}s — lastTime=${fmt(lastTime)} sub.time=${fmt(currentTime)}`);
+                            }
+
+                            console.log(`    ↪ IN: ${pName(pIn)} | OUT: ${pName(pOut)}`);
+
+                            if (pOut) {
+                                if (!onCourt.has(pOut)) {
+                                    console.warn(`    ⚠️ ${pName(pOut)} n'etait PAS sur le terrain au moment du SUB!`);
+                                }
+                                onCourt.delete(pOut);
+                            }
+                            if (pIn) {
+                                if (onCourt.has(pIn)) {
+                                    console.warn(`    ⚠️ ${pName(pIn)} etait DEJA sur le terrain!`);
+                                }
+                                onCourt.add(pIn);
+                            }
+
+                            lastTime = currentTime;
+                        });
+
+                        // Segment final
+                        if (lastTime > 0) {
+                            segIdx++;
+                            const courtList = Array.from(onCourt).map(pName).join(', ');
+                            console.log(
+                                `  Seg${segIdx}: ${fmt(lastTime)} → 0:00 = %c${fmt(lastTime)} (${lastTime}s)%c | Sur terrain: [${courtList}]`,
+                                'color: #22c55e; font-weight: bold', 'color: inherit'
+                            );
+                            onCourt.forEach(p => { totals[p] = (totals[p] || 0) + lastTime; });
+                        }
+
+                        // Verification : le total des segments doit = 600s
+                        const totalSeg = QT_DURATION; // devrait toujours etre 600
+                        console.log(`  Total Q${q}: ${fmt(QT_DURATION)} attendu`);
+                        console.groupEnd();
+                    });
+
+                    console.groupEnd();
+                }
+
+                simulateTeam('DOMICILE', homeStarters, p => !isOpp(p), '#3b82f6');
+                simulateTeam('ADVERSAIRE', oppStarters, p => isOpp(p), '#ef4444');
+
+                // ---------- RESUME FINAL ----------
+                console.group('%c3. RESUME FINAL (secondes → minutes)', 'color: #f97316; font-weight: bold');
+
+                const homeEntries = [];
+                const oppEntries = [];
+
+                Object.entries(totals).forEach(([id, sec]) => {
+                    const entry = { id, name: pName(id), seconds: sec, minutes: Math.round(sec / 60), exact: (sec / 60).toFixed(1) };
+                    if (isOpp(parseInt(id))) oppEntries.push(entry);
+                    else homeEntries.push(entry);
+                });
+
+                homeEntries.sort((a, b) => b.seconds - a.seconds);
+                oppEntries.sort((a, b) => b.seconds - a.seconds);
+
+                console.log('%cDomicile:', 'color: #3b82f6; font-weight: bold');
+                console.table(homeEntries.map(e => ({ Joueur: e.name, Secondes: e.seconds, 'Min (arrondi)': e.minutes, 'Min (exact)': e.exact })));
+
+                if (oppEntries.length) {
+                    console.log('%cAdversaire:', 'color: #ef4444; font-weight: bold');
+                    console.table(oppEntries.map(e => ({ Joueur: e.name, Secondes: e.seconds, 'Min (arrondi)': e.minutes, 'Min (exact)': e.exact })));
+                }
+
+                // Verification par QT: chaque joueur starter sans SUB = 600s
+                const maxExpected = quarters.length * QT_DURATION;
+                const anomalies = Object.entries(totals).filter(([id, sec]) => sec > maxExpected || sec < 0);
+                if (anomalies.length) {
+                    console.warn('%c⚠️ ANOMALIES:', 'color: #ef4444; font-weight: bold');
+                    anomalies.forEach(([id, sec]) => {
+                        console.warn(`  ${pName(id)}: ${sec}s (${(sec / 60).toFixed(1)} min) — max attendu: ${maxExpected}s`);
+                    });
+                } else {
+                    console.log('%c✅ Aucune anomalie detectee', 'color: #22c55e');
+                }
+
+                console.groupEnd();
+
+                // Retourner les donnees pour inspection manuelle
+                return { totals, homeEntries, oppEntries, quarters, homeStarters, oppStarters, subs: sortedSubs };
+            };
+
+            // Raccourci pour appeler depuis l'editeur PBP (si le game est dans le state React)
+            // Usage alternatif : debugMinutes(monObjetGame)
+            console.log('debugMinutes() pret. Usage: debugMinutes(game)');
         }, [game]);
 
         const quarters = useMemo(() => {
@@ -921,13 +1030,14 @@ console.log('debugMinutes() pret. Usage: debugMinutes(game)');
                     return pid === fp;
                 });
             }
+            if (filterType !== 'all') arr = arr.filter(a => a.type === filterType);
             arr.sort((a, b) => {
                 const qa = a.q || 1, qb = b.q || 1;
                 if (qa !== qb) return qa - qb;
                 return (b.time ?? 0) - (a.time ?? 0);
             });
             return arr;
-        }, [actions, filterQ, filterPid]);
+        }, [actions, filterQ, filterPid, filterType]);
 
         const stats = useMemo(() => recalcFullGame(actions, players, oppPlayers), [actions, players, oppPlayers]);
 
@@ -1012,9 +1122,12 @@ console.log('debugMinutes() pret. Usage: debugMinutes(game)');
                         mergedHomeStats[pid] = merged;
                     }
                 });
+                const [y, m, d] = editDate ? editDate.split('-') : [null, null, null];
+                const formattedDate = y ? `${d}/${m}/${y}` : game.date;
 
                 const updatedGame = {
                     ...game,
+                    date: formattedDate,
                     actions: cleanActions,
                     starters: currentStarters,
                     opponentStarters: currentOppStarters,
@@ -1054,110 +1167,182 @@ console.log('debugMinutes() pret. Usage: debugMinutes(game)');
         const formatTime = (time) => { const m = Math.floor((time || 0) / 60); const s = (time || 0) % 60; return `${m}:${s.toString().padStart(2, '0')}`; };
 
         // ---- RENDER ----
-        return React.createElement('div', {
-            className: 'flex flex-col', style: { position: 'fixed', inset: 0, zIndex: 99999, background: '#0a0f1a' }
-        },
-            showZoneFor && React.createElement(ZoneSelector, { onSelect: handleZoneSelect, onCancel: () => setShowZoneFor(null) }),
-            showAddForm && React.createElement(AddActionForm, { homePlayers: players, oppPlayers, onAdd: handleAdd, onCancel: () => setShowAddForm(false), quarters: quarterOptions }),
-            toast && React.createElement('div', { style: { position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 100001 }, className: `px-4 py-2 rounded-full text-xs font-bold ${toast.isError ? 'bg-red-600' : 'bg-green-600'} text-white` }, toast.msg),
+        return (
+            <div className="flex flex-col" style={{ position: 'fixed', inset: 0, zIndex: 99999, background: '#0a0f1a' }}>
+                {showZoneFor && <ZoneSelector onSelect={handleZoneSelect} onCancel={() => setShowZoneFor(null)} />}
+                {showAddForm && <AddActionForm homePlayers={players} oppPlayers={oppPlayers} onAdd={handleAdd} onCancel={() => setShowAddForm(false)} quarters={quarterOptions} />}
+                {toast && (
+                    <div style={{ position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 100001 }} className={`px-4 py-2 rounded-full text-xs font-bold ${toast.isError ? 'bg-red-600' : 'bg-green-600'} text-white`}>
+                        {toast.msg}
+                    </div>
+                )}
+                {showAudit && <MinutesAuditModal intervals={playIntervals} players={players} oppPlayers={oppPlayers} onClose={() => setShowAudit(false)} />}
+                {showStarters && <StartersEditorModal homeStarters={currentStarters} oppStarters={currentOppStarters} players={players} oppPlayers={oppPlayers} quarterOptions={quarterOptions} onSave={handleUpdateStarters} onClose={() => setShowStarters(false)} />}
 
-            showAudit && React.createElement(MinutesAuditModal, { intervals: playIntervals, players: players, oppPlayers: oppPlayers, onClose: () => setShowAudit(false) }),
+                {/* HEADER */}
+                <div className="flex items-center justify-between px-4 py-3 shrink-0" style={{ background: '#111827', borderBottom: '2px solid #f97316' }}>
+                    <div className="flex items-center gap-3">
+                        <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-700 hover:bg-red-600 text-white text-sm font-bold cursor-pointer" onClick={() => { if (dirty && !confirm('Modifications non sauvegardees. Quitter ?')) return; onClose(); }}>X Fermer</button>
+                        <div className="hidden md:flex items-center gap-3">
+                            <span className="text-slate-400 text-xs font-bold uppercase">PBP</span>
+                            <input
+                                type="date"
+                                value={editDate}
+                                onChange={e => { setEditDate(e.target.value); setDirty(true); }}
+                                className="bg-slate-800 border border-slate-600 text-white text-xs rounded px-2 py-1 font-mono cursor-pointer"
+                            />
+                            <span className="text-slate-400 text-sm font-bold">{`vs ${game?.opponent || 'Match'}`}</span>
+                        </div>
+                        {dirty && <span className="text-orange-400 text-[10px] font-bold bg-orange-900 px-2 py-0.5 rounded-full animate-pulse">Modifie</span>}
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button className="px-3 py-2 rounded bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold" onClick={() => exportMatchLogsCSV(actions, players, oppPlayers)}>CSV</button>
+                        <button className="px-3 py-2 rounded bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold" onClick={() => setShowStarters(true)}>Starters</button>
+                        <button className="px-3 py-2 rounded bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold" onClick={() => setShowAudit(true)}>Verif.</button>
+                        <button className="px-5 py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white text-sm font-bold cursor-pointer disabled:opacity-40 flex items-center gap-2" onClick={handleSave} disabled={!dirty || saving}>{saving ? '...' : 'Sauver'}</button>
+                    </div>
+                </div>
 
-            showStarters && React.createElement(StartersEditorModal, {
-                homeStarters: currentStarters,
-                oppStarters: currentOppStarters,
-                players: players,
-                oppPlayers: oppPlayers,
-                quarterOptions: quarterOptions,
-                onSave: handleUpdateStarters,
-                onClose: () => setShowStarters(false)
-            }),
+                {/* FILTERS & STATS SUMMARY */}
+                <div className="px-4 py-2 bg-slate-900 border-b border-slate-800 flex items-center gap-6 text-xs shrink-0 overflow-x-auto">
+                    <div className="flex items-center gap-2">
+                        <span className="text-slate-500">Score:</span>
+                        <span className="text-blue-400 font-bold text-sm">{stats.homeScore}</span>
+                        <span className="text-slate-600">-</span>
+                        <span className="text-red-400 font-bold text-sm">{stats.awayScore}</span>
+                    </div>
+                    <div className="text-slate-500">{`${actions.length} actions`}</div>
+                    {hasSubs && <div className="text-cyan-500 text-[10px]">{`${actions.filter(a => a.type === 'SUB').length} changements`}</div>}
+                    <div className="flex items-center gap-3 ml-auto">
+                        <select className={SEL} value={filterQ} onChange={e => setFilterQ(parseInt(e.target.value))}>
+                            <option value={0}>Tous QT</option>
+                            {quarterOptions.map(q => <option key={q} value={q}>{q <= 4 ? `Q${q}` : `OT${q - 4}`}</option>)}
+                        </select>
+                        <select className={SEL} value={filterPid} onChange={e => setFilterPid(e.target.value)}>
+                            <option value="all">Tous joueurs</option>
+                            <option value="OPP">Tous adversaires</option>
+                            <optgroup label="Domicile">
+                                {players.map(p => <option key={p.id} value={p.id}>{`#${p.number} ${p.name}`}</option>)}
+                            </optgroup>
+                            {oppPlayers.length > 0 && (
+                                <optgroup label="Adversaire">
+                                    {oppPlayers.map(p => <option key={p.id} value={p.id}>{`#${p.number} ${p.name}`}</option>)}
+                                </optgroup>
+                            )}
+                        </select>
+                        <select className={SEL} value={filterType} onChange={e => setFilterType(e.target.value)}>
+                            <option value="all">Tous types</option>
+                            {ACTION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                        </select>
+                        <button className="px-3 py-1.5 rounded bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold cursor-pointer" onClick={() => setShowAddForm(true)}>+ Action</button>
+                    </div>
+                </div>
 
-            // HEADER
-            React.createElement('div', { className: 'flex items-center justify-between px-4 py-3 shrink-0', style: { background: '#111827', borderBottom: '2px solid #f97316' } },
-                React.createElement('div', { className: 'flex items-center gap-3' },
-                    React.createElement('button', { className: 'flex items-center gap-2 px-4 py-2 rounded-lg bg-red-700 hover:bg-red-600 text-white text-sm font-bold cursor-pointer', onClick: () => { if (dirty && !confirm('Modifications non sauvegardees. Quitter ?')) return; onClose(); } }, 'X Fermer'),
-                    React.createElement('h2', { className: 'text-white font-bold text-sm hidden md:block' }, `PBP -- ${game?.opponent || 'Match'}`),
-                    dirty && React.createElement('span', { className: 'text-orange-400 text-[10px] font-bold bg-orange-900 px-2 py-0.5 rounded-full animate-pulse' }, 'Modifie')
-                ),
-                React.createElement('div', { className: 'flex items-center gap-2' },
-                    React.createElement('button', { className: 'px-3 py-2 rounded bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold', onClick: () => exportMatchLogsCSV(actions, players, oppPlayers) }, 'CSV'),
-                    React.createElement('button', { className: 'px-3 py-2 rounded bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold', onClick: () => setShowStarters(true) }, 'Starters'),
-                    React.createElement('button', { className: 'px-3 py-2 rounded bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold', onClick: () => setShowAudit(true) }, 'Verif.'),
-                    React.createElement('button', { className: 'px-5 py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white text-sm font-bold cursor-pointer disabled:opacity-40 flex items-center gap-2', onClick: handleSave, disabled: !dirty || saving }, saving ? '...' : 'Sauver')
-                )
-            ),
+                <MiniBoxscore stats={stats} players={players} oppPlayers={oppPlayers} playerMap={playerMap} minutesFromSubs={minutesFromSubs} hasSubs={hasSubs} />
 
-            // FILTERS & STATS SUMMARY
-            React.createElement('div', { className: 'px-4 py-2 bg-slate-900 border-b border-slate-800 flex items-center gap-6 text-xs shrink-0 overflow-x-auto' },
-                React.createElement('div', { className: 'flex items-center gap-2' }, React.createElement('span', { className: 'text-slate-500' }, 'Score:'), React.createElement('span', { className: 'text-blue-400 font-bold text-sm' }, stats.homeScore), React.createElement('span', { className: 'text-slate-600' }, '-'), React.createElement('span', { className: 'text-red-400 font-bold text-sm' }, stats.awayScore)),
-                React.createElement('div', { className: 'text-slate-500' }, `${actions.length} actions`),
-                hasSubs && React.createElement('div', { className: 'text-cyan-500 text-[10px]' }, `${actions.filter(a => a.type === 'SUB').length} changements`),
-                React.createElement('div', { className: 'flex items-center gap-3 ml-auto' },
-                    React.createElement('select', { className: SEL, value: filterQ, onChange: e => setFilterQ(parseInt(e.target.value)) }, React.createElement('option', { value: 0 }, 'Tous QT'), quarterOptions.map(q => React.createElement('option', { key: q, value: q }, q <= 4 ? `Q${q}` : `OT${q - 4}`))),
-                    React.createElement('select', { className: SEL, value: filterPid, onChange: e => setFilterPid(e.target.value) }, React.createElement('option', { value: 'all' }, 'Tous joueurs'), React.createElement('option', { value: 'OPP' }, 'Tous adversaires'), React.createElement('optgroup', { label: 'Domicile' }, players.map(p => React.createElement('option', { key: p.id, value: p.id }, `#${p.number} ${p.name}`))), oppPlayers.length > 0 && React.createElement('optgroup', { label: 'Adversaire' }, oppPlayers.map(p => React.createElement('option', { key: p.id, value: p.id }, `#${p.number} ${p.name}`)))),
-                    React.createElement('button', { className: 'px-3 py-1.5 rounded bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold cursor-pointer', onClick: () => setShowAddForm(true) }, '+ Action')
-                )
-            ),
+                {/* ACTIONS LIST */}
+                <div className="flex-1 overflow-y-auto px-2 py-1">
+                    {filteredActions.length === 0 ? (
+                        <div className="text-center text-slate-500 py-10 text-sm">Aucune action</div>
+                    ) : (
+                        filteredActions.map(act => {
+                            const aid = act.id;
+                            const pid = act.pid ?? act.playerId;
+                            const isHome = !isOpponent(pid) && !!playerMap[pid];
 
-            React.createElement(MiniBoxscore, { stats, players, oppPlayers, playerMap, minutesFromSubs, hasSubs }),
+                            if (editingId === aid) {
+                                return (
+                                    <div key={aid} className="bg-slate-800 border border-orange-500 rounded-lg p-3 mb-1 space-y-2">
+                                        <div className="grid grid-cols-4 gap-2 items-end">
+                                            <div>
+                                                <div className="text-[9px] text-slate-500 mb-0.5">QT</div>
+                                                <select className={SEL + ' w-full'} value={editData.q} onChange={e => setEditData(d => ({ ...d, q: parseInt(e.target.value) }))}>
+                                                    {quarterOptions.map(q => <option key={q} value={q}>{q <= 4 ? `Q${q}` : `OT${q - 4}`}</option>)}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <div className="text-[9px] text-slate-500 mb-0.5">Chrono</div>
+                                                <div className="flex gap-0.5 items-center">
+                                                    <input type="number" min="0" max="10" className={SEL + ' w-8 text-center px-0'} value={editData.timeMin} onChange={e => setEditData(d => ({ ...d, timeMin: parseInt(e.target.value) || 0 }))} />
+                                                    <span className="text-slate-500 text-xs">:</span>
+                                                    <input type="number" min="0" max="59" className={SEL + ' w-8 text-center px-0'} value={editData.timeSec} onChange={e => setEditData(d => ({ ...d, timeSec: parseInt(e.target.value) || 0 }))} />
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div className="text-[9px] text-slate-500 mb-0.5">Type</div>
+                                                <select className={SEL + ' w-full'} value={editData.type} onChange={e => setEditData(d => ({ ...d, type: e.target.value, victim: null, subOut: null }))}>
+                                                    {ACTION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <div className="text-[9px] text-slate-500 mb-0.5">{editData.type === 'SUB' ? 'Entrant' : 'Joueur'}</div>
+                                                <CombinedPlayerSelect value={editData.pid} onChange={v => setEditData(d => ({ ...d, pid: v }))} homePlayers={players} oppPlayers={oppPlayers} allowNone={false} className={SEL} />
+                                            </div>
+                                        </div>
+                                        {editData.type === 'SHOT' && (
+                                            <div className="flex gap-2 items-center flex-wrap">
+                                                {[2, 3].map(v => (
+                                                    <button key={v} className={`px-2 py-1 rounded text-[10px] font-bold cursor-pointer ${editData.val === v ? 'bg-orange-500 text-white' : 'bg-slate-700 text-slate-400'}`} onClick={() => setEditData(d => ({ ...d, val: v }))}>{`${v}pts`}</button>
+                                                ))}
+                                                <button className={`px-2 py-1 rounded text-[10px] font-bold cursor-pointer ${editData.made ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`} onClick={() => setEditData(d => ({ ...d, made: !d.made }))}>{editData.made ? 'OK Marque' : 'X Rate'}</button>
+                                            </div>
+                                        )}
+                                        {editData.type === 'FT' && (
+                                            <div className="flex gap-2 items-center">
+                                                <span className="text-[10px] text-slate-400">LF:</span>
+                                                <input type="number" min="0" max="3" className={SEL + ' w-10 text-center px-0'} value={editData.ftMade} onChange={e => setEditData(d => ({ ...d, ftMade: parseInt(e.target.value) || 0 }))} />
+                                                <span className="text-slate-500 text-[10px]">/</span>
+                                                <input type="number" min="0" max="3" className={SEL + ' w-10 text-center px-0'} value={editData.ftAtt} onChange={e => setEditData(d => ({ ...d, ftAtt: parseInt(e.target.value) || 0 }))} />
+                                            </div>
+                                        )}
+                                        {editData.type === 'FOUL' && (
+                                            <div className="flex gap-2 items-center flex-wrap">
+                                                {FOUL_TYPES.map(ft => (
+                                                    <button key={ft.value} className={`px-2 py-1 rounded text-[10px] font-bold cursor-pointer border ${editData.foulType === ft.value ? ft.color + ' border-white text-white' : 'bg-slate-800 border-slate-600 text-slate-400'}`} onClick={() => setEditData(d => ({ ...d, foulType: ft.value }))}>{ft.short}</button>
+                                                ))}
+                                                <span className="text-[10px] text-slate-500 ml-1">sur:</span>
+                                                <CombinedPlayerSelect value={editData.victim} onChange={v => setEditData(d => ({ ...d, victim: v }))} homePlayers={players} oppPlayers={oppPlayers} allowNone={true} className={SEL + ' w-28'} />
+                                            </div>
+                                        )}
+                                        {editData.type === 'BLK' && (
+                                            <div className="flex gap-2 items-center">
+                                                <span className="text-[10px] text-slate-500">Contre:</span>
+                                                <CombinedPlayerSelect value={editData.victim} onChange={v => setEditData(d => ({ ...d, victim: v }))} homePlayers={players} oppPlayers={oppPlayers} allowNone={true} className={SEL + ' w-28'} />
+                                            </div>
+                                        )}
+                                        {editData.type === 'SUB' && (
+                                            <div className="flex gap-2 items-center">
+                                                <span className="text-[10px] text-cyan-400 font-bold">Sortant:</span>
+                                                <CombinedPlayerSelect value={editData.subOut} onChange={v => setEditData(d => ({ ...d, subOut: v }))} homePlayers={players} oppPlayers={oppPlayers} allowNone={true} className={SEL + ' w-32'} />
+                                            </div>
+                                        )}
+                                        <div className="flex gap-1 justify-end pt-1">
+                                            <button className="px-3 py-1 rounded bg-green-600 text-white text-[10px] font-bold cursor-pointer" onClick={() => saveEdit(aid)}>OK</button>
+                                            <button className="px-3 py-1 rounded bg-slate-700 text-slate-300 text-[10px] font-bold cursor-pointer" onClick={() => setEditingId(null)}>Annuler</button>
+                                        </div>
+                                    </div>
+                                );
+                            }
 
-            // ACTIONS LIST
-            React.createElement('div', { className: 'flex-1 overflow-y-auto px-2 py-1' },
-                filteredActions.length === 0
-                    ? React.createElement('div', { className: 'text-center text-slate-500 py-10 text-sm' }, 'Aucune action')
-                    : filteredActions.map(act => {
-                        const aid = act.id;
-                        const pid = act.pid ?? act.playerId;
-                        const isHome = !isOpponent(pid) && !!playerMap[pid];
-
-                        if (editingId === aid) {
-                            return React.createElement('div', { key: aid, className: 'bg-slate-800 border border-orange-500 rounded-lg p-3 mb-1 space-y-2' },
-                                React.createElement('div', { className: 'grid grid-cols-4 gap-2 items-end' },
-                                    React.createElement('div', null, React.createElement('div', { className: 'text-[9px] text-slate-500 mb-0.5' }, 'QT'), React.createElement('select', { className: SEL + ' w-full', value: editData.q, onChange: e => setEditData(d => ({ ...d, q: parseInt(e.target.value) })) }, quarterOptions.map(q => React.createElement('option', { key: q, value: q }, q <= 4 ? `Q${q}` : `OT${q - 4}`)))),
-                                    React.createElement('div', null, React.createElement('div', { className: 'text-[9px] text-slate-500 mb-0.5' }, 'Chrono'), React.createElement('div', { className: 'flex gap-0.5 items-center' }, React.createElement('input', { type: 'number', min: 0, max: 10, className: SEL + ' w-8 text-center px-0', value: editData.timeMin, onChange: e => setEditData(d => ({ ...d, timeMin: parseInt(e.target.value) || 0 })) }), React.createElement('span', { className: 'text-slate-500 text-xs' }, ':'), React.createElement('input', { type: 'number', min: 0, max: 59, className: SEL + ' w-8 text-center px-0', value: editData.timeSec, onChange: e => setEditData(d => ({ ...d, timeSec: parseInt(e.target.value) || 0 })) }))),
-                                    React.createElement('div', null, React.createElement('div', { className: 'text-[9px] text-slate-500 mb-0.5' }, 'Type'), React.createElement('select', { className: SEL + ' w-full', value: editData.type, onChange: e => setEditData(d => ({ ...d, type: e.target.value, victim: null, subOut: null })) }, ACTION_TYPES.map(t => React.createElement('option', { key: t.value, value: t.value }, t.label)))),
-                                    React.createElement('div', null, React.createElement('div', { className: 'text-[9px] text-slate-500 mb-0.5' }, editData.type === 'SUB' ? 'Entrant' : 'Joueur'), React.createElement(CombinedPlayerSelect, { value: editData.pid, onChange: v => setEditData(d => ({ ...d, pid: v })), homePlayers: players, oppPlayers, allowNone: false, className: SEL }))
-                                ),
-                                editData.type === 'SHOT' && React.createElement('div', { className: 'flex gap-2 items-center flex-wrap' },
-                                    [2, 3].map(v => React.createElement('button', { key: v, className: `px-2 py-1 rounded text-[10px] font-bold cursor-pointer ${editData.val === v ? 'bg-orange-500 text-white' : 'bg-slate-700 text-slate-400'}`, onClick: () => setEditData(d => ({ ...d, val: v })) }, `${v}pts`)),
-                                    React.createElement('button', { className: `px-2 py-1 rounded text-[10px] font-bold cursor-pointer ${editData.made ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`, onClick: () => setEditData(d => ({ ...d, made: !d.made })) }, editData.made ? 'OK Marque' : 'X Rate')
-                                ),
-                                editData.type === 'FT' && React.createElement('div', { className: 'flex gap-2 items-center' },
-                                    React.createElement('span', { className: 'text-[10px] text-slate-400' }, 'LF:'),
-                                    React.createElement('input', { type: 'number', min: 0, max: 3, className: SEL + ' w-10 text-center px-0', value: editData.ftMade, onChange: e => setEditData(d => ({ ...d, ftMade: parseInt(e.target.value) || 0 })) }),
-                                    React.createElement('span', { className: 'text-slate-500 text-[10px]' }, '/'),
-                                    React.createElement('input', { type: 'number', min: 0, max: 3, className: SEL + ' w-10 text-center px-0', value: editData.ftAtt, onChange: e => setEditData(d => ({ ...d, ftAtt: parseInt(e.target.value) || 0 })) })
-                                ),
-                                editData.type === 'FOUL' && React.createElement('div', { className: 'flex gap-2 items-center flex-wrap' },
-                                    FOUL_TYPES.map(ft => React.createElement('button', { key: ft.value, className: `px-2 py-1 rounded text-[10px] font-bold cursor-pointer border ${editData.foulType === ft.value ? ft.color + ' border-white text-white' : 'bg-slate-800 border-slate-600 text-slate-400'}`, onClick: () => setEditData(d => ({ ...d, foulType: ft.value })) }, ft.short)),
-                                    React.createElement('span', { className: 'text-[10px] text-slate-500 ml-1' }, 'sur:'),
-                                    React.createElement(CombinedPlayerSelect, { value: editData.victim, onChange: v => setEditData(d => ({ ...d, victim: v })), homePlayers: players, oppPlayers, allowNone: true, className: SEL + ' w-28' })
-                                ),
-                                editData.type === 'BLK' && React.createElement('div', { className: 'flex gap-2 items-center' },
-                                    React.createElement('span', { className: 'text-[10px] text-slate-500' }, 'Contre:'),
-                                    React.createElement(CombinedPlayerSelect, { value: editData.victim, onChange: v => setEditData(d => ({ ...d, victim: v })), homePlayers: players, oppPlayers, allowNone: true, className: SEL + ' w-28' })
-                                ),
-                                editData.type === 'SUB' && React.createElement('div', { className: 'flex gap-2 items-center' },
-                                    React.createElement('span', { className: 'text-[10px] text-cyan-400 font-bold' }, 'Sortant:'),
-                                    React.createElement(CombinedPlayerSelect, { value: editData.subOut, onChange: v => setEditData(d => ({ ...d, subOut: v })), homePlayers: players, oppPlayers, allowNone: true, className: SEL + ' w-32' })
-                                ),
-                                React.createElement('div', { className: 'flex gap-1 justify-end pt-1' }, React.createElement('button', { className: 'px-3 py-1 rounded bg-green-600 text-white text-[10px] font-bold cursor-pointer', onClick: () => saveEdit(aid) }, 'OK'), React.createElement('button', { className: 'px-3 py-1 rounded bg-slate-700 text-slate-300 text-[10px] font-bold cursor-pointer', onClick: () => setEditingId(null) }, 'Annuler'))
+                            return (
+                                <div
+                                    key={aid}
+                                    className={`flex items-center gap-2 px-3 py-2 mb-0.5 rounded hover:bg-slate-800 transition-colors group ${act.type === 'SUB' ? 'border-l-2 border-l-cyan-500 bg-cyan-950/20' : isHome ? 'border-l-2 border-l-blue-500 bg-slate-900/50' : 'border-l-2 border-l-red-500 bg-slate-900/50'}`}
+                                >
+                                    <span className="text-slate-500 font-mono text-[10px] w-16 shrink-0">{`Q${act.q || 1} ${formatTime(act.time)}`}</span>
+                                    <span className={`font-bold text-xs shrink-0 w-10 ${act.type === 'SUB' ? 'text-cyan-400' : isHome ? 'text-blue-400' : 'text-red-400'}`}>{getPlayerLabel(pid)}</span>
+                                    <span className="text-slate-500 text-[10px] w-24 shrink-0 truncate">{getPlayerName(pid)}</span>
+                                    <span className={`flex-1 text-xs font-semibold ${getActionColor(act)}`}>{getActionLabel(act)}</span>
+                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                        <button className="px-2 py-1 rounded bg-slate-700 text-slate-300 text-[10px] cursor-pointer hover:bg-slate-600" onClick={() => startEdit(act)}>Edit</button>
+                                        <button className="px-2 py-1 rounded bg-red-900 text-red-300 text-[10px] cursor-pointer hover:bg-red-700" onClick={() => handleDelete(aid)}>Del</button>
+                                    </div>
+                                </div>
                             );
-                        }
-
-                        return React.createElement('div', {
-                            key: aid,
-                            className: `flex items-center gap-2 px-3 py-2 mb-0.5 rounded hover:bg-slate-800 transition-colors group ${act.type === 'SUB' ? 'border-l-2 border-l-cyan-500 bg-cyan-950/20' : isHome ? 'border-l-2 border-l-blue-500 bg-slate-900/50' : 'border-l-2 border-l-red-500 bg-slate-900/50'}`
-                        },
-                            React.createElement('span', { className: 'text-slate-500 font-mono text-[10px] w-16 shrink-0' }, `Q${act.q || 1} ${formatTime(act.time)}`),
-                            React.createElement('span', { className: `font-bold text-xs shrink-0 w-10 ${act.type === 'SUB' ? 'text-cyan-400' : isHome ? 'text-blue-400' : 'text-red-400'}` }, getPlayerLabel(pid)),
-                            React.createElement('span', { className: 'text-slate-500 text-[10px] w-24 shrink-0 truncate' }, getPlayerName(pid)),
-                            React.createElement('span', { className: `flex-1 text-xs font-semibold ${getActionColor(act)}` }, getActionLabel(act)),
-                            React.createElement('div', { className: 'flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0' }, React.createElement('button', { className: 'px-2 py-1 rounded bg-slate-700 text-slate-300 text-[10px] cursor-pointer hover:bg-slate-600', onClick: () => startEdit(act) }, 'Edit'), React.createElement('button', { className: 'px-2 py-1 rounded bg-red-900 text-red-300 text-[10px] cursor-pointer hover:bg-red-700', onClick: () => handleDelete(aid) }, 'Del'))
-                        );
-                    })
-            )
+                        })
+                    )}
+                </div>
+            </div>
         );
     }
 
@@ -1173,41 +1358,64 @@ console.log('debugMinutes() pret. Usage: debugMinutes(game)');
             if (!s) return null;
             const ev = calcEval(s);
             const mins = hasSubs && minutesFromSubs[p.id] !== undefined ? minutesFromSubs[p.id] : (s.minutes || 0);
-            return React.createElement('tr', { key: p.id, className: `border-b border-slate-800/50 ${isOppRow ? 'text-red-300' : 'text-slate-300'}` },
-                React.createElement('td', { className: 'py-1 px-1 font-bold text-white whitespace-nowrap' }, `#${p.number} ${p.name}`),
-                React.createElement('td', { className: 'text-center text-cyan-400 font-mono' }, mins),
-                React.createElement('td', { className: 'text-center text-orange-400 font-bold' }, s.pts),
-                React.createElement('td', { className: 'text-center' }, s.reb, React.createElement('span', { className: 'text-[8px] text-slate-500 ml-0.5' }, `(${s.oreb}/${s.dreb})`)),
-                React.createElement('td', { className: 'text-center' }, s.ast),
-                React.createElement('td', { className: 'text-center' }, s.stl),
-                React.createElement('td', { className: 'text-center' }, s.blk),
-                React.createElement('td', { className: 'text-center text-orange-300' }, s.blkAgainst || 0),
-                React.createElement('td', { className: 'text-center text-red-400' }, s.tov),
-                React.createElement('td', { className: 'text-center text-red-400 font-bold' }, s.pf),
-                React.createElement('td', { className: 'text-center text-[9px] text-slate-400 font-mono' }, foulBadge(s.foulDetails)),
-                React.createElement('td', { className: 'text-center text-cyan-400' }, s.foulDrawn || 0),
-                React.createElement('td', { className: 'text-center' }, `${s.fgm}-${s.fga}`),
-                React.createElement('td', { className: 'text-center' }, `${s.threePM}-${s.threePA}`),
-                React.createElement('td', { className: 'text-center' }, `${s.ftm}-${s.fta}`),
-                React.createElement('td', { className: `text-center font-bold ${s.plusMinus >= 0 ? 'text-green-400' : 'text-red-400'}` }, `${s.plusMinus > 0 ? '+' : ''}${s.plusMinus}`),
-                React.createElement('td', { className: `text-center font-bold ${ev >= 0 ? 'text-green-400' : 'text-red-400'}` }, ev)
+            return (
+                <tr key={p.id} className={`border-b border-slate-800/50 ${isOppRow ? 'text-red-300' : 'text-slate-300'}`}>
+                    <td className="py-1 px-1 font-bold text-white whitespace-nowrap">{`#${p.number} ${p.name}`}</td>
+                    <td className="text-center text-cyan-400 font-mono">{mins}</td>
+                    <td className="text-center text-orange-400 font-bold">{s.pts}</td>
+                    <td className="text-center">
+                        {s.reb}
+                        <span className="text-[8px] text-slate-500 ml-0.5">{`(${s.oreb}/${s.dreb})`}</span>
+                    </td>
+                    <td className="text-center">{s.ast}</td>
+                    <td className="text-center">{s.stl}</td>
+                    <td className="text-center">{s.blk}</td>
+                    <td className="text-center text-orange-300">{s.blkAgainst || 0}</td>
+                    <td className="text-center text-red-400">{s.tov}</td>
+                    <td className="text-center text-red-400 font-bold">{s.pf}</td>
+                    <td className="text-center text-[9px] text-slate-400 font-mono">{foulBadge(s.foulDetails)}</td>
+                    <td className="text-center text-cyan-400">{s.foulDrawn || 0}</td>
+                    <td className="text-center">{`${s.fgm}-${s.fga}`}</td>
+                    <td className="text-center">{`${s.threePM}-${s.threePA}`}</td>
+                    <td className="text-center">{`${s.ftm}-${s.fta}`}</td>
+                    <td className={`text-center font-bold ${s.plusMinus >= 0 ? 'text-green-400' : 'text-red-400'}`}>{`${s.plusMinus > 0 ? '+' : ''}${s.plusMinus}`}</td>
+                    <td className={`text-center font-bold ${ev >= 0 ? 'text-green-400' : 'text-red-400'}`}>{ev}</td>
+                </tr>
             );
         };
 
         const homeRows = players.filter(p => stats.playerStats[p.id]).map(p => renderRow(p, stats.playerStats[p.id], false)).filter(Boolean);
         const oppRows = oppPlayers.filter(p => stats.playerStats[p.id]).map(p => renderRow(p, stats.playerStats[p.id], true)).filter(Boolean);
 
-        return React.createElement('div', { className: 'border-b border-slate-800 shrink-0' },
-            React.createElement('button', {
-                className: 'w-full px-4 py-1.5 text-left text-[10px] text-slate-400 font-bold uppercase hover:bg-slate-800 cursor-pointer flex items-center gap-2',
-                onClick: () => setOpen(!open)
-            }, open ? 'v' : '>', 'Boxscore recalcule', hasSubs && React.createElement('span', { className: 'text-cyan-500 ml-2' }, '(minutes recalculees depuis SUB)')),
-            open && React.createElement('div', { className: 'overflow-x-auto px-2 pb-2' },
-                React.createElement('table', { className: 'w-full text-[10px]' },
-                    React.createElement('thead', null, React.createElement('tr', { className: 'text-slate-500 border-b border-slate-800' }, headers.map(h => React.createElement('th', { key: h, className: 'py-1 px-1 text-center font-bold whitespace-nowrap' }, h)))),
-                    React.createElement('tbody', null, ...homeRows, oppRows.length > 0 && React.createElement('tr', { key: 'sep' }, React.createElement('td', { colSpan: headers.length, className: 'py-1 text-center text-[9px] text-red-500 font-bold uppercase bg-red-950/30' }, 'Adversaire')), ...oppRows)
-                )
-            )
+        return (
+            <div className="border-b border-slate-800 shrink-0">
+                <button
+                    className="w-full px-4 py-1.5 text-left text-[10px] text-slate-400 font-bold uppercase hover:bg-slate-800 cursor-pointer flex items-center gap-2"
+                    onClick={() => setOpen(!open)}
+                >
+                    {open ? 'v' : '>'} Boxscore recalcule {hasSubs && <span className="text-cyan-500 ml-2">(minutes recalculees depuis SUB)</span>}
+                </button>
+                {open && (
+                    <div className="overflow-x-auto px-2 pb-2">
+                        <table className="w-full text-[10px]">
+                            <thead>
+                                <tr className="text-slate-500 border-b border-slate-800">
+                                    {headers.map(h => <th key={h} className="py-1 px-1 text-center font-bold whitespace-nowrap">{h}</th>)}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {homeRows}
+                                {oppRows.length > 0 && (
+                                    <tr key="sep">
+                                        <td colSpan={headers.length} className="py-1 text-center text-[9px] text-red-500 font-bold uppercase bg-red-950/30">Adversaire</td>
+                                    </tr>
+                                )}
+                                {oppRows}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
         );
     }
 
@@ -1218,7 +1426,7 @@ console.log('debugMinutes() pret. Usage: debugMinutes(game)');
         const containerRef = useRef(null);
         if (!containerRef.current) { containerRef.current = document.createElement('div'); containerRef.current.id = 'pbp-editor-root'; }
         useEffect(() => { document.body.appendChild(containerRef.current); document.body.style.overflow = 'hidden'; return () => { document.body.removeChild(containerRef.current); document.body.style.overflow = ''; }; }, []);
-        return ReactDOM.createPortal(React.createElement(PlayByPlayEditor, props), containerRef.current);
+        return ReactDOM.createPortal(<PlayByPlayEditor {...props} />, containerRef.current);
     }
     window.PlayByPlayEditor = PlayByPlayEditorPortal;
     window.recalcFullGame = recalcFullGame;
