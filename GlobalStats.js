@@ -499,6 +499,81 @@ function GlobalStats({ players, games, phases, isAdmin }) {
         return { data, avgs, winAvgs, lossAvgs, wins: winsStats.count, losses: lossStats.count, streak, analysis };
     }, [filteredGames]);
 
+    const fourFactorsData = useMemo(() => {
+        if (filteredGames.length === 0) return null;
+
+        const SE = window.StatsEngine;
+        const init = () => ({ fgm: 0, fga: 0, threePM: 0, fta: 0, ftm: 0, tov: 0, oreb: 0, oppDreb: 0 });
+        let all = init();
+        let oppAll = { fgm: 0, fga: 0, threePM: 0, fta: 0, ftm: 0, tov: 0, oreb: 0 };
+        let teamDreb = 0;
+        let winS = { ...init(), count: 0 };
+        let lossS = { ...init(), count: 0 };
+        let winTeamDreb = 0, lossTeamDreb = 0;
+        let winOpp = { fgm: 0, fga: 0, threePM: 0, fta: 0, ftm: 0, tov: 0, oreb: 0 };
+        let lossOpp = { fgm: 0, fga: 0, threePM: 0, fta: 0, ftm: 0, tov: 0, oreb: 0 };
+
+        filteredGames.forEach(g => {
+            let tm = { fgm: 0, fga: 0, threePM: 0, fta: 0, ftm: 0, tov: 0, oreb: 0, dreb: 0 };
+            Object.values(g.playerStats).forEach(s => {
+                tm.fgm += (s.fgm||0) + (s.threePM||0);
+                tm.fga += (s.fga||0) + (s.threePA||0);
+                tm.threePM += (s.threePM||0);
+                tm.fta += (s.fta||0);
+                tm.ftm += (s.ftm||0);
+                tm.tov += (s.tov||0);
+                tm.oreb += (s.oreb||0);
+                tm.dreb += (s.dreb||0);
+            });
+
+            const estOpp = SE.estimateOpponent(g.awayScore || 0);
+            const opp = g.opponentStats || {};
+            const gOppDreb = opp.reb ? Math.round(opp.reb * 0.7) : estOpp.dreb;
+            const gOppOreb = opp.oreb || estOpp.oreb;
+            const gOppFgm = opp.fgm || estOpp.fgm;
+            const gOppFga = opp.fga || estOpp.fga;
+            const gOppFta = opp.fta || estOpp.fta;
+            const gOppFtm = opp.ftm || estOpp.ftm;
+            const gOppTov = opp.tov || estOpp.tov;
+            const gOppThreePM = opp.threePM || Math.round(gOppFgm * 0.3);
+
+            ['fgm','fga','threePM','fta','ftm','tov','oreb'].forEach(k => all[k] += tm[k]);
+            all.oppDreb += gOppDreb;
+            teamDreb += tm.dreb;
+
+            oppAll.fgm += gOppFgm; oppAll.fga += gOppFga; oppAll.fta += gOppFta;
+            oppAll.ftm += gOppFtm; oppAll.tov += gOppTov; oppAll.oreb += gOppOreb;
+            oppAll.threePM += gOppThreePM;
+
+            const isWin = (g.homeScore||0) > (g.awayScore||0);
+            const target = isWin ? winS : lossS;
+            target.count++;
+            ['fgm','fga','threePM','fta','ftm','tov','oreb'].forEach(k => target[k] += tm[k]);
+            target.oppDreb += gOppDreb;
+
+            const tOpp = isWin ? winOpp : lossOpp;
+            tOpp.fgm += gOppFgm; tOpp.fga += gOppFga; tOpp.fta += gOppFta;
+            tOpp.ftm += gOppFtm; tOpp.tov += gOppTov; tOpp.oreb += gOppOreb;
+            tOpp.threePM += gOppThreePM;
+
+            if (isWin) { winTeamDreb += tm.dreb; }
+            else { lossTeamDreb += tm.dreb; }
+        });
+
+        const team = SE.fourFactors(all);
+        const oppFF = SE.fourFactors({ ...oppAll, oppDreb: teamDreb });
+        const winFF = winS.count > 0 ? SE.fourFactors(winS) : null;
+        const lossFF = lossS.count > 0 ? SE.fourFactors(lossS) : null;
+
+        const radarData = [
+            { factor: 'eFG%', team: team.eFG, opp: oppFF.eFG },
+            { factor: 'TOV%', team: team.tovPct, opp: oppFF.tovPct },
+            { factor: 'OREB%', team: team.orebPct, opp: oppFF.orebPct },
+            { factor: 'FT Rate', team: team.ftRate, opp: oppFF.ftRate }
+        ];
+
+        return { team, opp: oppFF, winFF, lossFF, radarData };
+    }, [filteredGames]);
     const aggregated = useMemo(() => {
         const stats = {};
         players.forEach(p => { 
@@ -1217,7 +1292,103 @@ const splitWL = { win: calcSplitAvg(winLogs), loss: calcSplitAvg(lossLogs) };
                                     </div>
                                 ))}
                             </div>
+   {fourFactorsData && (
+                                <window.Card className="p-4">
+                                    <h4 className="text-xs text-slate-400 uppercase font-bold mb-3 flex items-center gap-2">
+                                        <window.Icon path={window.Icons.TrendingUp} className="w-3.5 h-3.5" />
+                                        Four Factors (Dean Oliver)
+                                    </h4>
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                                        {[
+                                            { label: 'eFG%', desc: 'Efficacite tirs', team: fourFactorsData.team.eFG, opp: fourFactorsData.opp.eFG, higherIsBetter: true },
+                                            { label: 'TOV%', desc: 'Taux pertes balle', team: fourFactorsData.team.tovPct, opp: fourFactorsData.opp.tovPct, higherIsBetter: false },
+                                            { label: 'OREB%', desc: 'Rebonds offensifs', team: fourFactorsData.team.orebPct, opp: fourFactorsData.opp.orebPct, higherIsBetter: true },
+                                            { label: 'FT Rate', desc: 'Acces LF', team: fourFactorsData.team.ftRate, opp: fourFactorsData.opp.ftRate, higherIsBetter: true }
+                                        ].map((f, i) => {
+                                            const diff = f.higherIsBetter ? f.team - f.opp : f.opp - f.team;
+                                            const isGood = diff > 0;
+                                            return (
+                                                <div key={i} className="bg-slate-800/60 rounded-lg p-3 border border-slate-700/50">
+                                                    <div className="text-[10px] text-slate-500 uppercase mb-1">{f.label}</div>
+                                                    <div className="text-xs text-slate-600 mb-2">{f.desc}</div>
+                                                    <div className="flex items-end justify-between">
+                                                        <div>
+                                                            <div className={`text-lg font-bold ${isGood ? 'text-green-400' : 'text-red-400'}`}>{f.team}%</div>
+                                                            <div className="text-[10px] text-slate-500">Equipe</div>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <div className="text-sm text-slate-400">{f.opp}%</div>
+                                                            <div className="text-[10px] text-slate-600">Adv.</div>
+                                                        </div>
+                                                    </div>
+                                                    <div className={`mt-2 text-[10px] font-medium text-center rounded py-0.5 ${isGood ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'}`}>
+                                                        {isGood ? '+' : ''}{(f.higherIsBetter ? f.team - f.opp : f.opp - f.team).toFixed(1)}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
 
+                                    {fourFactorsData.radarData.length === 4 && (
+                                        <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700/30 mb-4">
+                                            <h5 className="text-[10px] text-slate-500 uppercase mb-2 font-bold">Radar comparatif</h5>
+                                            <div className="h-52">
+                                                <ResponsiveContainer width="100%" height="100%">
+                                                    <RadarChart data={fourFactorsData.radarData} cx="50%" cy="50%" outerRadius="70%">
+                                                        <PolarGrid stroke="#2a2a4a" />
+                                                        <PolarAngleAxis dataKey="factor" tick={{ fill: '#a0a0b0', fontSize: 11 }} />
+                                                        <PolarRadiusAxis tick={{ fill: '#505070', fontSize: 9 }} />
+                                                        <Radar name="Equipe" dataKey="team" stroke="#d4a574" fill="#d4a574" fillOpacity={0.25} strokeWidth={2} />
+                                                        <Radar name="Adversaire" dataKey="opp" stroke="#ef4444" fill="#ef4444" fillOpacity={0.1} strokeWidth={2} />
+                                                        <Legend wrapperStyle={{ fontSize: '11px' }} />
+                                                        <Tooltip contentStyle={{ backgroundColor: '#1e1e3a', border: '1px solid #3a3a5a', borderRadius: '8px', fontSize: '12px' }} />
+                                                    </RadarChart>
+                                                </ResponsiveContainer>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {fourFactorsData.winFF && fourFactorsData.lossFF && (
+                                        <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700/30">
+                                            <h5 className="text-[10px] text-slate-500 uppercase mb-2 font-bold">
+                                                Four Factors — <span className="text-green-400">Victoires</span> vs <span className="text-red-400">Defaites</span>
+                                            </h5>
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-sm text-slate-300">
+                                                    <thead>
+                                                        <tr className="border-b border-slate-700 text-xs text-slate-500 uppercase">
+                                                            <th className="p-2 text-left">Factor</th>
+                                                            <th className="p-2 text-center text-green-400">W ({teamTrendsData.wins}m)</th>
+                                                            <th className="p-2 text-center text-red-400">L ({teamTrendsData.losses}m)</th>
+                                                            <th className="p-2 text-center">Diff</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-800">
+                                                        {[
+                                                            { label: 'eFG%', win: fourFactorsData.winFF.eFG, loss: fourFactorsData.lossFF.eFG, higherIsBetter: true },
+                                                            { label: 'TOV%', win: fourFactorsData.winFF.tovPct, loss: fourFactorsData.lossFF.tovPct, higherIsBetter: false },
+                                                            { label: 'OREB%', win: fourFactorsData.winFF.orebPct, loss: fourFactorsData.lossFF.orebPct, higherIsBetter: true },
+                                                            { label: 'FT Rate', win: fourFactorsData.winFF.ftRate, loss: fourFactorsData.lossFF.ftRate, higherIsBetter: true }
+                                                        ].map((r, i) => {
+                                                            const rawDiff = r.higherIsBetter ? (r.win - r.loss) : (r.loss - r.win);
+                                                            return (
+                                                                <tr key={i} className="hover:bg-slate-800/40">
+                                                                    <td className="p-2 text-left font-medium text-slate-400">{r.label}</td>
+                                                                    <td className="p-2 text-center text-green-400">{r.win}%</td>
+                                                                    <td className="p-2 text-center text-red-400">{r.loss}%</td>
+                                                                    <td className={`p-2 text-center font-bold ${rawDiff > 0 ? 'text-green-400' : rawDiff < 0 ? 'text-red-400' : 'text-slate-500'}`}>
+                                                                        {rawDiff > 0 ? '+' : ''}{rawDiff.toFixed(1)}
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    )}
+                                </window.Card>
+                            )}
                             {/* --- TABLEAU COMPARATIF W/L --- */}
                             {teamTrendsData.wins > 0 && teamTrendsData.losses > 0 && (
                                 <window.Card className="p-4">

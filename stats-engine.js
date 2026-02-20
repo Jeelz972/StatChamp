@@ -194,7 +194,15 @@ window.StatsEngine = {
         const playerPoss = poss * (playerMin / (teamMin / 5));
         return this.safe(plusMinus, playerPoss, 100);
     },
-
+fourFactors(s) {
+        const eFG = s.fga > 0 ? parseFloat(((s.fgm + 0.5 * s.threePM) / s.fga * 100).toFixed(1)) : 0;
+        const tovPct = (s.fga + 0.44 * s.fta + s.tov) > 0
+            ? parseFloat((s.tov / (s.fga + 0.44 * s.fta + s.tov) * 100).toFixed(1)) : 0;
+        const orebPct = (s.oreb + (s.oppDreb || 0)) > 0
+            ? parseFloat((s.oreb / (s.oreb + (s.oppDreb || 0)) * 100).toFixed(1)) : 0;
+        const ftRate = s.fga > 0 ? parseFloat((s.fta / s.fga * 100).toFixed(1)) : 0;
+        return { eFG, tovPct, orebPct, ftRate };
+    },
     estimateOpponent(pts) {
         return {
             fgm: Math.round(pts * 0.42),
