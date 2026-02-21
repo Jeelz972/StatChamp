@@ -2465,6 +2465,7 @@ function GameDetailsModal({ game, isOpen, onClose, players, isAdmin }) {
   const [showMinutesDebug, setShowMinutesDebug] = useState(false);
   const [quarterFilter, setQuarterFilter] = useState('TOTAL');
   const [playFilter, setPlayFilter] = useState('ALL');
+  const [gameNotes, setGameNotes] = useState(game.coachNotes || '');
 
   const statsData = React.useMemo(() => {
     const pStats = game.playerStats || {};
@@ -2983,7 +2984,32 @@ function GameDetailsModal({ game, isOpen, onClose, players, isAdmin }) {
             </div>
           </Card>
         </div>
-
+        {isAdmin && (
+          <div className="mt-3">
+            <textarea
+              value={gameNotes}
+              onChange={(e) => setGameNotes(e.target.value)}
+              onBlur={() => {
+                if (window.db && game.id) {
+                  const snap = window.db.collection('team_data').doc('games');
+                  snap.get().then((doc) => {
+                    if (doc.exists) {
+                      const list = doc.data().list || [];
+                      const idx = list.findIndex((g) => g.id === game.id);
+                      if (idx >= 0) {
+                        list[idx].coachNotes = gameNotes;
+                        snap.set({ list });
+                        game.coachNotes = gameNotes;
+                      }
+                    }
+                  });
+                }
+              }}
+              placeholder="Notes du coach..."
+              className="bg-slate-900 border border-slate-700 rounded text-sm text-slate-300 p-3 w-full min-h-[80px] outline-none focus:border-orange-500"
+            />
+          </div>
+        )}
         {/* --- BANNIÈRE AVERTISSEMENT STATS MANQUANTES --- */}
         {(!statsData.hasFoulDrawnData || !statsData.hasBlkAgainstData) && (
           <div className="bg-amber-900/30 border border-amber-700/50 rounded-lg px-4 py-2 flex items-center gap-2 text-xs text-amber-300">
@@ -4623,6 +4649,20 @@ function Settings({
                 onUpdatePlayers(np);
               }}
             />
+            <select
+              value={p.status || 'available'}
+              onChange={(e) => {
+                const np = [...players];
+                np[i].status = e.target.value;
+                onUpdatePlayers(np);
+              }}
+              className="bg-slate-700 text-xs text-slate-300 border border-slate-600 rounded px-2 py-1 outline-none"
+            >
+              <option value="available">Disponible</option>
+              <option value="injured">Blessé</option>
+              <option value="doubtful">Douteux</option>
+              <option value="rest">Repos</option>
+            </select>
             <button
               onClick={() => onUpdatePlayers(players.filter((x) => x.id !== p.id))}
               className="text-red-500 p-2"
@@ -4682,6 +4722,7 @@ function App() {
   const [showLogin, setShowLogin] = useState(false);
   const [showReport, setShowReport] = React.useState(false);
   const [view, setView] = useState('global_stats');
+  const [prepOpponent, setPrepOpponent] = useState(null);
   const [players, setPlayers] = useState([]);
   const [games, setGames] = useState([]);
   const [phases, setPhases] = useState(DEFAULT_PHASES);
@@ -4960,10 +5001,15 @@ function App() {
           {isAdmin && (
             <button
               onClick={() => (window.location.href = 'live.html')}
-              className="p-3 rounded-xl transition-all text-slate-500 hover:text-orange-500 hover:bg-slate-800"
+              className="p-3 rounded-xl transition-all text-slate-500 hover:text-orange-500 hover:bg-slate-800 relative"
               title="Live Tracker"
             >
               <Icon path={Icons.Play} />
+              {(() => {
+                const ts = parseInt(localStorage.getItem('liveMatchActive') || '0');
+                const isActive = ts > 0 && (Date.now() - ts) < 7200000;
+                return isActive ? <span style={{position:'absolute',top:'6px',right:'6px',width:'8px',height:'8px',borderRadius:'50%',background:'#ef4444',animation:'livePulse 1.5s ease-in-out infinite'}} /> : null;
+              })()}
             </button>
           )}
           <button
@@ -4973,15 +5019,6 @@ function App() {
           >
             <Icon path={Icons.Clipboard} />
           </button>
-          {isAdmin && (
-            <button
-              onClick={() => setView('settings')}
-              className={`p-3 rounded-xl transition-all ${view === 'settings' ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`}
-              title="Config"
-            >
-              <Icon path={Icons.Settings} />
-            </button>
-          )}
           {isAdmin && (
             <button
               onClick={() => {
@@ -4998,6 +5035,35 @@ function App() {
               title="Scouting Report"
             >
               <Icon path={Icons.Target} />
+            </button>
+          )}{' '}
+          <button
+            onClick={() => {
+              setView('season');
+              setPrepOpponent(null);
+            }}
+            className={`p-3 rounded-xl transition-all ${view === 'season' ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+            title="Saison"
+          >
+            <Icon path={Icons.TrendingUp} />
+          </button>
+          <button
+            onClick={() => {
+              setView('scouting');
+              setPrepOpponent(null);
+            }}
+            className={`p-3 rounded-xl transition-all ${view === 'scouting' ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+            title="Scouting"
+          >
+            <Icon path={Icons.Target} />
+          </button>
+          {isAdmin && (
+            <button
+              onClick={() => setView('settings')}
+              className={`p-3 rounded-xl transition-all ${view === 'settings' ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+              title="Config"
+            >
+              <Icon path={Icons.Settings} />
             </button>
           )}{' '}
         </div>
@@ -5041,6 +5107,9 @@ function App() {
             {view === 'live' && 'Live'}
             {view === 'global_stats' && 'Stats'}
             {view === 'history' && 'Historique'}
+            {view === 'season' && 'Saison'}
+            {view === 'scouting' && 'Scouting'}
+            {view === 'gameprep' && 'Préparation'}
             {view === 'settings' && 'Parametres'}
           </h1>
           <div className="ml-auto flex items-center gap-3">
@@ -5090,6 +5159,30 @@ function App() {
               setFirebaseConfig={setFirebaseConfig}
             />
           )}
+          {view === 'season' && window.SeasonDashboard && (
+            <window.SeasonDashboard games={games} players={players} phases={phases} />
+          )}
+          {view === 'scouting' && !prepOpponent && window.OpponentScouting && (
+            <window.OpponentScouting
+              games={games}
+              onPrepare={(name) => {
+                setPrepOpponent(name);
+                setView('gameprep');
+              }}
+            />
+          )}
+          {view === 'gameprep' && prepOpponent && window.GamePrep && (
+            <window.GamePrep
+              opponentName={prepOpponent}
+              games={games}
+              players={players}
+              onBack={() => {
+                setPrepOpponent(null);
+                setView('scouting');
+              }}
+            />
+          )}
+
           {!isAdmin && (view === 'live' || view === 'settings') && (
             <div className="h-full flex flex-col items-center justify-center text-slate-500">
               <Icon path={Icons.Users} className="w-16 h-16 mb-4 opacity-20" />
