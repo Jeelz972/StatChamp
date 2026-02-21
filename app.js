@@ -2681,6 +2681,7 @@ function GameDetailsModal({ game, isOpen, onClose, players, isAdmin }) {
       hasBlkAgainstData,
     };
   }, [game, players]);
+
   const quarterStatsData = React.useMemo(() => {
     if (quarterFilter === 'TOTAL' || !game.actions?.length) return null;
     const qNum = parseInt(quarterFilter);
@@ -2689,9 +2690,13 @@ function GameDetailsModal({ game, isOpen, onClose, players, isAdmin }) {
     const pStatsMap = {};
     if (game.playerStats) {
       Object.entries(game.playerStats).forEach(([id, ps]) => {
+        // FIX 3 : Resoudre le nom depuis le roster (players prop)
+        const rosterPlayer = players.find((p) => p.id === parseInt(id));
         pStatsMap[id] = {
           id,
-          name: `#${ps.number || id} ${ps.name || ''}`.trim(),
+          name: rosterPlayer
+            ? `#${rosterPlayer.number} ${rosterPlayer.name}`
+            : `#${ps.number || id} ${ps.name || ''}`.trim(),
           minutes: '-',
           pts: 0,
           fgm: 0,
@@ -2715,6 +2720,7 @@ function GameDetailsModal({ game, isOpen, onClose, players, isAdmin }) {
       });
     }
 
+    // Aggregation des actions du quarter
     qActions.forEach((a) => {
       const pid = String(a.pid);
       if (pStatsMap[pid]) {
@@ -2776,6 +2782,56 @@ function GameDetailsModal({ game, isOpen, onClose, players, isAdmin }) {
       }
     });
 
+    // FIX 4 : Calcul du temps de jeu par quarter via starters/SUBs
+    const QT_DUR = 600;
+    if (game.starters && game.starters[qNum]) {
+      const parseId = (v) => {
+        const n = parseInt(v);
+        return isNaN(n) ? v : n;
+      };
+      const starterIds = (game.starters[qNum] || []).map((id) => String(parseId(id)));
+      const onCourt = new Set(starterIds);
+      starterIds.forEach((pid) => {
+        if (pStatsMap[pid]) pStatsMap[pid].minutes = 0;
+      });
+
+      const qSubs = game.actions
+        .filter(
+          (a) => (a.q || 1) === qNum && a.type === 'SUB' && parseInt(a.pid ?? a.playerId) < 1000
+        )
+        .map((a) => ({ ...a, time: a.time || 0 }))
+        .sort((a, b) => b.time - a.time);
+
+      let lastTime = QT_DUR;
+      qSubs.forEach((sub) => {
+        const duration = lastTime - sub.time;
+        if (duration > 0) {
+          onCourt.forEach((pid) => {
+            if (pStatsMap[pid] && typeof pStatsMap[pid].minutes === 'number')
+              pStatsMap[pid].minutes += duration;
+          });
+        }
+        const pIn = String(parseId(sub.pid ?? sub.playerId));
+        const pOut = sub.subOut ? String(parseId(sub.subOut)) : null;
+        if (pOut) onCourt.delete(pOut);
+        if (pIn) {
+          onCourt.add(pIn);
+          if (pStatsMap[pIn] && pStatsMap[pIn].minutes === '-') pStatsMap[pIn].minutes = 0;
+        }
+        lastTime = sub.time;
+      });
+      if (lastTime > 0) {
+        onCourt.forEach((pid) => {
+          if (pStatsMap[pid] && typeof pStatsMap[pid].minutes === 'number')
+            pStatsMap[pid].minutes += lastTime;
+        });
+      }
+      // Convertir secondes -> minutes
+      Object.values(pStatsMap).forEach((s) => {
+        if (typeof s.minutes === 'number') s.minutes = Math.round(s.minutes / 60);
+      });
+    }
+
     const qPlayers = Object.values(pStatsMap)
       .filter((s) => parseInt(s.id) < 1000)
       .map((s) => {
@@ -2785,9 +2841,10 @@ function GameDetailsModal({ game, isOpen, onClose, players, isAdmin }) {
           ...s,
           totalFgm: tFgm,
           totalFga: tFga,
-          fgPct: tFga > 0 ? Math.round((tFgm / tFga) * 100) : 0,
-          fg3Pct: s.fg3a > 0 ? Math.round((s.fg3m / s.fg3a) * 100) : 0,
-          ftPct: s.fta > 0 ? Math.round((s.ftm / s.fta) * 100) : 0,
+          twoPM: s.fgm,
+          twoPA: s.fga,
+          threePM: s.fg3m,
+          threePA: s.fg3a,
           eff: s.pts + s.reb + s.ast + s.stl + s.blk - (tFga - tFgm + (s.fta - s.ftm) + s.tov),
         };
       })
@@ -2824,7 +2881,7 @@ function GameDetailsModal({ game, isOpen, onClose, players, isAdmin }) {
       T.pf += s.pf;
     });
     return { players: qPlayers, team: T };
-  }, [game, quarterFilter]);
+  }, [game, quarterFilter, players]);
   const playAnalysis = React.useMemo(() => {
     if (!game.actions?.length) return null;
     const tagged = game.actions.filter((a) => a.play);
@@ -3043,73 +3100,66 @@ function GameDetailsModal({ game, isOpen, onClose, players, isAdmin }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
-                {(quarterStatsData ? quarterStatsData.players : statsData.players).map((p, _pi) => {
-                  if (quarterStatsData) {
-                    return (
-                      <tr key={p.id} className="hover:bg-slate-800/50 transition-colors">
-                        <td className="p-3 font-bold text-white sticky left-0 bg-slate-900 z-10 border-r border-slate-800 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.5)] truncate max-w-[100px] md:max-w-none">
-                          {p.name}
+                {(quarterStatsData ? quarterStatsData.players : statsData.players).map((p) => (
+                  <tr key={p.id} className="hover:bg-slate-800/50 transition-colors">
+                    <td className="p-3 font-bold text-white sticky left-0 bg-slate-900 z-10 border-r border-slate-800 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.5)] truncate max-w-[100px] md:max-w-none">
+                      {p.name}
+                    </td>
+                    <td className="p-3 text-center text-slate-500 font-mono">{p.minutes}</td>
+                    {viewMode === 'classic' ? (
+                      <>
+                        <td className="p-3 text-center font-bold text-orange-400">{p.pts}</td>
+                        <td className="p-3 text-center">
+                          {p.twoPM || p.fgm || 0}/{p.twoPA || p.fga || 0}
                         </td>
-                        <td className="p-3 text-center text-slate-500 font-mono">-</td>
-                        {viewMode === 'classic' ? (
-                          <>
-                            <td className="p-3 text-center font-bold text-orange-400">{p.pts}</td>
-                            <td className="p-3 text-center">
-                              {p.totalFgm}/{p.totalFga}
-                            </td>
-                            <td
-                              className={`p-3 text-center ${p.fgPct >= 45 ? 'text-green-400' : p.fgPct < 35 ? 'text-red-400' : 'text-slate-300'}`}
-                            >
-                              {p.fgPct}%
-                            </td>
-                            <td className="p-3 text-center">
-                              {p.fg3m}/{p.fg3a}
-                            </td>
-                            <td
-                              className={`p-3 text-center ${p.fg3Pct >= 33 ? 'text-blue-400' : 'text-slate-500'}`}
-                            >
-                              {p.fg3Pct}%
-                            </td>
-                            <td className="p-3 text-center">
-                              {p.ftm}/{p.fta}
-                            </td>
-                            <td className="p-3 text-center">{p.ftPct}%</td>
-                            <td className="p-3 text-center font-bold text-white">{p.reb}</td>
-                            <td className="p-3 text-center">{p.ast}</td>
-                            <td className="p-3 text-center">{p.stl}</td>
-                            <td className="p-3 text-center text-red-400">{p.tov}</td>
-                            <td className="p-3 text-center text-red-400">{p.pf}</td>
-                            {statsData.hasFoulDrawnData && (
-                              <td className="p-3 text-center text-cyan-400">{p.foulDrawn}</td>
-                            )}
-                            <td
-                              className={`p-3 text-center font-bold ${p.plusMinus >= 0 ? 'text-green-500' : 'text-red-500'}`}
-                            >
-                              {p.plusMinus > 0 ? '+' : ''}
-                              {p.plusMinus}
-                            </td>
-                            <td className="p-3 text-center font-bold text-green-400">{p.eff}</td>
-                          </>
-                        ) : (
-                          <>
-                            <td className="p-3 text-center font-bold text-orange-400">{p.pts}</td>
-                            <td className="p-3 text-center">{p.fgPct}%</td>
-                            <td className="p-3 text-center">{p.fg3Pct}%</td>
-                            <td className="p-3 text-center text-cyan-400">{p.eff}</td>
-                            <td className="p-3 text-center">{p.ast}</td>
-                            <td className="p-3 text-center text-red-400">{p.tov}</td>
-                            <td
-                              className={`p-3 text-center text-yellow-400 font-bold border-l border-slate-700 ${p.plusMinus >= 0 ? 'text-green-400' : 'text-red-400'}`}
-                            >
-                              {p.plusMinus > 0 ? '+' : ''}
-                              {p.plusMinus}
-                            </td>
-                          </>
+                        <td className="p-3 text-center">
+                          {p.threePM || 0}/{p.threePA || 0}
+                        </td>
+                        <td className="p-3 text-center">
+                          {p.ftm || 0}/{p.fta || 0}
+                        </td>
+                        <td className="p-3 text-center font-bold text-white">{p.reb}</td>
+                        <td className="p-3 text-center text-[10px]">{p.oreb}</td>
+                        <td className="p-3 text-center text-[10px]">{p.dreb}</td>
+                        <td className="p-3 text-center">{p.ast}</td>
+                        <td className="p-3 text-center">{p.stl}</td>
+                        <td className="p-3 text-center">{p.blk}</td>
+                        {statsData.hasBlkAgainstData && (
+                          <td className="p-3 text-center text-orange-300">{p.blkAgainst}</td>
                         )}
-                      </tr>
-                    );
-                  }
-                })}
+                        <td className="p-3 text-center text-red-400">{p.tov}</td>
+                        <td className="p-3 text-center text-red-400">{p.pf}</td>
+                        {statsData.hasFoulDrawnData && (
+                          <td className="p-3 text-center text-cyan-400">{p.foulDrawn}</td>
+                        )}
+                        <td
+                          className={`p-3 text-center font-bold ${p.plusMinus >= 0 ? 'text-green-500' : 'text-red-500'}`}
+                        >
+                          {p.plusMinus > 0 ? '+' : ''}
+                          {p.plusMinus}
+                        </td>
+                        <td className="p-3 text-center font-bold text-green-400">{p.eff}</td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="p-3 text-center font-bold text-orange-400">{p.pts}</td>
+                        <td className="p-3 text-center text-blue-300">{p.eFG || '-'}</td>
+                        <td className="p-3 text-center text-purple-300">{p.TS || '-'}</td>
+                        <td className="p-3 text-center text-cyan-400 font-bold">
+                          {p.PIE || p.eff}
+                        </td>
+                        <td className="p-3 text-center">{p.ast}</td>
+                        <td className="p-3 text-center text-red-400">{p.tov}</td>
+                        <td
+                          className={`p-3 text-center text-yellow-400 font-bold border-l border-slate-700 ${p.plusMinus >= 0 ? 'text-green-400' : 'text-red-400'}`}
+                        >
+                          {p.plusMinus > 0 ? '+' : ''}
+                          {p.plusMinus}
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
