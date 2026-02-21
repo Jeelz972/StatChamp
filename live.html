@@ -2992,6 +2992,27 @@
         },
 
         confirm() {
+          // B3 : Warning joueur blessé
+          const selected = this.selected;
+          const injuredStarters = selected.filter((id) => {
+            const p = State.players[id];
+            return p && p.status === 'injured';
+          });
+          if (injuredStarters.length > 0) {
+            const names = injuredStarters
+              .map((id) => {
+                const p = State.players[id];
+                return p ? `#${p.number} ${p.name}` : `#${id}`;
+              })
+              .join(', ');
+            if (
+              !confirm(
+                `Attention : ${names} ${injuredStarters.length > 1 ? 'sont blessés' : 'est blessé'}. Confirmer quand même ?`
+              )
+            ) {
+              return;
+            }
+          }
           if (this.selected.length !== 5) return;
 
           if (this.tab === 'home') {
@@ -4053,6 +4074,7 @@
         startMatch() {
           const customDate = document.getElementById('matchDate').value;
           State.match.id = Date.now();
+          localStorage.setItem('liveMatchActive', Date.now().toString());
           // Formatage de la date saisie (AAAA-MM-JJ -> JJ/MM/AAAA)
           const dateParts = customDate.split('-');
           State.match.date =
@@ -4073,6 +4095,7 @@
                 number: p.number,
                 name: p.name,
                 team: 'home',
+                status: p.status || 'available',
                 stats: {
                   pts: 0,
                   oreb: 0,
@@ -4909,6 +4932,7 @@
             UI.toast('✅ Sauvegardé !');
             UI.setSyncStatus('online');
             OfflineManager.clear();
+            localStorage.removeItem('liveMatchActive');
           } catch (e) {
             UI.toast('Erreur sauvegarde', 'error');
             UI.setSyncStatus('error');
@@ -5232,7 +5256,19 @@
               on = State.onCourt[p.team].includes(p.id) ? 'oncourt' : '',
               fat = getFatigue(p),
               mins = Math.round(p.stats.min / 60);
-            return `<div class="p-card ${sel} ${on} ${fat}" data-pid="${p.id}" onpointerdown="SwipeManager.start(${p.id},event)" onpointermove="SwipeManager.move(${p.id},event)" onpointerup="SwipeManager.end(${p.id},event)"><span class="p-num">${p.number}</span><span class="p-name">${p.name}</span><div class="p-stats"><span class="p-pts">${p.stats.pts}p</span><span class="p-time">${mins}'</span></div><div class="p-fls">${Array(Math.min(5, p.stats.fouls)).fill('<div class="f-dot"></div>').join('')}</div></div>`;
+            // B3 : badge statut blessure
+            let statusBadge = '';
+            if (p.status === 'injured') {
+              statusBadge =
+                '<span style="position:absolute;top:3px;left:3px;width:8px;height:8px;border-radius:50%;background:#ef4444;" title="Blessé"></span>';
+            } else if (p.status === 'doubtful') {
+              statusBadge =
+                '<span style="position:absolute;top:3px;left:3px;width:8px;height:8px;border-radius:50%;background:#f59e0b;" title="Douteux"></span>';
+            } else if (p.status === 'rest') {
+              statusBadge =
+                '<span style="position:absolute;top:3px;left:3px;width:8px;height:8px;border-radius:50%;background:#94a3b8;" title="Repos"></span>';
+            }
+            return `<div class="p-card ${sel} ${on} ${fat}" data-pid="${p.id}" onpointerdown="SwipeManager.start(${p.id},event)" onpointermove="SwipeManager.move(${p.id},event)" onpointerup="SwipeManager.end(${p.id},event)">${statusBadge}<span class="p-num">${p.number}</span><span class="p-name">${p.name}</span><div class="p-stats"><span class="p-pts">${p.stats.pts}p</span><span class="p-time">${mins}'</span></div><div class="p-fls">${Array(Math.min(5, p.stats.fouls)).fill('<div class="f-dot"></div>').join('')}</div></div>`;
           };
           const sortRoster = (team) =>
             Object.values(State.players)

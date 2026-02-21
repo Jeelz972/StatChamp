@@ -592,7 +592,11 @@ function GlobalStats({ players, games, phases, isAdmin }) {
   const [selectedPlayer, setSelectedPlayer] = useState(null);
   const [showVolumeMatrix, setShowVolumeMatrix] = useState(false);
   const [activeTab, setActiveTab] = useState('players');
-
+  const [playerNotes, setPlayerNotes] = useState('');
+  const [searchFilter, setSearchFilter] = useState('');
+  const [posFilter, setPosFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('pts');
+  const [sortDir, setSortDir] = useState('desc');
   // NOUVEAU : Empreinte de mémoisation pour bloquer les recalculs inutiles
   const gamesKey = useMemo(() => {
     return (
@@ -1415,30 +1419,106 @@ function GlobalStats({ players, games, phases, isAdmin }) {
           </div>
         </div>
 
+         {activeTab === 'players' && (() => {
+          const filtered = aggregated.filter(p => {
+            const matchName = p.info.name.toLowerCase().includes(searchFilter.toLowerCase());
+            const matchPos = posFilter === 'all' || p.info.pos === posFilter;
+            return matchName && matchPos;
+          });
+          const handleSort = (col) => {
+            if (sortBy === col) setSortDir(sortDir === 'desc' ? 'asc' : 'desc');
+            else { setSortBy(col); setSortDir('desc'); }
+          };
+          const sorted = [...filtered].sort((a, b) => {
+            let va, vb;
+            if (sortBy === 'name') { va = a.info.name.toLowerCase(); vb = b.info.name.toLowerCase(); return sortDir === 'desc' ? vb.localeCompare(va) : va.localeCompare(vb); }
+            if (sortBy === 'gp') { va = a.gamesPlayed || 0; vb = b.gamesPlayed || 0; }
+            else { va = parseFloat(a.avg[sortBy]) || 0; vb = parseFloat(b.avg[sortBy]) || 0; }
+            return sortDir === 'desc' ? vb - va : va - vb;
+          });
+          const arrow = (col) => sortBy === col ? (sortDir === 'desc' ? ' ▼' : ' ▲') : '';
+          const thStyle = 'cursor-pointer hover:text-orange-400 transition-colors';
+          const exportCSV = () => {
+            const headers = ['Joueur','Poste','MJ','MIN','PTS','FG%','3P%','LF%','REB','PD','INT','BP','+/-','EVAL'];
+            const rows = sorted.map(p => [
+              p.info.name, p.info.pos || '', p.gamesPlayed, p.avg.min, p.avg.pts,
+              p.avg.fgPct, p.avg.threePct, p.avg.ftPct, p.avg.reb, p.avg.ast,
+              p.avg.stl, p.avg.tov, p.avg.plusMinus, p.avg.eff
+            ]);
+            const csv = [headers, ...rows].map(r => r.join(';')).join('\n');
+            const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'stats_joueurs.csv';
+            a.click();
+            URL.revokeObjectURL(a.href);
+          };
+          const Sparkline = ({ logs }) => {
+            const pts = (logs || []).slice(-5).map(l => l.pts || 0);
+            if (pts.length < 2) return <span className="text-slate-600">—</span>;
+            const max = Math.max(...pts, 1);
+            const scale = 18 / max;
+            const trend = pts[pts.length - 1] - pts[0];
+            const points = pts.map((v, i) => `${i * 15},${19 - v * scale}`).join(' ');
+            return (
+              <svg viewBox="0 0 60 20" style={{width:'60px',height:'20px',display:'inline-block',verticalAlign:'middle'}}>
+                <polyline fill="none" stroke={trend > 0 ? '#22c55e' : trend < 0 ? '#ef4444' : '#94a3b8'} strokeWidth="1.5" points={points} />
+              </svg>
+            );
+          };
+          return (<>
+          <div className="flex flex-wrap items-center gap-2 mb-3 px-1">
+            <input
+              type="text"
+              placeholder="Rechercher..."
+              value={searchFilter}
+              onChange={e => setSearchFilter(e.target.value)}
+              className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white placeholder-slate-500 w-36"
+            />
+            <div className="flex gap-1">
+              {['all','PG','SG','SF','PF','C'].map(pos => (
+                <button
+                  key={pos}
+                  onClick={() => setPosFilter(pos)}
+                  className={`px-2 py-1 text-xs rounded font-bold transition-colors ${posFilter === pos ? 'bg-orange-500/20 text-orange-400 border border-orange-500/50' : 'bg-slate-800 text-slate-500 border border-slate-700 hover:text-slate-300'}`}
+                >
+                  {pos === 'all' ? 'ALL' : pos}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={exportCSV}
+              className="ml-auto px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs transition-colors border border-slate-700 font-bold"
+              title="Exporter en CSV"
+            >
+              📊 CSV
+            </button>
+            <span className="text-xs text-slate-600">{sorted.length} joueur{sorted.length > 1 ? 's' : ''}</span>
+          </div>
         <div className="overflow-auto flex-1 relative custom-scrollbar">
-          {activeTab === 'players' && (
             <table className="w-full text-left text-sm text-slate-300 whitespace-nowrap border-collapse">
               <thead className="bg-slate-900 text-white uppercase text-xs sticky top-0 z-20">
                 <tr className="bg-slate-950 border-b border-slate-700">
-                  <th className="p-3 sticky left-0 bg-slate-950 z-30 min-w-[120px] text-left font-bold">
-                    Joueur
+                  <th className={`p-3 sticky left-0 bg-slate-950 z-30 min-w-[120px] text-left font-bold ${thStyle}`} onClick={() => handleSort('name')}>
+                    Joueur{arrow('name')}
                   </th>
-                  <th className="p-3 text-center w-12 text-slate-400">MJ</th>
-                  <th className="p-3 text-center w-12 text-slate-400">MIN</th>
-                  <th className="p-3 text-center text-orange-400 font-bold">PTS</th>
-                  <th className="p-3 text-center">FG%</th>
-                  <th className="p-3 text-center text-blue-400">3P%</th>
-                  <th className="p-3 text-center text-slate-400">LF%</th>
-                  <th className="p-3 text-center font-bold">REB</th>
-                  <th className="p-3 text-center">PD</th>
-                  <th className="p-3 text-center">INT</th>
-                  <th className="p-3 text-center text-red-400">BP</th>
-                  <th className="p-3 text-center font-bold">+/-</th>
-                  <th className="p-3 text-center text-green-400 font-bold">EVAL</th>
+                  <th className={`p-3 text-center w-12 text-slate-400 ${thStyle}`} onClick={() => handleSort('gp')}>MJ{arrow('gp')}</th>
+                  <th className={`p-3 text-center w-12 text-slate-400 ${thStyle}`} onClick={() => handleSort('min')}>MIN{arrow('min')}</th>
+                  <th className={`p-3 text-center text-orange-400 font-bold ${thStyle}`} onClick={() => handleSort('pts')}>PTS{arrow('pts')}</th>
+                  <th className={`p-3 text-center ${thStyle}`} onClick={() => handleSort('fgPct')}>FG%{arrow('fgPct')}</th>
+                  <th className={`p-3 text-center text-blue-400 ${thStyle}`} onClick={() => handleSort('threePct')}>3P%{arrow('threePct')}</th>
+                  <th className={`p-3 text-center text-slate-400 ${thStyle}`} onClick={() => handleSort('ftPct')}>LF%{arrow('ftPct')}</th>
+                  <th className={`p-3 text-center font-bold ${thStyle}`} onClick={() => handleSort('reb')}>REB{arrow('reb')}</th>
+                  <th className={`p-3 text-center ${thStyle}`} onClick={() => handleSort('ast')}>PD{arrow('ast')}</th>
+                  <th className={`p-3 text-center ${thStyle}`} onClick={() => handleSort('stl')}>INT{arrow('stl')}</th>
+                  <th className={`p-3 text-center text-red-400 ${thStyle}`} onClick={() => handleSort('tov')}>BP{arrow('tov')}</th>
+                  <th className={`p-3 text-center font-bold ${thStyle}`} onClick={() => handleSort('plusMinus')}>+/-{arrow('plusMinus')}</th>
+                  <th className="p-3 text-center text-slate-500 text-[10px]" style={{minWidth:'70px'}}>FORME</th>
+                  <th className={`p-3 text-center text-green-400 font-bold ${thStyle}`} onClick={() => handleSort('eff')}>EVAL{arrow('eff')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/50">
-                {aggregated.map((p) => (
+                {sorted.map((p) => (
                   <tr
                     key={p.info.id}
                     onClick={() => setSelectedPlayer(p)}
@@ -1450,6 +1530,24 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                           {p.info.number}
                         </div>
                         {p.info.name}
+                        {p.info.status === 'injured' && (
+                          <span
+                            className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block ml-1"
+                            title="Blessé"
+                          ></span>
+                        )}
+                        {p.info.status === 'doubtful' && (
+                          <span
+                            className="w-2.5 h-2.5 rounded-full bg-yellow-500 inline-block ml-1"
+                            title="Douteux"
+                          ></span>
+                        )}
+                        {p.info.status === 'rest' && (
+                          <span
+                            className="w-2.5 h-2.5 rounded-full bg-slate-400 inline-block ml-1"
+                            title="Repos"
+                          ></span>
+                        )}
                       </div>
                     </td>
                     <td className="p-3 text-center text-slate-400">{p.gamesPlayed}</td>
@@ -1471,29 +1569,49 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                     <td className="p-3 text-center">{p.avg.stl}</td>
                     <td className="p-3 text-center text-red-400">{p.avg.tov}</td>
                     <td
-                      className={`p-3 text-center font-bold ${parseFloat(p.avg.plusMinus) >= 0 ? 'text-green-500' : 'text-red-500'}`}
+                      className={`p-3 text-center font-bold ${parseFloat(p.avg.plusMinus) >= 0 ? 'text-green-400' : 'text-red-400'}`}
                     >
                       {parseFloat(p.avg.plusMinus) > 0 ? '+' : ''}
                       {p.avg.plusMinus}
                     </td>
+                    <td className="p-3 text-center"><Sparkline logs={p.logs} /></td>
                     <td className="p-3 text-center font-bold text-green-400">{p.avg.eff}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          )}
         </div>
+        </>);
+          })()}
       </window.Card>
       {selectedPlayer && (
         <window.Modal
           isOpen={!!selectedPlayer}
           onClose={() => setSelectedPlayer(null)}
           title={
-            <>
-              <window.Icon path={window.Icons.Trophy} className="text-yellow-400" />{' '}
-              {selectedPlayer?.info.name}
-            </>
-          }
+                <>
+                  <window.Icon path={window.Icons.Trophy} className="text-yellow-400" />{' '}
+                  {selectedPlayer?.info.name}
+                  {selectedPlayer?.info.status === 'injured' && (
+                    <span
+                      className="w-3 h-3 rounded-full bg-red-500 inline-block ml-2"
+                      title="Blessé"
+                    ></span>
+                  )}
+                  {selectedPlayer?.info.status === 'doubtful' && (
+                    <span
+                      className="w-3 h-3 rounded-full bg-yellow-500 inline-block ml-2"
+                      title="Douteux"
+                    ></span>
+                  )}
+                  {selectedPlayer?.info.status === 'rest' && (
+                    <span
+                      className="w-3 h-3 rounded-full bg-slate-400 inline-block ml-2"
+                      title="Repos"
+                    ></span>
+                  )}
+                </>
+              }
           size="max-w-5xl"
         >
           <div className="space-y-6">
@@ -1982,6 +2100,31 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                 </div>
               </div>
             )}
+            {/* B2 : Notes coach joueur */}
+            <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
+              <h4 className="text-xs text-slate-500 uppercase font-bold mb-2">Notes du Coach</h4>
+              <textarea
+                value={playerNotes}
+                onChange={(e) => setPlayerNotes(e.target.value)}
+                onBlur={() => {
+                  if (window.db && selectedPlayer) {
+                    const ref = window.db.collection('team_data').doc('roster');
+                    ref.get().then((doc) => {
+                      if (doc.exists) {
+                        const list = doc.data().list || [];
+                        const idx = list.findIndex((p) => p.id === selectedPlayer.info.id);
+                        if (idx >= 0) {
+                          list[idx].coachNotes = playerNotes;
+                          ref.set({ list });
+                        }
+                      }
+                    });
+                  }
+                }}
+                placeholder="Notes du coach..."
+                className="bg-slate-900 border border-slate-700 rounded text-sm text-slate-300 p-3 w-full min-h-[80px] outline-none focus:border-orange-500"
+              />
+            </div>
           </div>
         </window.Modal>
       )}

@@ -346,6 +346,7 @@
       .print-only {
         display: none;
       }
+      @keyframes livePulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
     </style>
   </head>
   <body>
@@ -370,6 +371,9 @@
           await loadJS('ReportPlayer.js', true);
           await loadJS('RotationChart.js', true);
           await loadJS('GlobalStats.js', true);
+          await loadJS('SeasonDashboard.js', true);
+          await loadJS('OpponentScouting.js', true);
+          await loadJS('GamePrep.js', true);
           await loadJS('app.js', true);
         } catch (err) {
           console.error('Erreur chargement:', err);
