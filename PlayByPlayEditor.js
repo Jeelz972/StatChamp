@@ -624,7 +624,13 @@
         const [ftAtt, setFtAtt] = useState(2);
         const [foulType, setFoulType] = useState('PERSONAL');
         const [victim, setVictim] = useState(null);
-        const [subOut, setSubOut] = useState(null);
+        const [subOut, setSubOut] = useState(null); 
+        const [play, setPlay] = useState('');
+        const defaultPlayTypes = ['Transition', 'Pick & Roll', 'Jeu posté', 'Isolation', 'Motion', 'Sortie de temps mort'];
+        const playTypes = React.useMemo(() => {
+            try { return JSON.parse(localStorage.getItem('basket_play_types')) || defaultPlayTypes; }
+            catch { return defaultPlayTypes; }
+        }, []);
 
         const handleSubmit = () => {
             const pId = pid === 'OPP' ? 'OPP' : parseInt(pid);
@@ -636,6 +642,7 @@
             if (type === 'FOUL') { action.foulType = foulType; if (victim) action.victim = victim; }
             if (type === 'BLK' && victim) action.victim = victim;
             if (type === 'SUB') { action.subOut = subOut; }
+            if (play) action.play = play;
             onAdd(action);
         };
 
@@ -674,6 +681,13 @@
                                 <input type="number" min="0" max="59" className={SEL + ' w-12 text-center'} value={timeSec} onChange={e => setTimeSec(parseInt(e.target.value) || 0)} />
                             </div>
                         </div>
+                    </div>
+                     <div className="mb-3">
+                        <div className={LBL}>Système</div>
+                        <select className={SEL + ' w-full'} value={play} onChange={e => setPlay(e.target.value)}>
+                            <option value="">Aucun</option>
+                            {playTypes.map(pt => <option key={pt} value={pt}>{pt}</option>)}
+                        </select>
                     </div>
                     {type === 'SHOT' && (
                         <div className="flex gap-3 mb-3 items-end flex-wrap">
@@ -763,6 +777,7 @@
         const [dirty, setDirty] = useState(false);
         const [saving, setSaving] = useState(false);
         const [toast, setToast] = useState(null);
+ const [filterPlay, setFilterPlay] = useState('all');
 
         const [showAudit, setShowAudit] = useState(false);
         const [showStarters, setShowStarters] = useState(false);
@@ -1031,13 +1046,14 @@
                 });
             }
             if (filterType !== 'all') arr = arr.filter(a => a.type === filterType);
+             if (filterPlay !== 'all') arr = arr.filter(a => a.play === filterPlay);
             arr.sort((a, b) => {
                 const qa = a.q || 1, qb = b.q || 1;
                 if (qa !== qb) return qa - qb;
                 return (b.time ?? 0) - (a.time ?? 0);
             });
             return arr;
-        }, [actions, filterQ, filterPid, filterType]);
+        }, [actions, filterQ, filterPid, filterType, filterPlay]);
 
         const stats = useMemo(() => recalcFullGame(actions, players, oppPlayers), [actions, players, oppPlayers]);
 
@@ -1065,7 +1081,8 @@
                 timeMin: Math.floor((action.time || 0) / 60), timeSec: (action.time || 0) % 60,
                 val: action.val || 2, made: action.made !== undefined ? action.made : true,
                 ftMade: action.ftMade || 0, ftAtt: action.ftAtt || 0,
-                foulType: action.foulType || 'PERSONAL', victim: action.victim || null, subOut: action.subOut || null
+                foulType: action.foulType || 'PERSONAL', victim: action.victim || null, subOut: action.subOut || null,
+                play: action.play || ''
             });
         };
 
@@ -1080,6 +1097,7 @@
                 if (editData.type === 'FOUL') { u.foulType = editData.foulType; if (editData.victim) u.victim = editData.victim; }
                 if (editData.type === 'BLK' && editData.victim) u.victim = editData.victim;
                 if (editData.type === 'SUB') { u.subOut = editData.subOut; }
+                if (editData.play) u.play = editData.play; else delete u.play;
                 return u;
             }));
             setEditingId(null); setDirty(true);
@@ -1234,6 +1252,14 @@
                             <option value="all">Tous types</option>
                             {ACTION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                         </select>
+                        <select className={SEL} value={filterPlay} onChange={e => setFilterPlay(e.target.value)}>
+                            <option value="all">Tous plays</option>
+                            {(() => {
+                                const plays = new Set();
+                                actions.forEach(a => { if (a.play) plays.add(a.play); });
+                                return Array.from(plays);
+                            })().map(p => <option key={p} value={p}>{p}</option>)}
+                        </select>
                         <button className="px-3 py-1.5 rounded bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold cursor-pointer" onClick={() => setShowAddForm(true)}>+ Action</button>
                     </div>
                 </div>
@@ -1316,6 +1342,20 @@
                                                 <CombinedPlayerSelect value={editData.subOut} onChange={v => setEditData(d => ({ ...d, subOut: v }))} homePlayers={players} oppPlayers={oppPlayers} allowNone={true} className={SEL + ' w-32'} />
                                             </div>
                                         )}
+                                        <div className="flex gap-2 items-center">
+                                            <span className="text-[10px] text-teal-400 font-bold">Play:</span>
+                                            <select
+                                                className={SEL + ' w-32'}
+                                                value={editData.play || ''}
+                                                onChange={e => setEditData(d => ({ ...d, play: e.target.value }))}
+                                            >
+                                                <option value="">Aucun</option>
+                                                {(() => {
+                                                    try { return JSON.parse(localStorage.getItem('basket_play_types')) || ['Transition','Pick & Roll','Jeu posté','Isolation','Motion','Sortie de temps mort']; }
+                                                    catch { return ['Transition','Pick & Roll','Jeu posté','Isolation','Motion','Sortie de temps mort']; }
+                                                })().map(pt => <option key={pt} value={pt}>{pt}</option>)}
+                                            </select>
+                                        </div>
                                         <div className="flex gap-1 justify-end pt-1">
                                             <button className="px-3 py-1 rounded bg-green-600 text-white text-[10px] font-bold cursor-pointer" onClick={() => saveEdit(aid)}>OK</button>
                                             <button className="px-3 py-1 rounded bg-slate-700 text-slate-300 text-[10px] font-bold cursor-pointer" onClick={() => setEditingId(null)}>Annuler</button>
@@ -1333,6 +1373,15 @@
                                     <span className={`font-bold text-xs shrink-0 w-10 ${act.type === 'SUB' ? 'text-cyan-400' : isHome ? 'text-blue-400' : 'text-red-400'}`}>{getPlayerLabel(pid)}</span>
                                     <span className="text-slate-500 text-[10px] w-24 shrink-0 truncate">{getPlayerName(pid)}</span>
                                     <span className={`flex-1 text-xs font-semibold ${getActionColor(act)}`}>{getActionLabel(act)}</span>
+                                    {act.play && (
+                                        <span style={{
+                                            fontSize: '0.55rem', padding: '1px 4px', marginLeft: '4px',
+                                            background: 'rgba(13,148,136,0.2)', border: '1px solid #0d9488',
+                                            borderRadius: '3px', color: '#5eead4', fontWeight: 600
+                                        }}>
+                                            {act.play}
+                                        </span>
+                                    )}
                                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                                         <button className="px-2 py-1 rounded bg-slate-700 text-slate-300 text-[10px] cursor-pointer hover:bg-slate-600" onClick={() => startEdit(act)}>Edit</button>
                                         <button className="px-2 py-1 rounded bg-red-900 text-red-300 text-[10px] cursor-pointer hover:bg-red-700" onClick={() => handleDelete(aid)}>Del</button>

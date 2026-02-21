@@ -669,10 +669,35 @@ BENCHMARKS NIVEAU ${b.label} :
                             ))}
                         </tbody>
                     </table>
+                     {(() => {
+                        const ShotChart = window.ShotChart;
+                        if (!ShotChart || !propGames) return null;
+                        const rawPid = typeof p !== 'undefined' ? (p.info?.id || p.id) : null;
+                        if (!rawPid) return null;
+                        const numPid = Number(rawPid);
+                        const playerShots = [];
+                        propGames.forEach(g => {
+                            if (!g.actions || !g.actions.length) return;
+                            g.actions.forEach(a => {
+                                if (a.type === 'SHOT' && (a.pid === rawPid || a.pid === numPid)) {
+                                    playerShots.push(a);
+                                }
+                            });
+                        });
+                        if (playerShots.length === 0) return null;
+                        return (
+                            <div className="mt-6">
+                                <ShotChart
+                                    shots={playerShots}
+                                    playerName={p.info?.name || p.name || ''}
+                                />
+                            </div>
+                        );
+                    })()}
                     {(() => {
     // Adapter `player.id` selon le nom exact de la variable du joueur dans votre composant (ex: p.id, selectedPlayer.id)
     const currentPlayerId = typeof p !== 'undefined' ? p.id : player.id; const lineups = calcFiveManLineups(currentPlayerId, propGames, propRoster);
-    
+      
     if (lineups.total === 0) return null;
     
     const renderLineup = (lu, idx) => (

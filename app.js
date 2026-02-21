@@ -1160,6 +1160,8 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
     if (!game) return null;
     const [viewMode, setViewMode] = useState('classic');
     const [showMinutesDebug, setShowMinutesDebug] = useState(false);
+    const [quarterFilter, setQuarterFilter] = useState('TOTAL');
+    const [playFilter, setPlayFilter] = useState('ALL');
 
     const statsData = React.useMemo(() => {
         const pStats = game.playerStats || {};
@@ -1290,7 +1292,113 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
             hasBlkAgainstData
         };
     }, [game, players]);
+        const quarterStatsData = React.useMemo(() => {
+        if (quarterFilter === 'TOTAL' || !game.actions?.length) return null;
+        const qNum = parseInt(quarterFilter);
+        const qActions = game.actions.filter(a => (a.q || 1) === qNum);
+        
+        const pStatsMap = {};
+        if (game.playerStats) {
+            Object.entries(game.playerStats).forEach(([id, ps]) => {
+                pStatsMap[id] = {
+                    id, name: `#${ps.number || id} ${ps.name || ''}`.trim(),
+                    minutes: '-', pts: 0, fgm: 0, fga: 0, fg3m: 0, fg3a: 0, ftm: 0, fta: 0,
+                    oreb: 0, dreb: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0,
+                    foulDrawn: 0, blkAgainst: 0, plusMinus: 0
+                };
+            });
+        }
+        
+        qActions.forEach(a => {
+            const pid = String(a.pid);
+            if (pStatsMap[pid]) {
+                const s = pStatsMap[pid];
+                if (a.type === 'SHOT') {
+                    if (a.val === 3) { s.fg3a++; if (a.made) { s.fg3m++; s.pts += 3; } }
+                    else { s.fga++; if (a.made) { s.fgm++; s.pts += a.val; } }
+                }
+                if (a.type === 'FT') { s.ftm += (a.ftMade || 0); s.fta += (a.ftAtt || 0); s.pts += (a.ftMade || 0); }
+                if (a.type === 'OREB') { s.oreb++; s.reb++; }
+                if (a.type === 'DREB') { s.dreb++; s.reb++; }
+                if (a.type === 'STL') s.stl++;
+                if (a.type === 'TOV') s.tov++;
+                if (a.type === 'BLK') s.blk++;
+                if (a.type === 'FOUL') s.pf++;
+            }
+            if (a.type === 'SHOT' && a.made && a.astId && pStatsMap[String(a.astId)]) {
+                pStatsMap[String(a.astId)].ast++;
+            }
+            if (a.type === 'FOUL' && a.victim && pStatsMap[String(a.victim)]) {
+                pStatsMap[String(a.victim)].foulDrawn++;
+            }
+            if (a.type === 'BLK' && a.victim && pStatsMap[String(a.victim)]) {
+                pStatsMap[String(a.victim)].blkAgainst++;
+            }
+            if ((a.type === 'SHOT' && a.made) || (a.type === 'FT' && (a.ftMade || 0) > 0)) {
+                const pts = a.type === 'SHOT' ? a.val : a.ftMade;
+                const scorerIsHome = parseInt(a.pid) < 1000;
+                if (a.onCourt) {
+                    a.onCourt.forEach(id => {
+                        const sid = String(id);
+                        if (pStatsMap[sid]) {
+                            const pIsHome = parseInt(id) < 1000;
+                            pStatsMap[sid].plusMinus += (scorerIsHome === pIsHome ? pts : -pts);
+                        }
+                    });
+                }
+            }
+        });
+        
+        const qPlayers = Object.values(pStatsMap)
+            .filter(s => parseInt(s.id) < 1000)
+            .map(s => {
+                const tFgm = s.fgm + s.fg3m, tFga = s.fga + s.fg3a;
+                return { ...s, totalFgm: tFgm, totalFga: tFga,
+                    fgPct: tFga > 0 ? Math.round((tFgm / tFga) * 100) : 0,
+                    fg3Pct: s.fg3a > 0 ? Math.round((s.fg3m / s.fg3a) * 100) : 0,
+                    ftPct: s.fta > 0 ? Math.round((s.ftm / s.fta) * 100) : 0,
+                    eff: (s.pts + s.reb + s.ast + s.stl + s.blk) - ((tFga - tFgm) + (s.fta - s.ftm) + s.tov)
+                };
+            })
+            .sort((a, b) => b.pts - a.pts);
 
+        const T = { pts: 0, fgm: 0, fga: 0, fg3m: 0, fg3a: 0, ftm: 0, fta: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0 };
+        qPlayers.forEach(s => {
+            T.pts += s.pts; T.fgm += s.totalFgm; T.fga += s.totalFga;
+            T.fg3m += s.fg3m; T.fg3a += s.fg3a; T.ftm += s.ftm; T.fta += s.fta;
+            T.reb += s.reb; T.ast += s.ast; T.stl += s.stl; T.blk += s.blk; T.tov += s.tov; T.pf += s.pf;
+        });
+        return { players: qPlayers, team: T };
+    }, [game, quarterFilter]);
+    const playAnalysis = React.useMemo(() => {
+        if (!game.actions?.length) return null;
+        const tagged = game.actions.filter(a => a.play);
+        if (tagged.length === 0) return null;
+
+        const plays = {};
+        tagged.forEach(a => {
+            if (!plays[a.play]) plays[a.play] = { name: a.play, actions: [], shots: 0, fgm: 0, fg3m: 0, pts: 0, tov: 0, fta: 0, ftm: 0 };
+            const p = plays[a.play];
+            p.actions.push(a);
+            if (a.type === 'SHOT') {
+                p.shots++;
+                if (a.made) {
+                    p.fgm++;
+                    p.pts += a.val;
+                    if (a.val === 3) p.fg3m++;
+                }
+            }
+            if (a.type === 'FT') { p.fta += (a.ftAtt || 0); p.ftm += (a.ftMade || 0); p.pts += (a.ftMade || 0); }
+            if (a.type === 'TOV') p.tov++;
+        });
+
+        return Object.values(plays).map(p => {
+            const poss = p.shots + p.tov + 0.44 * p.fta;
+            const eFG = p.shots > 0 ? ((p.fgm + 0.5 * p.fg3m) / p.shots * 100).toFixed(1) : '-';
+            const ppp = poss > 0 ? (p.pts / poss).toFixed(2) : '-';
+            return { ...p, poss: Math.round(poss), eFG, ppp };
+        }).sort((a, b) => b.poss - a.poss);
+    }, [game]);
     // --- RENDU ---
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={`Vs ${game.opponent}`} size="max-w-6xl">
@@ -1342,7 +1450,23 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
                         </span>
                     </div>
                 )}
-
+                {game.actions?.length > 0 && (
+                    <div className="flex gap-1 p-1 bg-slate-800/50 rounded-lg border border-slate-700 mb-3">
+                        {['TOTAL', '1', '2', '3', '4'].map(q => (
+                            <button
+                                key={q}
+                                onClick={() => setQuarterFilter(q)}
+                                className={`px-3 py-1.5 text-xs font-bold rounded transition-all ${
+                                    quarterFilter === q
+                                        ? 'bg-orange-500 text-white shadow'
+                                        : 'text-slate-400 hover:text-white hover:bg-slate-700'
+                                }`}
+                            >
+                                {q === 'TOTAL' ? 'TOTAL' : `Q${q}`}
+                            </button>
+                        ))}
+                    </div>
+                )}
                 {/* --- TABLEAU JOUEURS --- */}
                 <div>
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-3 gap-2">
@@ -1396,46 +1520,82 @@ function GameDetailsModal({ game, isOpen, onClose, players }) {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-800">
-                                {statsData.players.map(p => (
-                                    <tr key={p.id} className="hover:bg-slate-800/50 transition-colors">
-                                        <td className="p-3 font-bold text-white sticky left-0 bg-slate-900 z-10 border-r border-slate-800 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.5)] truncate max-w-[100px] md:max-w-none">{p.name}</td>
-                                        <td className="p-3 text-center text-slate-500 font-mono">{p.minutes}</td>
-                                        {viewMode === 'classic' ? (
-                                            <>
-                                                <td className="p-3 text-center font-bold text-orange-400">{p.pts}</td>
-                                                <td className="p-3 text-center">{p.twoPM}-{p.twoPA}</td>
-                                                <td className="p-3 text-center">{p.threePM}-{p.threePA}</td>
-                                                <td className="p-3 text-center">{p.ftm}-{p.fta}</td>
-                                                <td className="p-3 text-center font-bold text-white">{p.reb}</td>
-                                                <td className="p-3 text-center text-[10px] text-slate-500">{p.oreb}</td>
-                                                <td className="p-3 text-center text-[10px] text-slate-500">{p.dreb}</td>
-                                                <td className="p-3 text-center">{p.ast}</td>
-                                                <td className="p-3 text-center">{p.stl}</td>
-                                                <td className="p-3 text-center">{p.blk}</td>
-                                                {statsData.hasBlkAgainstData && <td className="p-3 text-center text-orange-300">{p.blkAgainst}</td>}
-                                                <td className="p-3 text-center text-red-400">{p.tov}</td>
-                                                <td className="p-3 text-center text-red-400">{p.pf}</td>
-                                                {statsData.hasFoulDrawnData && <td className="p-3 text-center text-cyan-400">{p.foulDrawn}</td>}
-                                                <td className={`p-3 text-center font-bold ${p.plusMinus>=0?'text-green-400':'text-red-400'}`}>{p.plusMinus>0?'+':''}{p.plusMinus}</td>
-                                                <td className="p-3 text-center font-bold text-green-400">{p.eff}</td>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <td className="p-3 text-center font-bold text-orange-400">{p.pts}</td>
-                                                <td className="p-3 text-center text-blue-300 font-mono">{p.eFG}%</td>
-                                                <td className="p-3 text-center text-purple-300 font-mono">{p.TS}%</td>
-                                                <td className="p-3 text-center text-cyan-400 font-mono font-bold">{p.PIE}%</td>
-                                                <td className="p-3 text-center">{p.ast}</td>
-                                                <td className="p-3 text-center text-red-400">{p.tov}</td>
-                                                <td className={`p-3 text-center font-bold font-mono border-l border-slate-700 ${parseFloat(p.plusMinus)>=0?'text-green-400':'text-red-400'}`}>{parseFloat(p.plusMinus)>0?'+':''}{p.plusMinus}</td>
-                                            </>
-                                        )}
-                                    </tr>
-                                ))}
+                               {(quarterStatsData ? quarterStatsData.players : statsData.players).map((p, _pi) => {
+       if (quarterStatsData) {
+           return (
+               <tr key={p.id} className="hover:bg-slate-800/50 transition-colors">
+                   <td className="p-3 font-bold text-white sticky left-0 bg-slate-900 z-10 border-r border-slate-800 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.5)] truncate max-w-[100px] md:max-w-none">{p.name}</td>
+                   <td className="p-3 text-center text-slate-500 font-mono">-</td>
+                   {viewMode === 'classic' ? (
+                       <>
+                           <td className="p-3 text-center font-bold text-orange-400">{p.pts}</td>
+                           <td className="p-3 text-center">{p.totalFgm}/{p.totalFga}</td>
+                           <td className={`p-3 text-center ${p.fgPct >= 45 ? 'text-green-400' : p.fgPct < 35 ? 'text-red-400' : 'text-slate-300'}`}>{p.fgPct}%</td>
+                           <td className="p-3 text-center">{p.fg3m}/{p.fg3a}</td>
+                           <td className={`p-3 text-center ${p.fg3Pct >= 33 ? 'text-blue-400' : 'text-slate-500'}`}>{p.fg3Pct}%</td>
+                           <td className="p-3 text-center">{p.ftm}/{p.fta}</td>
+                           <td className="p-3 text-center">{p.ftPct}%</td>
+                           <td className="p-3 text-center font-bold text-white">{p.reb}</td>
+                           <td className="p-3 text-center">{p.ast}</td>
+                           <td className="p-3 text-center">{p.stl}</td>
+                           <td className="p-3 text-center text-red-400">{p.tov}</td>
+                           <td className="p-3 text-center text-red-400">{p.pf}</td>
+                           {statsData.hasFoulDrawnData && <td className="p-3 text-center text-cyan-400">{p.foulDrawn}</td>}
+                           <td className={`p-3 text-center font-bold ${p.plusMinus >= 0 ? 'text-green-500' : 'text-red-500'}`}>{p.plusMinus > 0 ? '+' : ''}{p.plusMinus}</td>
+                           <td className="p-3 text-center font-bold text-green-400">{p.eff}</td>
+                       </>
+                   ) : (
+                       <>
+                           <td className="p-3 text-center font-bold text-orange-400">{p.pts}</td>
+                           <td className="p-3 text-center">{p.fgPct}%</td>
+                           <td className="p-3 text-center">{p.fg3Pct}%</td>
+                           <td className="p-3 text-center text-cyan-400">{p.eff}</td>
+                           <td className="p-3 text-center">{p.ast}</td>
+                           <td className="p-3 text-center text-red-400">{p.tov}</td>
+                           <td className={`p-3 text-center text-yellow-400 font-bold border-l border-slate-700 ${p.plusMinus >= 0 ? 'text-green-400' : 'text-red-400'}`}>{p.plusMinus > 0 ? '+' : ''}{p.plusMinus}</td>
+                       </>
+                   )}
+               </tr>
+           );}})}
                             </tbody>
                         </table>
                     </div>
                 </div>
+                 {playAnalysis && playAnalysis.length > 0 && (
+                    <div className="mt-6">
+                        <h4 className="text-sm text-teal-400 uppercase font-bold mb-3 flex items-center gap-2">
+                            <span>📋</span> Analyse par Système de jeu
+                        </h4>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left text-xs text-slate-300">
+                                <thead className="bg-slate-800 text-slate-400 uppercase">
+                                    <tr>
+                                        <th className="p-2">Système</th>
+                                        <th className="p-2 text-center">Poss</th>
+                                        <th className="p-2 text-center">Tirs</th>
+                                        <th className="p-2 text-center text-green-400">eFG%</th>
+                                        <th className="p-2 text-center text-orange-400">Pts/Poss</th>
+                                        <th className="p-2 text-center text-red-400">BP</th>
+                                        <th className="p-2 text-center">Pts</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-800">
+                                    {playAnalysis.map((p, i) => (
+                                        <tr key={i} className="hover:bg-slate-800/50">
+                                            <td className="p-2 font-bold text-teal-300">{p.name}</td>
+                                            <td className="p-2 text-center">{p.poss}</td>
+                                            <td className="p-2 text-center">{p.fgm}/{p.shots}</td>
+                                            <td className="p-2 text-center text-green-400">{p.eFG}%</td>
+                                            <td className="p-2 text-center font-bold text-orange-400">{p.ppp}</td>
+                                            <td className="p-2 text-center text-red-400">{p.tov}</td>
+                                            <td className="p-2 text-center font-bold text-white">{p.pts}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
 
                 {/* Play-by-Play (inchangé — garder le code existant après ce bloc) */}
                 {game.actions && game.actions.length > 0 ? (
@@ -1991,6 +2151,49 @@ function History({ games, players, setGames, phases, onEditGame, onImportClick, 
 function Settings({ players, onUpdatePlayers, phases, onUpdatePhases, firebaseConfig, setFirebaseConfig }) {
     const [localConfig, setLocalConfig] = useState(JSON.stringify(firebaseConfig, null, 2) || "");
     const [newPhaseName, setNewPhaseName] = useState("");
+    const [playTypes, setPlayTypes] = useState([]);
+    const [newPlayType, setNewPlayType] = useState('');
+    const [playTypesLoaded, setPlayTypesLoaded] = useState(false);
+     useEffect(() => {
+        if (window.db) {
+            window.db.collection('team_data').doc('config').get().then(doc => {
+                if (doc.exists && doc.data().playTypes) {
+                    setPlayTypes(doc.data().playTypes);
+                } else {
+                    setPlayTypes(['Transition', 'Pick & Roll', 'Jeu posté', 'Isolation', 'Motion', 'Sortie de temps mort']);
+                }
+                setPlayTypesLoaded(true);
+            }).catch(() => {
+                setPlayTypes(['Transition', 'Pick & Roll', 'Jeu posté', 'Isolation', 'Motion', 'Sortie de temps mort']);
+                setPlayTypesLoaded(true);
+            });
+        } else {
+            const saved = JSON.parse(localStorage.getItem('basket_play_types') || 'null');
+            setPlayTypes(saved || ['Transition', 'Pick & Roll', 'Jeu posté', 'Isolation', 'Motion', 'Sortie de temps mort']);
+            setPlayTypesLoaded(true);
+        }
+    }, []);
+
+    const savePlayTypes = (newTypes) => {
+        setPlayTypes(newTypes);
+        if (window.db) {
+            window.db.collection('team_data').doc('config').set({ playTypes: newTypes }, { merge: true });
+        }
+        localStorage.setItem('basket_play_types', JSON.stringify(newTypes));
+    };
+
+    const addPlayType = () => {
+        const trimmed = newPlayType.trim();
+        if (!trimmed || playTypes.includes(trimmed)) return;
+        savePlayTypes([...playTypes, trimmed]);
+        setNewPlayType('');
+    };
+
+    const removePlayType = (idx) => {
+        const newTypes = playTypes.filter((_, i) => i !== idx);
+        savePlayTypes(newTypes);
+    };
+
     return (
         <div className="space-y-6">
             <Card className="p-6 border-l-4 border-orange-500">
@@ -2007,6 +2210,40 @@ function Settings({ players, onUpdatePlayers, phases, onUpdatePhases, firebaseCo
                         <input type="text" value={newPhaseName} onChange={(e) => setNewPhaseName(e.target.value)} placeholder="Nouvelle phase..." className="flex-1 bg-slate-900 text-white px-4 py-2 rounded border border-slate-600" onKeyPress={(e) => { if (e.key === 'Enter' && newPhaseName.trim()) { onUpdatePhases([...phases, { id: `phase_${generateId()}`, name: newPhaseName.trim() }]); setNewPhaseName(""); } }} />
                         <Button variant="success" onClick={() => { if (newPhaseName.trim()) { onUpdatePhases([...phases, { id: `phase_${generateId()}`, name: newPhaseName.trim() }]); setNewPhaseName(""); } }}><Icon path={Icons.Plus} /></Button>
                     </div>
+                </div>
+            </Card>
+            <Card className="p-6 border-l-4 border-teal-500">
+                <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                    <Icon path={Icons.Clipboard} />
+                    <span>Systèmes de jeu</span>
+                </h3>
+                <p className="text-xs text-slate-500 mb-4">
+                    Configurez les types de plays disponibles pendant le match live.
+                </p>
+                <div className="space-y-2 mb-4">
+                    {playTypes.map((pt, i) => (
+                        <div key={i} className="flex items-center gap-3 bg-slate-900 p-2 rounded border border-slate-700">
+                            <span className="flex-1 text-white text-sm font-medium">{pt}</span>
+                            <button
+                                onClick={() => removePlayType(i)}
+                                className="text-red-500 hover:text-red-400 p-1"
+                            >
+                                <Icon path={Icons.Trash} />
+                            </button>
+                        </div>
+                    ))}
+                </div>
+                <div className="flex gap-2">
+                    <input
+                        className="flex-1 bg-slate-900 text-white px-3 py-2 rounded border border-slate-700 text-sm outline-none focus:border-teal-500"
+                        placeholder="Nouveau système..."
+                        value={newPlayType}
+                        onChange={(e) => setNewPlayType(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') addPlayType(); }}
+                    />
+                    <Button onClick={addPlayType} variant="success" size="sm">
+                        <Icon path={Icons.Plus} />
+                    </Button>
                 </div>
             </Card>
             <Card className="p-6 border-l-4 border-indigo-500">
