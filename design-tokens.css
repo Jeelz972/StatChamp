@@ -1,0 +1,69 @@
+/* design-tokens.css — Source unique de vérité pour toutes les couleurs et tokens du projet */
+
+:root {
+    /* === BACKGROUNDS === */
+    --bg-0: #0C0C12;       /* Page background */
+    --bg-1: #161620;       /* Sidebar, header, secondary surfaces */
+    --bg-2: #1C1C28;       /* Cards, panels */
+    --bg-3: #252530;       /* Elevated surfaces (modals, popovers, dropdowns) */
+
+    /* === ACCENT — Orange Basket === */
+    --accent: #FF6B35;
+    --accent-light: #FF8C5A;
+    --accent-dark: #E05520;
+    --accent-ghost: rgba(255, 107, 53, 0.12);
+    --accent-glow: rgba(255, 107, 53, 0.4);
+
+    /* === BASKET SEMANTICS (métier) === */
+    --made: #34D399;        /* Tir réussi, stat positive */
+    --miss: #F87171;        /* Tir raté, stat négative */
+
+    /* === SYSTEM SEMANTICS (technique) === */
+    --sys-ok: #22C55E;     /* Firebase OK, sync OK */
+    --sys-err: #DC2626;    /* Erreurs système */
+    --sys-warn: #F59E0B;   /* Avertissements */
+    --sys-info: #3B82F6;   /* Informations, liens */
+
+    /* === TEXT === */
+    --text-1: #FFFFFF;
+    --text-2: #A1A1AA;
+    --text-3: #52525B;
+
+    /* === BORDERS === */
+    --border: rgba(255, 255, 255, 0.08);
+    --border-accent: rgba(255, 107, 53, 0.2);
+    --border-accent-strong: rgba(255, 107, 53, 0.4);
+
+    /* === TEAMS === */
+    --home: #3B82F6;
+    --away: #EF4444;
+
+    /* === LEGACY ALIASES (transition — NE PAS UTILISER DANS DU CODE NEUF) === */
+    --gold: var(--accent);
+    --gold-dark: var(--accent-dark);
+    --gold-light: var(--accent-light);
+    --navy: var(--bg-1);
+    --navy-dark: var(--bg-0);
+    --navy-light: var(--bg-1);
+    --surface: var(--bg-2);
+    --surface-light: var(--bg-3);
+    --text-primary: var(--text-1);
+    --text-secondary: var(--text-2);
+    --success: var(--made);
+    --warning: var(--sys-warn);
+    --error: var(--sys-err);
+    --info: var(--sys-info);
+    --border-gold: var(--border-accent);
+    --border-gold-light: rgba(255, 107, 53, 0.1);
+
+    /* LIVE.HTML LEGACY ALIASES */
+    --bg-primary: var(--bg-0);
+    --bg-secondary: var(--bg-1);
+    --bg-card: rgba(28, 28, 40, 0.7);
+    --bg-elevated: rgba(37, 37, 48, 0.8);
+    --bg-gradient: radial-gradient(circle at top center, var(--bg-1) 0%, var(--bg-0) 100%);
+    --danger: var(--miss);
+    --text-muted: var(--text-3);
+    --home-color: var(--home);
+    --away-color: var(--away);
+}

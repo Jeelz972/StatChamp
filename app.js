@@ -1233,7 +1233,7 @@ const Icons = {
 // --- UI COMPONENTS ---
 const Card = ({ children, className = '' }) => (
   <div
-    className={`bg-slate-800 rounded-lg border border-slate-700 shadow-lg overflow-hidden hover:glow-gold-subtle transition-shadow ${className}`}
+    className={`bg-slate-800 rounded-lg border border-slate-700 shadow-lg overflow-hidden hover:border-orange-500/25 transition-colors ${className}`}
   >
     {children}
   </div>

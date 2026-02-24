@@ -1,8 +1,10 @@
 // SeasonDashboard.js — Composant React (JSX, nécessite Babel)
 // Dépendances : React, Recharts (globales), window.parseDate
-const { useState, useMemo } = React;
-const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } =
-  window.Recharts;
+(function () {
+  "use strict";
+  const { useState, useMemo } = React;
+  const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } =
+    window.Recharts;
 
 function SeasonDashboard({ games, players, phases }) {
   const [activeMetric, setActiveMetric] = useState('pts');
@@ -18,9 +20,10 @@ function SeasonDashboard({ games, players, phases }) {
   }, [games, filterPhase]);
 
   // ---- SECTION 1 : Tendances equipe (moyenne mobile) ----
-  const trendData = useMemo(() => {
+const trendBase = useMemo(() => {
     if (filteredGames.length === 0) return [];
-    return filteredGames.map((g, i) => {
+    // Pre-calcul des valeurs brutes par match (une seule fois)
+    const base = filteredGames.map((g, i) => {
       let pts = 0,
         conceded = g.awayScore || 0,
         fgm = 0,
@@ -41,46 +44,6 @@ function SeasonDashboard({ games, players, phases }) {
       const eFG = fga > 0 ? ((fgm + 0.5 * threePM) / fga) * 100 : 0;
       const poss = fga + 0.44 * fta + tov;
       const tovPct = poss > 0 ? (tov / poss) * 100 : 0;
-
-      const ma = (key, window) => {
-        const start = Math.max(0, i - window + 1);
-        const slice = filteredGames.slice(start, i + 1);
-        let sum = 0;
-        slice.forEach((sg) => {
-          let v = 0;
-          if (key === 'pts') {
-            Object.values(sg.playerStats || {}).forEach((s) => {
-              v += s.pts || 0;
-            });
-          } else if (key === 'conceded') {
-            v = sg.awayScore || 0;
-          } else if (key === 'eFG') {
-            let sfgm = 0,
-              sfga = 0,
-              s3pm = 0;
-            Object.values(sg.playerStats || {}).forEach((s) => {
-              sfgm += (s.fgm || 0) + (s.threePM || 0);
-              sfga += (s.fga || 0) + (s.threePA || 0);
-              s3pm += s.threePM || 0;
-            });
-            v = sfga > 0 ? ((sfgm + 0.5 * s3pm) / sfga) * 100 : 0;
-          } else if (key === 'tovPct') {
-            let stov = 0,
-              sfga2 = 0,
-              sfta = 0;
-            Object.values(sg.playerStats || {}).forEach((s) => {
-              stov += s.tov || 0;
-              sfga2 += (s.fga || 0) + (s.threePA || 0);
-              sfta += s.fta || 0;
-            });
-            const sp = sfga2 + 0.44 * sfta + stov;
-            v = sp > 0 ? (stov / sp) * 100 : 0;
-          }
-          sum += v;
-        });
-        return slice.length > 0 ? sum / slice.length : 0;
-      };
-
       return {
         label: g.opponent ? `vs ${g.opponent}` : `M${i + 1}`,
         date: g.date,
@@ -88,18 +51,34 @@ function SeasonDashboard({ games, players, phases }) {
         conceded,
         eFG: parseFloat(eFG.toFixed(1)),
         tovPct: parseFloat(tovPct.toFixed(1)),
-        ma3: parseFloat(ma(activeMetric, 3).toFixed(1)),
-        ma5: parseFloat(ma(activeMetric, 5).toFixed(1)),
-        raw: (key) => {
-          if (key === 'pts') return pts;
-          if (key === 'conceded') return conceded;
-          if (key === 'eFG') return eFG;
-          if (key === 'tovPct') return tovPct;
-          return 0;
-        },
       };
     });
-  }, [filteredGames, activeMetric]);
+    // Pre-calcul des moyennes mobiles pour TOUTES les metriques
+    const keys = ['pts', 'conceded', 'eFG', 'tovPct'];
+    keys.forEach((key) => {
+      for (let i = 0; i < base.length; i++) {
+        const ma = (w) => {
+          const start = Math.max(0, i - w + 1);
+          let sum = 0;
+          for (let j = start; j <= i; j++) sum += base[j][key];
+          return parseFloat((sum / (i - start + 1)).toFixed(1));
+        };
+        base[i][key + '_ma3'] = ma(3);
+        base[i][key + '_ma5'] = ma(5);
+      }
+    });
+    return base;
+  }, [filteredGames]);
+
+  const trendData = useMemo(() => {
+    return trendBase.map((d) => ({
+      label: d.label,
+      date: d.date,
+      [activeMetric]: d[activeMetric],
+      ma3: d[activeMetric + '_ma3'],
+      ma5: d[activeMetric + '_ma5'],
+    }));
+  }, [trendBase, activeMetric]);
 
   // ---- SECTION 2 : Progressions joueurs ----
   const progressions = useMemo(() => {
@@ -108,12 +87,20 @@ function SeasonDashboard({ games, players, phases }) {
     const first = filteredGames.slice(0, n);
     const last = filteredGames.slice(-n);
 
+    const didPlay = (ps) => {
+      if (!ps) return false;
+      if ((ps.min || 0) > 0) return true;
+      return (ps.pts || 0) + (ps.fga || 0) + (ps.threePA || 0) + (ps.fta || 0) +
+        (ps.oreb || 0) + (ps.dreb || 0) + (ps.ast || 0) + (ps.stl || 0) +
+        (ps.blk || 0) + (ps.tov || 0) + (ps.pf || 0) > 0;
+    };
+
     const calcAvg = (subset, pid, stat) => {
       let sum = 0,
         count = 0;
       subset.forEach((g) => {
         const ps = (g.playerStats || {})[pid];
-        if (ps) {
+        if (ps && didPlay(ps)) {
           if (stat === 'reb') sum += (ps.oreb || 0) + (ps.dreb || 0);
           else if (stat === 'eff')
             sum +=
@@ -294,6 +281,7 @@ function SeasonDashboard({ games, players, phases }) {
                   stroke={activeMeta.color}
                   strokeWidth={1}
                   dot={{ r: 3, fill: activeMeta.color }}
+                   isAnimationActive={false}
                 />
                 <Line
                   type="monotone"
@@ -303,6 +291,7 @@ function SeasonDashboard({ games, players, phases }) {
                   strokeWidth={2}
                   dot={false}
                   strokeDasharray="5 3"
+                   isAnimationActive={false}
                 />
                 <Line
                   type="monotone"
@@ -312,6 +301,7 @@ function SeasonDashboard({ games, players, phases }) {
                   strokeWidth={2}
                   dot={false}
                   strokeDasharray="2 2"
+                   isAnimationActive={false}
                 />
               </LineChart>
             </ResponsiveContainer>
@@ -419,5 +409,5 @@ function SeasonDashboard({ games, players, phases }) {
     </div>
   );
 }
-
-window.SeasonDashboard = SeasonDashboard;
+  window.SeasonDashboard = SeasonDashboard;
+})();

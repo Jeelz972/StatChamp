@@ -8,9 +8,12 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600;700&family=Oswald:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
       rel="stylesheet"
     />
+
+    <link rel="stylesheet" href="design-tokens.css">
+    <link rel="stylesheet" href="app.css">
 
     <script src="https://cdn.tailwindcss.com"></script>
 
@@ -27,327 +30,33 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script>
-      tailwind.config = {
+    tailwind.config = {
         theme: {
           extend: {
             fontFamily: {
-              sans: ['Inter', 'sans-serif'],
-              display: ['Bebas Neue', 'sans-serif'],
-              accent: ['Oswald', 'sans-serif'],
+              'sans': ['Inter', 'sans-serif'],
             },
             colors: {
-              // Remap slate → navy palette
-              slate: {
-                50: '#e8e8f0',
-                100: '#c0c0d0',
-                200: '#a0a0b0',
-                300: '#8080a0',
-                400: '#6a6a8a',
-                500: '#50506a',
-                600: '#3a3a5a',
-                700: '#2a2a4a',
-                800: '#1a1a3a',
-                900: '#10102a',
-                950: '#0a0a1a',
+              'slate': {
+                50: '#F4F4F5', 100: '#E4E4E7', 200: '#D4D4D8',
+                300: '#A1A1AA', 400: '#71717A', 500: '#52525B',
+                600: '#3F3F46', 700: '#252530', 800: '#1C1C28',
+                900: '#161620', 950: '#0C0C12'
               },
-              // Remap orange → gold palette
-              orange: {
-                50: '#fef7ed',
-                100: '#fdecd5',
-                200: '#f5d8a8',
-                300: '#e8c088', // gold-light
-                400: '#d4a574', // gold (primary)
-                500: '#b8935f', // gold-dark
-                600: '#9a7a4e',
-                700: '#7c623e',
-                800: '#604b30',
-                900: '#453624',
-                950: '#2a2015',
+              'orange': {
+                50: '#FFF7ED', 100: '#FFEDD5', 200: '#FED7AA',
+                300: '#FDBA74', 400: '#FF8C5A', 500: '#FF6B35',
+                600: '#E05520', 700: '#C2410C', 800: '#9A3412',
+                900: '#7C2D12', 950: '#431407'
               },
-              // Accents conservés
-              'court-orange': '#d4a574',
-              'coach-dark': '#1a1a2e',
-              'coach-accent': '#d4a574',
-            },
-            animation: {
-              'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-              shimmer: 'shimmer 3s linear infinite',
-              float: 'float 6s ease-in-out infinite',
-              'gradient-shift': 'gradientShift 15s ease infinite',
-              'pulse-glow': 'pulseGlow 4s ease-in-out infinite',
-            },
-            keyframes: {
-              shimmer: {
-                '0%': { backgroundPosition: '-200% 0' },
-                '100%': { backgroundPosition: '200% 0' },
-              },
-              float: {
-                '0%, 100%': { transform: 'translateY(0)' },
-                '50%': { transform: 'translateY(-10px)' },
-              },
-              gradientShift: {
-                '0%, 100%': { backgroundPosition: '0% 50%' },
-                '50%': { backgroundPosition: '100% 50%' },
-              },
-              pulseGlow: {
-                '0%, 100%': { boxShadow: '0 0 10px rgba(212, 165, 116, 0.3)' },
-                '50%': { boxShadow: '0 0 25px rgba(212, 165, 116, 0.5)' },
-              },
+              'court-orange': '#FF6B35',
+              'coach-dark': '#161620',
+              'coach-accent': '#FF6B35',
             },
           },
         },
-      };
-    </script>
+      };    </script>
 
-    <style>
-      /* --- CSS Variables --- */
-      :root {
-        --gold: #d4a574;
-        --gold-dark: #b8935f;
-        --gold-light: #e8c088;
-        --navy: #1a1a2e;
-        --navy-dark: #0f0f1a;
-        --navy-light: #16162a;
-        --surface: #1e1e3a;
-        --surface-light: #2a2a4a;
-        --text-primary: #ffffff;
-        --text-secondary: #a0a0b0;
-        --success: #4ade80;
-        --warning: #fbbf24;
-        --error: #ef4444;
-        --info: #60a5fa;
-        --border-gold: rgba(212, 165, 116, 0.2);
-        --border-gold-light: rgba(212, 165, 116, 0.1);
-      }
-
-      /* --- Base --- */
-      body {
-        font-family: 'Inter', sans-serif;
-        background-color: var(--navy-dark);
-        color: var(--text-primary);
-        min-height: 100vh;
-        overflow-x: hidden;
-      }
-
-      /* --- Scrollbar --- */
-      ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
-      }
-      ::-webkit-scrollbar-track {
-        background: var(--navy);
-      }
-      ::-webkit-scrollbar-thumb {
-        background: var(--gold);
-        border-radius: 4px;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: var(--gold-light);
-      }
-
-      .no-scrollbar::-webkit-scrollbar {
-        display: none;
-      }
-      .no-scrollbar {
-        -ms-overflow-style: none;
-        scrollbar-width: none;
-      }
-      .custom-scrollbar::-webkit-scrollbar {
-        width: 6px;
-        height: 6px;
-      }
-      .custom-scrollbar::-webkit-scrollbar-track {
-        background: var(--navy);
-      }
-      .custom-scrollbar::-webkit-scrollbar-thumb {
-        background: var(--gold-dark);
-        border-radius: 3px;
-      }
-
-      /* --- Sticky Table --- */
-      .sticky-col {
-        position: sticky;
-        left: 0;
-        background-color: var(--surface);
-        z-index: 20;
-        border-right: 1px solid var(--surface-light);
-      }
-      .sticky-header {
-        position: sticky;
-        top: 0;
-        z-index: 30;
-      }
-
-      /* --- Glass Effect --- */
-      .glass {
-        background: rgba(30, 30, 58, 0.6);
-        backdrop-filter: blur(20px) saturate(180%);
-        -webkit-backdrop-filter: blur(20px) saturate(180%);
-      }
-      .glass-strong {
-        background: rgba(30, 30, 58, 0.85);
-        backdrop-filter: blur(30px) saturate(200%);
-        -webkit-backdrop-filter: blur(30px) saturate(200%);
-      }
-
-      /* --- Gold Glow --- */
-      .glow-gold {
-        box-shadow:
-          0 0 20px rgba(212, 165, 116, 0.3),
-          0 0 40px rgba(212, 165, 116, 0.2),
-          0 0 60px rgba(212, 165, 116, 0.1);
-      }
-      .glow-gold-subtle {
-        box-shadow: 0 0 10px rgba(212, 165, 116, 0.2);
-      }
-
-      /* --- Gold Gradient Text --- */
-      .text-gradient-gold {
-        background: linear-gradient(
-          135deg,
-          var(--gold) 0%,
-          var(--gold-light) 50%,
-          var(--gold) 100%
-        );
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-      }
-
-      /* --- Border Gradient --- */
-      .border-gradient {
-        position: relative;
-      }
-      .border-gradient::before {
-        content: '';
-        position: absolute;
-        inset: 0;
-        border-radius: inherit;
-        padding: 1px;
-        background: linear-gradient(135deg, var(--gold), var(--gold-light), var(--gold));
-        -webkit-mask:
-          linear-gradient(#fff 0 0) content-box,
-          linear-gradient(#fff 0 0);
-        mask:
-          linear-gradient(#fff 0 0) content-box,
-          linear-gradient(#fff 0 0);
-        -webkit-mask-composite: xor;
-        mask-composite: exclude;
-      }
-
-      /* --- Table Row Hover --- */
-      .table-row-hover {
-        position: relative;
-        overflow: hidden;
-      }
-      .table-row-hover::before {
-        content: '';
-        position: absolute;
-        left: 0;
-        top: 0;
-        height: 100%;
-        width: 3px;
-        background: var(--gold);
-        transform: scaleY(0);
-        transition: transform 0.2s ease;
-      }
-      .table-row-hover:hover::before {
-        transform: scaleY(1);
-      }
-
-      /* --- Animated Underline --- */
-      .animated-underline {
-        position: relative;
-      }
-      .animated-underline::after {
-        content: '';
-        position: absolute;
-        bottom: -2px;
-        left: 50%;
-        width: 0;
-        height: 2px;
-        background: var(--gold);
-        transition: all 0.3s ease;
-        transform: translateX(-50%);
-      }
-      .animated-underline:hover::after {
-        width: 100%;
-      }
-
-      /* --- Selection --- */
-      ::selection {
-        background: rgba(212, 165, 116, 0.3);
-        color: white;
-      }
-
-      /* --- Focus --- */
-      *:focus-visible {
-        outline: 2px solid var(--gold);
-        outline-offset: 2px;
-      }
-
-      /* --- Reduced Motion --- */
-      @media (prefers-reduced-motion: reduce) {
-        *,
-        *::before,
-        *::after {
-          animation-duration: 0.01ms !important;
-          animation-iteration-count: 1 !important;
-          transition-duration: 0.01ms !important;
-        }
-      }
-
-      /* --- Print --- */
-      @media print {
-        body {
-          background-color: white;
-          color: black;
-        }
-        .no-print,
-        nav,
-        header,
-        button,
-        .modal-close {
-          display: none !important;
-        }
-        .print-only {
-          display: block !important;
-        }
-        .card-stats {
-          border: 1px solid #ccc;
-          box-shadow: none;
-          page-break-inside: avoid;
-          overflow: visible !important;
-        }
-        table {
-          width: 100%;
-          border-collapse: collapse;
-          font-size: 8pt;
-        }
-        th,
-        td {
-          border: 1px solid #ddd;
-          padding: 2px;
-          color: black !important;
-        }
-        th {
-          background-color: #f3f4f6 !important;
-          font-weight: bold;
-        }
-        .sticky-col {
-          position: static;
-          background-color: transparent;
-          border: none;
-        }
-        .sticky-header {
-          position: static;
-        }
-      }
-      .print-only {
-        display: none;
-      }
-      @keyframes livePulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
-    </style>
   </head>
   <body>
     <div id="root"></div>

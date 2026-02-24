@@ -142,9 +142,9 @@ const LEVEL_BENCHMARKS = {
   U18_Elite: {
     id: 'U18_Elite',
     label: 'U18 Élite',
-    ts_elite: 53,
-    ts_good: 48,
-    ts_bad: 43,
+    ts_elite: 48,
+    ts_good: 40,
+    ts_bad: 33,
     usage_high: 25,
     usage_low: 13,
     ast_good: 3.5,
@@ -153,7 +153,7 @@ const LEVEL_BENCHMARKS = {
     oreb_good: 2.5,
     reb_dom: 9,
     def_active: 2.5,
-    pf36_warn: 4.5,
+    pf36_warn: 2.5,
     pf36_bad: 6.0,
     threePct_good: 30,
     trend_delta: 4,
@@ -418,71 +418,86 @@ const AnalysisEngine = {
       .sort((a, b) => b.avg.eff - a.avg.eff);
   },
 
-  // --- ARCHETYPE (inchangé) ---
-  getArchetype: (avg) => {
-    if (avg.pts === 0 && avg.reb === 0)
-      return {
-        name: 'Non Évalué',
-        desc: 'Pas de données.',
-        color: 'text-slate-500',
-        border: 'border-slate-700',
-        bg: 'bg-slate-800',
-      };
-    if (avg.usage > 28)
-      return {
-        name: 'Option #1',
-        desc: "Focal point de l'attaque.",
-        color: 'text-amber-400',
-        border: 'border-amber-500',
-        bg: 'bg-amber-900/20',
-      };
-    if (avg.usage < 15 && avg.TS > 58)
-      return {
-        name: 'Finisseur',
-        desc: 'Faible volume, haute efficacité.',
-        color: 'text-green-400',
-        border: 'border-green-500',
-        bg: 'bg-green-900/20',
-      };
-    if (avg.ast > 5 && avg.astTov > 2.5)
-      return {
-        name: 'Floor General',
-        desc: "Gestionnaire d'élite.",
-        color: 'text-indigo-400',
-        border: 'border-indigo-500',
-        bg: 'bg-indigo-900/20',
-      };
-    if (avg.threePAr > 0.5)
-      return {
-        name: 'Sniper',
-        desc: 'Menace extérieure majeure.',
-        color: 'text-cyan-400',
-        border: 'border-cyan-500',
-        bg: 'bg-cyan-900/20',
-      };
-    if (avg.oreb > 2.5 || avg.reb > 9)
-      return {
-        name: 'Paint Beast',
-        desc: 'Domination intérieure.',
-        color: 'text-blue-400',
-        border: 'border-blue-500',
-        bg: 'bg-blue-900/20',
-      };
-    if (avg.stl + avg.blk > 2.5)
-      return {
-        name: 'Lockdown',
-        desc: 'Impact défensif majeur.',
-        color: 'text-red-500',
-        border: 'border-red-600',
-        bg: 'bg-red-900/20',
-      };
-    return {
-      name: 'Rotation',
-      desc: 'Joueur de complément.',
-      color: 'text-slate-400',
-      border: 'border-slate-500',
-      bg: 'bg-slate-900',
-    };
+  // --- ARCHETYPE (Dynamique, Relatif, Élargi et Ultra-Sécurisé) ---
+  getArchetype: (p, allPlayers = []) => {
+    // 1. Protection absolue : si l'argument est vide ou invalide
+    if (!p) {
+      return { name: 'Non Évalué', desc: 'Données manquantes.', color: 'text-slate-500', border: 'border-slate-700', bg: 'bg-slate-800' };
+    }
+
+    // 2. Rétrocompatibilité : l'utilisateur a pu passer 'p' (le joueur complet) ou 'p.avg' (les moyennes)
+    const avg = p.avg || p; 
+    
+    if (!avg || typeof avg !== 'object' || (avg.pts === undefined && avg.reb === undefined)) {
+      return { name: 'Non Évalué', desc: 'Pas de données.', color: 'text-slate-500', border: 'border-slate-700', bg: 'bg-slate-800' };
+    }
+
+    // On s'assure de récupérer un ID valide pour les classements
+    const playerId = p.id || (p.info ? p.info.id : null) || 'unknown';
+
+    // 3. Isoler la rotation de manière ultra-sécurisée
+    const rotation = (Array.isArray(allPlayers) && allPlayers.length > 0) 
+      ? allPlayers.filter(x => x && x.avg && typeof x.avg.min === 'number' && x.avg.min > 5) 
+      : [];
+
+    let isTopUsage = false, isTopEfficiency = false, isTopCreator = false, 
+        isTopShooter = false, isTopRebounder = false, isTopDefender = false,
+        isTopOreb = false, isLowUsage = false;
+
+    // --- LOGIQUE RELATIVE ---
+    if (rotation.length >= 4) {
+      const topTier = Math.max(2, Math.ceil(rotation.length * 0.25));
+      const bottomTier = rotation.length - topTier;
+      
+      // Fonction utilitaire sécurisée pour trouver le rang
+      const getRank = (stat) => [...rotation].sort((a, b) => (b.avg[stat] || 0) - (a.avg[stat] || 0)).findIndex(x => x.id === playerId) + 1;
+
+      const rankUsage = getRank('usage');
+      const rankTS = getRank('TS');
+      const rankAst = getRank('ast');
+      const rankAstTov = getRank('astTov');
+      const rank3PAr = getRank('threePAr');
+      const rankReb = getRank('reb');
+      const rankOreb = getRank('oreb');
+      const rankDef = [...rotation].sort((a, b) => ((b.avg.stl || 0) + (b.avg.blk || 0)) - ((a.avg.stl || 0) + (a.avg.blk || 0))).findIndex(x => x.id === playerId) + 1;
+
+      isTopUsage = rankUsage > 0 && rankUsage <= topTier;
+      isLowUsage = rankUsage > bottomTier;
+      isTopEfficiency = rankTS > 0 && rankTS <= topTier;
+      isTopCreator = rankAst > 0 && rankAst <= topTier && rankAstTov <= topTier + 1; 
+      isTopShooter = rank3PAr > 0 && rank3PAr <= topTier && (avg.threePAr || 0) > 0.25; 
+      isTopRebounder = rankReb > 0 && rankReb <= topTier;
+      isTopOreb = rankOreb > 0 && rankOreb <= topTier;
+      isTopDefender = rankDef > 0 && rankDef <= topTier;
+    } 
+    // --- FALLBACK ---
+    else {
+      isTopUsage = (avg.usage || 0) > 24;
+      isLowUsage = (avg.usage || 0) < 15;
+      isTopEfficiency = (avg.TS || 0) > 52;
+      isTopCreator = (avg.ast || 0) > 3.5 && (avg.astTov || 0) > 1.5;
+      isTopShooter = (avg.threePAr || 0) > 0.35;
+      isTopRebounder = (avg.reb || 0) > 7;
+      isTopOreb = (avg.oreb || 0) > 2.5;
+      isTopDefender = ((avg.stl || 0) + (avg.blk || 0)) > 2.0;
+    }
+
+    // --- ATTRIBUTIONS DES ARCHÉTYPES ---
+    if (isTopUsage && isTopDefender) return { name: 'Two-Way Star', desc: 'Domine des deux côtés du terrain.', color: 'text-purple-400', border: 'border-purple-500', bg: 'bg-purple-900/20' };
+    if (isTopUsage && isTopCreator) return { name: 'Moteur Offensif', desc: 'Crée pour lui et les autres.', color: 'text-amber-400', border: 'border-amber-500', bg: 'bg-amber-900/20' };
+    if (isTopUsage) return { name: 'Option #1', desc: 'Focal point de l\'attaque.', color: 'text-orange-400', border: 'border-orange-500', bg: 'bg-orange-900/20' };
+    if (isTopShooter && isTopDefender) return { name: '3-and-D', desc: 'Menace extérieure et verrou défensif.', color: 'text-teal-400', border: 'border-teal-500', bg: 'bg-teal-900/20' };
+    if (isTopRebounder && isTopShooter) return { name: 'Stretch Big', desc: 'Écarte le jeu et contrôle la raquette.', color: 'text-pink-400', border: 'border-pink-500', bg: 'bg-pink-900/20' };
+    if (isTopRebounder && isTopCreator) return { name: 'Point Forward', desc: 'Intérieur/Ailier créateur.', color: 'text-indigo-300', border: 'border-indigo-400', bg: 'bg-indigo-900/20' };
+    if (isTopCreator) return { name: 'Floor General', desc: 'Garant du jeu collectif.', color: 'text-indigo-500', border: 'border-indigo-600', bg: 'bg-indigo-900/20' };
+    if (isTopShooter) return { name: 'Sniper', desc: 'Menace extérieure principale.', color: 'text-cyan-400', border: 'border-cyan-500', bg: 'bg-cyan-900/20' };
+    if (isTopRebounder && isTopEfficiency) return { name: 'Paint Beast', desc: 'Finition et ancrage intérieur.', color: 'text-blue-400', border: 'border-blue-500', bg: 'bg-blue-900/20' };
+    if (isTopOreb && isTopDefender) return { name: 'Guerrier', desc: 'Énergie, rebonds offensifs et hustle.', color: 'text-rose-400', border: 'border-rose-500', bg: 'bg-rose-900/20' };
+    if (isTopDefender) return { name: 'Lockdown', desc: 'Spécialiste défensif majeur.', color: 'text-red-500', border: 'border-red-600', bg: 'bg-red-900/20' };
+    if (isTopEfficiency && isLowUsage) return { name: 'Finisseur', desc: 'Très efficace sur un faible volume.', color: 'text-green-400', border: 'border-green-500', bg: 'bg-green-900/20' };
+    if ((avg.eff || 0) > 9 && !isTopUsage && !isLowUsage) return { name: 'Glue Guy', desc: 'Fait le liant, bon partout.', color: 'text-emerald-400', border: 'border-emerald-500', bg: 'bg-emerald-900/20' };
+    
+    return { name: 'Rotation', desc: 'Joueur de collectif.', color: 'text-slate-400', border: 'border-slate-500', bg: 'bg-slate-900' };
   },
 
   // --- SWOT (calibré par niveau) ---
@@ -848,7 +863,7 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
           pdf.addImage(pageImg, 'PNG', 8, 8, imgW, drawH);
         }
       }
-      const safeName = (player.info?.name || 'joueur').replace(/[^a-zA-Z0-9]/g, '_');
+      const safeName = (player.name || 'joueur').replace(/[^a-zA-Z0-9]/g, '_');
       pdf.save(`${safeName}_rapport.pdf`);
     } catch (e) {
       console.error('PDF export error:', e);
@@ -878,9 +893,9 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
         Number(p.id) === Number(selectedId)
     );
 
-    // Guard 4 : joueur non trouvé OU structure incomplète
-
-    if (!player || !player.info || !player.logs || player.logs.length === 0) {
+    // Guard 4 : joueur non trouvé OU pas de logs
+    // FIX: supprimé le check player.info qui n'existe pas dans la structure processPlayerData
+    if (!player || !player.logs || player.logs.length === 0) {
       setAiNarrative('Données insuffisantes pour générer une analyse.');
       setIsAiLoading(false);
       return;
@@ -898,22 +913,25 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
 
     const buildPrompt = (p) => {
       const b = getBenchmarks();
-      const info = p.info || {};
       const avg = p.avg || {};
+      // FIX: accès direct aux propriétés du joueur (pas de .info)
+      const playerName = p.name || 'Inconnu';
+      const playerNumber = p.number || '?';
+      const playerPos = p.pos || p.position || 'N/A';
       return `Tu es un analyste basketball professionnel. Niveau de compétition : ${b.label}.
 Analyse le profil suivant et produis une synthèse en FRANÇAIS de 4-5 phrases maximum.
 Sois direct, factuel, et identifie 1-2 forces clés et 1 axe de progression prioritaire.
 Ne répète pas les chiffres bruts, interprète-les.
 
-JOUEUR : ${info.name || 'Inconnu'} | #${info.number || '?'} | Poste : ${info.pos || 'N/A'}
+JOUEUR : ${playerName} | #${playerNumber} | Poste : ${playerPos}
 MATCHS JOUÉS : ${p.logs.length}
-ARCHÉTYPE DÉTECTÉ : ${AnalysisEngine.getArchetype ? AnalysisEngine.getArchetype(avg) : 'N/A'}
+ARCHÉTYPE DÉTECTÉ : ${AnalysisEngine.getArchetype(p, players).name}
 
 MOYENNES PAR MATCH :
 - Points: ${avg.pts || 0} | Rebonds: ${avg.reb || 0} | Passes: ${avg.ast || 0}
 - Minutes: ${avg.min || 0} | Évaluation: ${avg.eff || 0}
 - TS%: ${avg.TS || 0} | Usage%: ${avg.usage || 0}
-- FG%: ${avg.fgPct || 0} | 3P%: ${avg.threePct || 0} (${avg.threePA || 0} tent./m)
+- FG%: ${avg.fgPct || 0} | 3P%: ${avg.threePct || 0} (${avg.threea || 0} tent./m)
 - LF%: ${avg.ftPct || 0}
 - Interceptions: ${avg.stl || 0} | Contres: ${avg.blk || 0}
 - Balles perdues: ${avg.tov || 0} | Ratio AST/TOV: ${avg.astTov || 0}
@@ -1000,7 +1018,8 @@ BENCHMARKS NIVEAU ${b.label} :
         <div className="flex-1 overflow-y-auto p-6 bg-slate-950">
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
             {players.map((p) => {
-              const arch = AnalysisEngine.getArchetype(p.avg);
+              // FIX: passer p (le joueur complet) + players pour classement relatif
+              const arch = AnalysisEngine.getArchetype(p, players);
               return (
                 <button
                   key={p.id}
@@ -1058,7 +1077,8 @@ BENCHMARKS NIVEAU ${b.label} :
 
   const p = players.find((x) => x.id === selectedId);
   if (!p) return null;
-  const arch = AnalysisEngine.getArchetype(p.avg);
+  // FIX: passer p (le joueur complet) + players pour classement relatif
+  const arch = AnalysisEngine.getArchetype(p, players);
   const swot = AnalysisEngine.getSWOT(p);
   const narrativeText = aiNarrative || AnalysisEngine.getFallbackNarrative(p);
   const last5 = p.logs.slice(0, 5);
@@ -1175,7 +1195,7 @@ BENCHMARKS NIVEAU ${b.label} :
                 <div className="text-xs font-bold text-indigo-400 uppercase tracking-widest">
                   Impact Total
                 </div>
-                <div className="text-[12Spx] text-slate-500 mt-0.5">
+                <div className="text-[12px] text-slate-500 mt-0.5">
                   Elite ≥ 110 Bon ≥ 85 Correct ≥ 60 Faible ≤ 59
                 </div>
               </div>
@@ -1314,7 +1334,8 @@ BENCHMARKS NIVEAU ${b.label} :
           {(() => {
             const ShotChart = window.ShotChart;
             if (!ShotChart || !propGames) return null;
-            const rawPid = typeof p !== 'undefined' ? p.info?.id || p.id : null;
+            // FIX: accès direct à p.id (pas de p.info)
+            const rawPid = p.id;
             if (!rawPid) return null;
             const numPid = Number(rawPid);
             const playerShots = [];
@@ -1329,13 +1350,12 @@ BENCHMARKS NIVEAU ${b.label} :
             if (playerShots.length === 0) return null;
             return (
               <div className="mt-6">
-                <ShotChart shots={playerShots} playerName={p.info?.name || p.name || ''} />
+                <ShotChart shots={playerShots} playerName={p.name || ''} />
               </div>
             );
           })()}
           {(() => {
-            // Adapter `player.id` selon le nom exact de la variable du joueur dans votre composant (ex: p.id, selectedPlayer.id)
-            const currentPlayerId = typeof p !== 'undefined' ? p.id : player.id;
+            const currentPlayerId = p.id;
             const lineups = calcFiveManLineups(currentPlayerId, propGames, propRoster);
 
             if (lineups.total === 0) return null;

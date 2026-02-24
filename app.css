@@ -1,0 +1,161 @@
+/* app.css — Styles spécifiques à index.html (app React) */
+
+/* --- Base --- */
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: var(--navy-dark);
+    color: var(--text-primary);
+    min-height: 100vh;
+    overflow-x: hidden;
+}
+
+/* --- Scrollbar --- */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: var(--navy);
+}
+::-webkit-scrollbar-thumb {
+    background: var(--gold);
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: var(--gold-light);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+.no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+.custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: var(--navy);
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: var(--gold-dark);
+    border-radius: 3px;
+}
+
+/* --- Sticky Table --- */
+.sticky-col {
+    position: sticky;
+    left: 0;
+    background-color: var(--surface);
+    z-index: 20;
+    border-right: 1px solid var(--surface-light);
+}
+.sticky-header {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+}
+
+/* --- Glass Effect --- */
+.glass {
+    background: rgba(28, 28, 40, 0.85);
+}
+.glass-strong {
+    background: rgba(28, 28, 40, 0.95);
+}
+
+/* --- Table Row Hover --- */
+.table-row-hover {
+    position: relative;
+    overflow: hidden;
+}
+.table-row-hover::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    width: 3px;
+    background: var(--accent);
+    transform: scaleY(0);
+    transition: transform 0.2s ease;
+}
+.table-row-hover:hover::before {
+    transform: scaleY(1);
+}
+
+/* --- Selection --- */
+::selection {
+    background: rgba(255, 107, 53, 0.3);
+    color: white;
+}
+
+/* --- Focus --- */
+*:focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 2px;
+}
+
+/* --- Reduced Motion --- */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* --- Print --- */
+@media print {
+    body {
+        background-color: white;
+        color: black;
+    }
+    .no-print,
+    nav,
+    header,
+    button,
+    .modal-close {
+        display: none !important;
+    }
+    .print-only {
+        display: block !important;
+    }
+    .card-stats {
+        border: 1px solid #ccc;
+        box-shadow: none;
+        page-break-inside: avoid;
+        overflow: visible !important;
+    }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 8pt;
+    }
+    th,
+    td {
+        border: 1px solid #ddd;
+        padding: 2px;
+        color: black !important;
+    }
+    th {
+        background-color: #f3f4f6 !important;
+        font-weight: bold;
+    }
+    .sticky-col {
+        position: static;
+        background-color: transparent;
+        border: none;
+    }
+    .sticky-header {
+        position: static;
+    }
+}
+.print-only {
+    display: none;
+}
+@keyframes livePulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }

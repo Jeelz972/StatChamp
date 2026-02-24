@@ -31,12 +31,12 @@ const {
 // ============================================================
 function VolumeEfficiencyMatrix({ players }) {
   const POS_COLORS = {
-    PG: '#d4a574',
+    PG: '#FF6B35',
     SG: '#3b82f6',
     SF: '#22c55e',
     PF: '#a855f7',
     C: '#ef4444',
-    G: '#d4a574',
+    G: '#FF6B35',
     F: '#22c55e',
   };
 
@@ -208,8 +208,8 @@ function GhostSeasonChart({ logs, currentGame }) {
 
   const [metric, setMetric] = useState('composite');
   const metrics = [
-    { key: 'composite', label: 'Global', color: '#d4a574' },
-    { key: 'pts', label: 'PTS', color: '#d4a574' },
+    { key: 'composite', label: 'Global', color: '#FF6B35' },
+    { key: 'pts', label: 'PTS', color: '#FF6B35' },
     { key: 'reb', label: 'REB', color: '#3b82f6' },
     { key: 'ast', label: 'AST', color: '#22c55e' },
   ];
@@ -219,7 +219,7 @@ function GhostSeasonChart({ logs, currentGame }) {
 
   const avgKey = metric === 'composite' ? 'avgComposite' : `avg_${metric}`;
   const valKey = metric === 'composite' ? 'valComposite' : `val_${metric}`;
-  const activeColor = metrics.find((m) => m.key === metric)?.color || '#d4a574';
+  const activeColor = metrics.find((m) => m.key === metric)?.color || '#FF6B35';
 
   return (
     <div>
@@ -496,7 +496,7 @@ function ArchetypeRadar({ player, allPlayers }) {
 
   const getRadarColor = (color) => {
     const colors = {
-      orange: '#d4a574',
+      orange: '#FF6B35',
       emerald: '#34d399',
       blue: '#60a5fa',
       indigo: '#818cf8',
@@ -1976,7 +1976,7 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                           type="monotone"
                           dataKey="pts"
                           name="Points"
-                          stroke="#d4a574"
+                          stroke="#FF6B35"
                           strokeWidth={2}
                           dot={{ r: 3 }}
                         />
@@ -2288,8 +2288,8 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                               <Radar
                                 name="Equipe"
                                 dataKey="team"
-                                stroke="#d4a574"
-                                fill="#d4a574"
+                                stroke="#FF6B35"
+                                fill="#FF6B35"
                                 fillOpacity={0.25}
                                 strokeWidth={2}
                               />

@@ -1,6 +1,8 @@
 // GamePrep.js — Composant React (JSX, nécessite Babel)
 // Dépendances : React, Firebase (window.db), window.Icon, window.Icons, window.Card, window.Button
-const { useState, useMemo, useEffect } = React;
+(function () {
+  "use strict";
+  const { useState, useMemo, useEffect } = React;
 
 function GamePrep({ opponentName, games, players, onBack }) {
   const [coachNotes, setCoachNotes] = useState('');
@@ -284,5 +286,5 @@ function GamePrep({ opponentName, games, players, onBack }) {
     </div>
   );
 }
-
-window.GamePrep = GamePrep;
+ window.GamePrep = GamePrep;
+})();
