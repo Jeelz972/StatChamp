@@ -1,6 +1,8 @@
 // ==========================================
 // ZONE DE CONFIGURATION AUTOMATIQUE
 // ==========================================
+const CLIP_SERVER_URL = 'https://clips.jeelz-software.ovh'; // Renseigner l'URL du VPS quand déployé, ex: 'https://clips.mondomaine.com'
+
 const PRECONFIGURED_FIREBASE = {
   apiKey: 'AIzaSyBaA99che1oz9BHc23IhiFoY-nK0xvg4q4',
   authDomain: 'statu18elite.firebaseapp.com',
@@ -1475,6 +1477,62 @@ function getYouTubeLink(action, videoUrl, settings) {
   return baseUrl + separator + 't=' + Math.floor(finalSeconds);
 }
 
+function getYouTubeEmbedUrl(videoUrl, seconds) {
+  if (!videoUrl) return null;
+  let videoId = null;
+  // Format: https://www.youtube.com/watch?v=XXXXXXXXXXX
+  const watchMatch = videoUrl.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
+  if (watchMatch) { videoId = watchMatch[1]; }
+  // Format: https://youtu.be/XXXXXXXXXXX
+  if (!videoId) {
+    const shortMatch = videoUrl.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/);
+    if (shortMatch) videoId = shortMatch[1];
+  }
+  // Format: https://www.youtube.com/embed/XXXXXXXXXXX
+  if (!videoId) {
+    const embedMatch = videoUrl.match(/youtube\.com\/embed\/([a-zA-Z0-9_-]{11})/);
+    if (embedMatch) videoId = embedMatch[1];
+  }
+  if (!videoId) return null;
+  return `https://www.youtube.com/embed/${videoId}?start=${Math.floor(seconds || 0)}&autoplay=1&rel=0`;
+}
+
+
+async function requestClipExport(videoUrl, videoSettings, actions) {
+  if (!CLIP_SERVER_URL) throw new Error('Serveur de clips non configure');
+
+  const segments = actions.map(a => {
+    const link = getYouTubeLink(a, videoUrl, videoSettings);
+    const tMatch = link ? link.match(/[?&]t=(\d+)/) : null;
+    const start = tMatch ? parseInt(tMatch[1]) : 0;
+
+    let label = a.type;
+    if (a.type === 'SHOT') label = `Tir_${a.val}pts_${a.made ? 'OK' : 'rate'}`;
+    else if (a.type === 'FT') label = `LF_${a.ftMade || 0}_${a.ftAtt || 0}`;
+    const pid = a.pid ?? a.playerId;
+    label = `Q${a.q || 1}_${label}_J${pid}`;
+
+    return {
+      start: Math.max(0, start),
+      end: start + 12,
+      label
+    };
+  }).filter(s => s.start >= 0);
+
+  const resp = await fetch(`${CLIP_SERVER_URL}/api/clips`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ videoUrl, segments })
+  });
+
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ error: 'Erreur inconnue' }));
+    throw new Error(err.error || `Erreur ${resp.status}`);
+  }
+
+  return resp.json();
+}
+
 // ============================================================
 // 2. MomentumChart
 // ============================================================
@@ -2046,73 +2104,316 @@ function ImportReviewModal({ importData, currentPlayers, phases, onConfirm, onCa
   );
 }
 // --- A6 : Lecture video PBP ---
+// REMPLACER la fonction VideoPlayByPlay existante EN ENTIER par ce code.
+// L'ancienne commence a : function VideoPlayByPlay({ game, players }) {
+// et se termine au } juste avant : // --- S3 : Section Rapport IA ---
+
 function VideoPlayByPlay({ game, players }) {
   const [playerFilter, setPlayerFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [quarterFilter, setQuarterFilter] = useState('all');
+  const [playFilter, setPlayFilter] = useState('all');
+  const [activeVideo, setActiveVideo] = useState(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedActions, setSelectedActions] = useState(new Set());
+  const [exporting, setExporting] = useState(false);
+  const [exportResult, setExportResult] = useState(null);
+
+  const availableQuarters = useMemo(() => {
+    if (!game.actions) return [];
+    const qs = [...new Set(game.actions.map(a => a.q || 1))].sort((a, b) => a - b);
+    return qs;
+  }, [game.actions]);
+
+  const availablePlays = useMemo(() => {
+    if (!game.actions) return [];
+    const plays = [...new Set(game.actions.map(a => a.play).filter(Boolean))].sort();
+    return plays;
+  }, [game.actions]);
 
   const filteredActions = useMemo(() => {
-    if (!game.actions) return [];
-    let acts = game.actions.filter((a) => a.type !== 'SUB');
-    if (playerFilter !== 'all') {
-      const fp = parseInt(playerFilter);
-      acts = acts.filter((a) => (a.pid ?? a.playerId) === fp);
-    }
-    if (typeFilter !== 'all') {
-      acts = acts.filter((a) => a.type === typeFilter);
-    }
-    return acts.sort((a, b) => {
-      if ((a.q || 1) !== (b.q || 1)) return (a.q || 1) - (b.q || 1);
-      return (b.time || 0) - (a.time || 0);
-    });
-  }, [game.actions, playerFilter, typeFilter]);
+  if (!game.actions) return [];
+  let acts = game.actions.filter(a => a.type !== 'SUB');
+  if (playerFilter !== 'all') {
+    const fp = parseInt(playerFilter);
+    acts = acts.filter(a => (a.pid ?? a.playerId) === fp);
+  }
+  if (typeFilter !== 'all') {
+    acts = acts.filter(a => a.type === typeFilter);
+  }
+  if (quarterFilter !== 'all') {
+    const qf = parseInt(quarterFilter);
+    acts = acts.filter(a => (a.q || 1) === qf);
+  }
+  if (playFilter !== 'all') {
+    acts = acts.filter(a => a.play === playFilter);
+  }
+  return acts.sort((a, b) => {
+    if ((a.q || 1) !== (b.q || 1)) return (a.q || 1) - (b.q || 1);
+    return (b.time || 0) - (a.time || 0);
+  });
+}, [game.actions, playerFilter, typeFilter, quarterFilter, playFilter]);
 
   const homePlayers = players.filter((p) => game.playerStats && game.playerStats[p.id]);
 
+  const exportSelectedClips = () => {
+    const selected = filteredActions.filter(a => selectedActions.has(a.id));
+    if (selected.length === 0) return;
+
+    const hasVideo = game.videoUrl && game.videoSettings;
+    const headers = ['Joueur', 'Numero', 'Action', 'Quart', 'Chrono', 'Systeme'];
+    if (hasVideo) headers.push('Timestamp_Video', 'Lien_YouTube');
+
+    const rows = selected.map(a => {
+      const pid = a.pid ?? a.playerId;
+      const isHome = typeof pid === 'number' ? pid < 1000 : false;
+      const player = isHome ? players.find(p => p.id === pid) : null;
+      const num = player ? player.number : (pid >= 1000 ? pid - 1000 : '?');
+      const name = player ? player.name : 'Adversaire';
+      const timeMin = Math.floor((a.time || 0) / 60);
+      const timeSec = (a.time || 0) % 60;
+      const timeStr = `Q${a.q || 1} ${timeMin}:${timeSec.toString().padStart(2, '0')}`;
+
+      let desc = a.type;
+      if (a.type === 'SHOT') desc = `Tir ${a.val}pts ${a.made ? 'OK' : 'rate'}`;
+      else if (a.type === 'FT') desc = `LF ${a.ftMade || 0}/${a.ftAtt || 0}`;
+      else if (a.type === 'FOUL') desc = 'Faute';
+      else if (a.type === 'TOV') desc = 'Perte';
+      else if (a.type === 'STL') desc = 'Interception';
+      else if (a.type === 'BLK') desc = 'Contre';
+
+      const row = [name, num, desc, `Q${a.q || 1}`, timeStr, a.play || ''];
+      if (hasVideo) {
+        const link = getYouTubeLink(a, game.videoUrl, game.videoSettings);
+        const tMatch = link ? link.match(/[?&]t=(\d+)/) : null;
+        const tSec = tMatch ? parseInt(tMatch[1]) : '';
+        row.push(tSec, link || '');
+      }
+      return row;
+    });
+
+    const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${c}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `clips_${game.opponent || 'match'}_${game.date || ''}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleClipExport = async () => {
+    const selected = filteredActions.filter(a => selectedActions.has(a.id));
+    if (selected.length === 0 || !game.videoUrl || !game.videoSettings) return;
+
+    setExporting(true);
+    setExportResult(null);
+
+    try {
+      const result = await requestClipExport(game.videoUrl, game.videoSettings, selected);
+      setExportResult(result);
+    } catch (err) {
+      alert('Erreur export clips: ' + err.message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const toggleSelection = (actionId) => {
+    setSelectedActions(prev => {
+      const next = new Set(prev);
+      if (next.has(actionId)) next.delete(actionId);
+      else next.add(actionId);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedActions.size === filteredActions.length) {
+      setSelectedActions(new Set());
+    } else {
+      setSelectedActions(new Set(filteredActions.map(a => a.id)));
+    }
+  };
+
   return (
     <div className="mt-4">
-      <h4 className="text-sm text-purple-400 uppercase font-bold mb-3 flex items-center gap-2">
-        <span>&#127909;</span> Video Play-by-Play
-      </h4>
+      <div className="flex items-center justify-between mb-3">
+        <h4 className="text-sm text-purple-400 uppercase font-bold flex items-center gap-2">
+          <span>&#127909;</span> Play-by-Play {game.videoUrl ? '& Video' : ''}
+        </h4>
+        <div className="flex gap-2 items-center">
+          <button
+            onClick={() => { setSelectMode(s => !s); setSelectedActions(new Set()); }}
+            className={`px-2 py-0.5 text-[10px] font-bold rounded transition-colors ${
+              selectMode
+                ? 'bg-orange-600 text-white'
+                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+            }`}
+          >
+            {selectMode ? 'Annuler selection' : 'Selectionner'}
+          </button>
+          {selectMode && selectedActions.size > 0 && (
+            <React.Fragment>
+            <button
+              onClick={exportSelectedClips}
+              className="px-2 py-0.5 bg-green-600 text-white text-[10px] font-bold rounded hover:bg-green-500"
+            >
+              Exporter {selectedActions.size} clip{selectedActions.size > 1 ? 's' : ''} (CSV)
+            </button>
+            {CLIP_SERVER_URL && game.videoUrl && game.videoSettings && (
+              <button
+                onClick={handleClipExport}
+                disabled={exporting}
+                className={`px-2 py-0.5 text-[10px] font-bold rounded transition-colors ${
+                  exporting
+                    ? 'bg-slate-600 text-slate-400 cursor-wait'
+                    : 'bg-purple-600 text-white hover:bg-purple-500'
+                }`}
+              >
+                {exporting ? 'Decoupe en cours...' : `Exporter ${selectedActions.size} clip${selectedActions.size > 1 ? 's' : ''} (Video)`}
+              </button>
+            )}
+            </React.Fragment>
+          )}
+          <span className="text-xs text-slate-500">{filteredActions.length} actions</span>
+        </div>
+      </div>
+
+      {/* LECTEUR VIDEO INLINE */}
+      {activeVideo && game.videoUrl && (
+        <div className="mb-3 relative">
+          <div className="aspect-video w-full max-w-2xl mx-auto bg-black rounded-lg overflow-hidden">
+            <iframe
+              src={getYouTubeEmbedUrl(game.videoUrl, activeVideo.seconds)}
+              className="w-full h-full"
+              allow="autoplay; encrypted-media"
+              allowFullScreen
+              frameBorder="0"
+            />
+          </div>
+          <button
+            onClick={() => setActiveVideo(null)}
+            className="absolute top-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded hover:bg-black/90"
+          >
+            Fermer
+          </button>
+        </div>
+      )}
+
+      {/* RESULTATS EXPORT CLIPS */}
+      {exportResult && exportResult.clips && (
+        <div className="mb-3 p-3 bg-green-950/30 border border-green-700 rounded-lg">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs text-green-400 font-bold">
+              {exportResult.clips.length} clip{exportResult.clips.length > 1 ? 's' : ''} pret{exportResult.clips.length > 1 ? 's' : ''}
+            </span>
+            <button
+              onClick={() => setExportResult(null)}
+              className="text-[10px] text-slate-400 hover:text-white"
+            >
+              Fermer
+            </button>
+          </div>
+          <div className="space-y-1">
+            {exportResult.clips.map((clip, i) => (
+              <div key={i} className="flex items-center justify-between text-xs">
+                <span className="text-slate-300 truncate flex-1">{clip.label}</span>
+                <a
+                  href={clip.downloadUrl}
+                  download
+                  className="px-2 py-0.5 bg-green-600/30 text-green-300 rounded text-[10px] font-bold hover:bg-green-600/50 shrink-0 ml-2"
+                >
+                  Telecharger
+                </a>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* FILTRES */}
       <div className="flex flex-wrap gap-2 mb-3">
         <select
+          value={quarterFilter}
+          onChange={e => setQuarterFilter(e.target.value)}
+          className="bg-slate-900 text-white text-xs border border-slate-600 rounded px-2 py-1"
+        >
+          <option value="all">Tous les QT</option>
+          {availableQuarters.map(q => (
+            <option key={q} value={q}>{q <= 4 ? `Q${q}` : `OT${q - 4}`}</option>
+          ))}
+        </select>
+        <select
           value={playerFilter}
-          onChange={(e) => setPlayerFilter(e.target.value)}
+          onChange={e => setPlayerFilter(e.target.value)}
           className="bg-slate-900 text-white text-xs border border-slate-600 rounded px-2 py-1"
         >
           <option value="all">Tous les joueurs</option>
-          {homePlayers.map((p) => (
-            <option key={p.id} value={p.id}>
-              #{p.number} {p.name}
-            </option>
+          {homePlayers.map(p => (
+            <option key={p.id} value={p.id}>#{p.number} {p.name}</option>
           ))}
         </select>
         <select
           value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
+          onChange={e => setTypeFilter(e.target.value)}
           className="bg-slate-900 text-white text-xs border border-slate-600 rounded px-2 py-1"
         >
           <option value="all">Toutes actions</option>
           <option value="SHOT">Tirs</option>
+          <option value="FT">Lancers francs</option>
           <option value="FOUL">Fautes</option>
           <option value="TOV">Pertes</option>
           <option value="STL">Interceptions</option>
           <option value="BLK">Contres</option>
+          <option value="REB">Rebonds</option>
         </select>
+        {availablePlays.length > 0 && (
+          <select
+            value={playFilter}
+            onChange={e => setPlayFilter(e.target.value)}
+            className="bg-slate-900 text-white text-xs border border-slate-600 rounded px-2 py-1"
+          >
+            <option value="all">Tous systemes</option>
+            {availablePlays.map(p => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+        )}
       </div>
-      <div className="max-h-60 overflow-y-auto bg-slate-900 rounded-lg border border-slate-700">
+
+      {/* SELECT ALL (en mode selection) */}
+      {selectMode && filteredActions.length > 0 && (
+        <div className="flex items-center gap-2 mb-2">
+          <button
+            onClick={toggleSelectAll}
+            className="text-[10px] text-slate-400 hover:text-white underline"
+          >
+            {selectedActions.size === filteredActions.length ? 'Tout deselectionner' : 'Tout selectionner'}
+          </button>
+        </div>
+      )}
+
+      {/* LISTE DES ACTIONS */}
+      <div className="max-h-80 overflow-y-auto bg-slate-900 rounded-lg border border-slate-700">
         {filteredActions.length === 0 && (
           <div className="text-center text-slate-500 text-xs py-4">Aucune action</div>
         )}
         {filteredActions.map((a, i) => {
           const pid = a.pid ?? a.playerId;
           const isHome = typeof pid === 'number' ? pid < 1000 : false;
-          const player = isHome ? players.find((p) => p.id === pid) : null;
-          const num = player ? player.number : pid >= 1000 ? pid - 1000 : '?';
+          const player = isHome ? players.find(p => p.id === pid) : null;
+          const num = player ? player.number : (pid >= 1000 ? pid - 1000 : '?');
           const name = player ? player.name : 'Adv';
           const timeMin = Math.floor((a.time || 0) / 60);
           const timeSec = (a.time || 0) % 60;
           const timeStr = `Q${a.q || 1} ${timeMin}:${timeSec.toString().padStart(2, '0')}`;
-          const link = getYouTubeLink(a, game.videoUrl, game.videoSettings);
+
+          const hasVideo = game.videoUrl && game.videoSettings;
+          const link = hasVideo ? getYouTubeLink(a, game.videoUrl, game.videoSettings) : null;
+          const tMatch = link ? link.match(/[?&]t=(\d+)/) : null;
+          const tSec = tMatch ? parseInt(tMatch[1]) : 0;
+
           let desc = a.type;
           if (a.type === 'SHOT') desc = `Tir ${a.val}pts ${a.made ? 'OK' : 'rate'}`;
           else if (a.type === 'FT') desc = `LF ${a.ftMade || 0}/${a.ftAtt || 0}`;
@@ -2121,25 +2422,40 @@ function VideoPlayByPlay({ game, players }) {
           else if (a.type === 'STL') desc = 'Interception';
           else if (a.type === 'BLK') desc = 'Contre';
 
+          const isSelected = selectedActions.has(a.id);
+
           return (
             <div
               key={a.id || i}
-              className={`flex items-center gap-2 px-3 py-1.5 text-xs border-b border-slate-800 ${isHome ? 'bg-blue-950/20' : 'bg-red-950/20'}`}
+              className={`flex items-center gap-2 px-3 py-1.5 text-xs border-b border-slate-800 transition-colors ${
+                isSelected ? 'bg-orange-950/30' : (isHome ? 'bg-blue-950/20' : 'bg-red-950/20')
+              } ${activeVideo?.actionId === a.id ? 'ring-1 ring-purple-500' : ''}`}
             >
+              {selectMode && (
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => toggleSelection(a.id)}
+                  className="w-3 h-3 shrink-0 accent-orange-500"
+                />
+              )}
               <span className="text-slate-500 font-mono w-16 shrink-0">{timeStr}</span>
               <span className={`font-bold ${isHome ? 'text-blue-400' : 'text-red-400'}`}>
                 #{num}
               </span>
-              <span className="flex-1 text-slate-300">{desc}</span>
-              {link && (
-                <a
-                  href={link}
-                  target="_blank"
-                  rel="noopener noreferrer"
+              <span className="flex-1 text-slate-300">
+                {desc}
+                {a.play && (
+                  <span className="ml-1 text-[10px] text-teal-400/70">({a.play})</span>
+                )}
+              </span>
+              {link && !selectMode && (
+                <button
+                  onClick={() => setActiveVideo({ seconds: tSec, actionId: a.id })}
                   className="px-2 py-0.5 bg-purple-600/30 text-purple-300 rounded text-[10px] font-bold hover:bg-purple-600/50 transition-colors shrink-0"
                 >
                   &#9654; Video
-                </a>
+                </button>
               )}
             </div>
           );
@@ -3227,116 +3543,6 @@ function GameDetailsModal({ game, isOpen, onClose, players, isAdmin }) {
             </div>
           </div>
         )}
-
-        {/* Play-by-Play (inchangé — garder le code existant après ce bloc) */}
-        {game.actions && game.actions.length > 0 ? (
-          <div className="mt-6">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-sm text-orange-400 uppercase font-bold flex items-center gap-2">
-                <span>&#128269;</span> Play-by-Play
-              </h4>
-              <span className="text-xs text-slate-500">{game.actions.length} actions</span>
-            </div>
-            <div className="max-h-80 overflow-y-auto bg-slate-900 rounded-lg border border-slate-700">
-              {game.actions
-                .slice()
-                .reverse()
-                .map((a, i) => {
-                  const isHome = a.pid < 1000;
-                  const timeMin = Math.floor((a.time || 0) / 60);
-                  const timeSec = (a.time || 0) % 60;
-                  const timeStr = `Q${a.q || 1} ${timeMin}:${timeSec.toString().padStart(2, '0')}`;
-                  let playerNum = '?',
-                    playerName = '';
-                  if (isHome) {
-                    const player = players.find((p) => p.id === a.pid);
-                    if (player) {
-                      playerNum = player.number;
-                      playerName = player.name;
-                    }
-                  } else {
-                    if (game.opponentPlayerStats && game.opponentPlayerStats[a.pid]) {
-                      const op = game.opponentPlayerStats[a.pid];
-                      playerNum = op.number || a.pid - 1000;
-                      playerName = op.name || `Adv ${playerNum}`;
-                    } else {
-                      playerNum = a.pid - 1000;
-                      playerName = 'Adversaire';
-                    }
-                  }
-                  let icon = '',
-                    desc = a.type,
-                    color = 'text-slate-300';
-                  if (a.type === 'SHOT') {
-                    icon = a.made ? '+' : 'x';
-                    desc = `Tir ${a.val}pts ${a.made ? 'reussi' : 'rate'}`;
-                    if (a.astId) {
-                      const passer = players.find((p) => p.id === a.astId);
-                      desc += passer
-                        ? ` (passe #${passer.number} ${passer.name})`
-                        : ` (passe #${a.astId})`;
-                    }
-                    color = a.made ? 'text-green-400' : 'text-red-400';
-                  } else if (a.type === 'FT') {
-                    icon = '🎯';
-                    desc = `LF ${a.ftMade || 0}/${a.ftAtt || 0}`;
-                    color = (a.ftMade || 0) > 0 ? 'text-green-400' : 'text-red-400';
-                  } else if (a.type === 'OREB') {
-                    icon = '🔄';
-                    desc = 'Reb Off';
-                    color = 'text-blue-400';
-                  } else if (a.type === 'DREB') {
-                    icon = '🛡️';
-                    desc = 'Reb Def';
-                    color = 'text-blue-300';
-                  } else if (a.type === 'AST') {
-                    icon = '🏀';
-                    desc = 'Passe D';
-                    color = 'text-purple-400';
-                  } else if (a.type === 'STL') {
-                    icon = '⚡';
-                    desc = 'Interception';
-                    color = 'text-yellow-400';
-                  } else if (a.type === 'BLK') {
-                    icon = '✋';
-                    desc = 'Contre';
-                    color = 'text-cyan-400';
-                  } else if (a.type === 'TOV') {
-                    icon = '💨';
-                    desc = 'Perte de balle';
-                    color = 'text-orange-400';
-                  } else if (a.type === 'FOUL') {
-                    icon = '🚨';
-                    desc = `Faute${a.foulType ? ` (${a.foulType})` : ''}`;
-                    color = 'text-red-400';
-                  } else if (a.type === 'SUB') {
-                    icon = '🔁';
-                    desc = 'Changement';
-                    color = 'text-slate-400';
-                  }
-
-                  return (
-                    <div
-                      key={i}
-                      className={`flex items-center gap-2 px-3 py-1.5 border-b border-slate-800/50 text-xs ${isHome ? 'bg-blue-950/20' : 'bg-red-950/20'}`}
-                    >
-                      <span className="text-slate-500 font-mono w-16 shrink-0">{timeStr}</span>
-                      <span className="w-5">{icon}</span>
-                      <span className={`font-bold ${isHome ? 'text-blue-400' : 'text-red-400'}`}>
-                        #{playerNum}
-                      </span>
-                      <span className={`flex-1 ${color}`}>{desc}</span>
-                    </div>
-                  );
-                })}
-            </div>
-          </div>
-        ) : (
-          <div className="text-center text-slate-500 text-xs py-4 bg-slate-900/50 rounded-lg border border-slate-800">
-            Pas de play-by-play disponible pour ce match
-          </div>
-        )}
-        {showMinutesDebug && <MinutesDebugPanel game={game} players={players} />}
       </div>
 
       {/* A1 — ROTATION CHART */}
@@ -3345,9 +3551,9 @@ function GameDetailsModal({ game, isOpen, onClose, players, isAdmin }) {
       )}
       {game.actions?.length > 0 && isAdmin && <VideoSettingsPanel game={game} />}
       {/* A6 — VIDEO PBP (affichage liens) */}
-      {game.videoUrl && game.videoSettings && game.actions?.length > 0 && (
-        <VideoPlayByPlay game={game} players={players} />
-      )}
+     {game.actions?.length > 0 && (
+  <VideoPlayByPlay game={game} players={players} />
+)}
 
       {/* S3 — RAPPORT IA */}
       <AiReportSection game={game} />
@@ -4241,6 +4447,12 @@ function History({
   isAdmin,
 }) {
   const [selectedGame, setSelectedGame] = useState(null);
+  useEffect(() => {
+  if (selectedGame) {
+    const fresh = games.find(g => g.id === selectedGame.id);
+    if (fresh && fresh !== selectedGame) setSelectedGame(fresh);
+  }
+}, [games]);
   const [editingPBP, setEditingPBP] = useState(null);
   const sortedGames = useMemo(
     () => [...games].sort((a, b) => parseDate(b.date) - parseDate(a.date)),
