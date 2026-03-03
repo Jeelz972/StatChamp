@@ -24,7 +24,9 @@
         { value: 'STL', label: 'Interception' },
         { value: 'BLK', label: 'Contre' },
         { value: 'TOV', label: 'Perte' },
-        { value: 'SUB', label: 'Changement' }
+        { value: 'SUB', label: 'Changement' },
+        { value: 'TIMEOUT', label: 'Timeout' },
+        { value: 'STOPPAGE', label: 'Arrêt Chrono' }
     ];
 
     const FOUL_TYPES = [
@@ -270,7 +272,7 @@
             const type = act.type;
             let ptsScored = 0, ptsConceded = 0;
 
-            if (type === 'SUB') return;
+            if (type === 'SUB' || type === 'STOPPAGE' || type === 'TIMEOUT') return;
 
             if (isOpp) {
                 if (type === 'SHOT') {
@@ -361,6 +363,8 @@
             else if (a.type === 'BLK') { desc = 'Contre'; }
             else if (a.type === 'FOUL') { desc = 'Faute'; details = a.foulType || ''; }
             else if (a.type === 'SUB') { desc = 'Changement'; details = `Entree ${pName} / Sortie ${getPName(a.subOut)}`; }
+            else if (a.type === 'STOPPAGE') { desc = `Arret Chrono ${a.duration || 0}s`; }
+            else if (a.type === 'TIMEOUT') { desc = `Timeout ${a.team === 'home' ? 'Nous' : 'Eux'}`; }
 
             const finalAction = `${desc} ${pName}`;
             rows.push([`Q${a.q||1}`, time, finalAction, pName, details]);
@@ -624,7 +628,9 @@
         const [ftAtt, setFtAtt] = useState(2);
         const [foulType, setFoulType] = useState('PERSONAL');
         const [victim, setVictim] = useState(null);
-        const [subOut, setSubOut] = useState(null); 
+        const [subOut, setSubOut] = useState(null);
+        const [stoppageDuration, setStoppageDuration] = useState(30);
+        const [timeoutTeam, setTimeoutTeam] = useState('home');
         const [play, setPlay] = useState('');
         const defaultPlayTypes = ['Transition', 'Pick & Roll', 'Jeu posté', 'Isolation', 'Motion', 'Sortie de temps mort'];
         const playTypes = React.useMemo(() => {
@@ -642,6 +648,8 @@
             if (type === 'FOUL') { action.foulType = foulType; if (victim) action.victim = victim; }
             if (type === 'BLK' && victim) action.victim = victim;
             if (type === 'SUB') { action.subOut = subOut; }
+            if (type === 'STOPPAGE') { action.duration = stoppageDuration; action.pid = 0; }
+            if (type === 'TIMEOUT') { action.team = timeoutTeam; action.pid = 0; }
             if (play) action.play = play;
             onAdd(action);
         };
@@ -749,9 +757,24 @@
                             <CombinedPlayerSelect value={subOut} onChange={setSubOut} homePlayers={homePlayers} oppPlayers={oppPlayers} allowNone={true} />
                         </div>
                     )}
+                    {type === 'STOPPAGE' && (
+                        <div className="mb-3">
+                            <div className={LBL}>Durée (secondes)</div>
+                            <input type="number" className={SEL + ' w-full'} value={stoppageDuration} min="1" max="600" onChange={e => setStoppageDuration(parseInt(e.target.value) || 30)} />
+                        </div>
+                    )}
+                    {type === 'TIMEOUT' && (
+                        <div className="mb-3">
+                            <div className={LBL}>Équipe</div>
+                            <select className={SEL + ' w-full'} value={timeoutTeam} onChange={e => setTimeoutTeam(e.target.value)}>
+                                <option value="home">Nous</option>
+                                <option value="away">Adversaire</option>
+                            </select>
+                        </div>
+                    )}
                     <div className="flex gap-2 justify-end mt-4">
                         <button className="px-4 py-2 rounded bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer hover:bg-slate-600" onClick={onCancel}>Annuler</button>
-                        <button className="px-4 py-2 rounded bg-orange-500 text-white text-xs font-semibold cursor-pointer hover:bg-orange-600 disabled:opacity-40" onClick={handleSubmit} disabled={!pid && pid !== 0}>Ajouter</button>
+                        <button className="px-4 py-2 rounded bg-orange-500 text-white text-xs font-semibold cursor-pointer hover:bg-orange-600 disabled:opacity-40" onClick={handleSubmit} disabled={!pid && pid !== 0 && type !== 'STOPPAGE' && type !== 'TIMEOUT'}>Ajouter</button>
                     </div>
                 </div>
             </div>
@@ -1082,7 +1105,9 @@
                 val: action.val || 2, made: action.made !== undefined ? action.made : true,
                 ftMade: action.ftMade || 0, ftAtt: action.ftAtt || 0,
                 foulType: action.foulType || 'PERSONAL', victim: action.victim || null, subOut: action.subOut || null,
-                play: action.play || ''
+                play: action.play || '',
+                duration: action.duration || 0,
+                team: action.team || 'home'
             });
         };
 
@@ -1097,6 +1122,8 @@
                 if (editData.type === 'FOUL') { u.foulType = editData.foulType; if (editData.victim) u.victim = editData.victim; }
                 if (editData.type === 'BLK' && editData.victim) u.victim = editData.victim;
                 if (editData.type === 'SUB') { u.subOut = editData.subOut; }
+                if (editData.type === 'STOPPAGE') { u.duration = editData.duration || 0; u.pid = 0; }
+                if (editData.type === 'TIMEOUT') { u.team = editData.team || 'home'; u.pid = 0; }
                 if (editData.play) u.play = editData.play; else delete u.play;
                 return u;
             }));
@@ -1173,6 +1200,8 @@
             if (t === 'FT') return `LF ${n.ftMade || 0}/${n.ftAtt || 0}`;
             if (t === 'FOUL') return `Faute ${FOUL_TYPES.find(f => f.value === (n.foulType || 'PERSONAL'))?.label || 'P'}${n.victim ? ' -> #' + n.victim : ''}`;
             if (t === 'SUB') return `SUB ${getPlayerLabel(n._pid || n.pid)} <-> ${n.subOut ? getPlayerLabel(n.subOut) : '?'}`;
+            if (t === 'STOPPAGE') return `Arrêt ${n.duration || 0}s`;
+            if (t === 'TIMEOUT') return `Timeout ${n.team === 'home' ? 'Nous' : 'Eux'}`;
             const found = ACTION_TYPES.find(at => at.value === t); return found ? found.label : t;
         };
         const getActionColor = (act) => {
@@ -1180,6 +1209,8 @@
             if (n.type === 'SHOT') return n.made ? 'text-green-400' : 'text-red-400';
             if (n.type === 'SUB') return 'text-cyan-400';
             if (n.type === 'FOUL') return 'text-red-500';
+            if (n.type === 'STOPPAGE') return 'text-yellow-400';
+            if (n.type === 'TIMEOUT') return 'text-indigo-400';
             return 'text-slate-300';
         };
         const formatTime = (time) => { const m = Math.floor((time || 0) / 60); const s = (time || 0) % 60; return `${m}:${s.toString().padStart(2, '0')}`; };
@@ -1337,9 +1368,24 @@
                                             </div>
                                         )}
                                         {editData.type === 'SUB' && (
-                                            <div className="flex gap-2 items-center">
-                                                <span className="text-[10px] text-cyan-400 font-bold">Sortant:</span>
-                                                <CombinedPlayerSelect value={editData.subOut} onChange={v => setEditData(d => ({ ...d, subOut: v }))} homePlayers={players} oppPlayers={oppPlayers} allowNone={true} className={SEL + ' w-32'} />
+                                            <div>
+                                                <div className="text-[9px] text-slate-500 mb-0.5">Sortant</div>
+                                                <CombinedPlayerSelect value={editData.subOut} onChange={v => setEditData(d => ({ ...d, subOut: v }))} homePlayers={players} oppPlayers={oppPlayers} allowNone={true} className={SEL} />
+                                            </div>
+                                        )}
+                                        {editData.type === 'STOPPAGE' && (
+                                            <div>
+                                                <div className="text-[9px] text-slate-500 mb-0.5">Durée (s)</div>
+                                                <input type="number" min="0" max="600" className={SEL + ' w-16 text-center'} value={editData.duration || 0} onChange={e => setEditData(d => ({ ...d, duration: parseInt(e.target.value) || 0 }))} />
+                                            </div>
+                                        )}
+                                        {editData.type === 'TIMEOUT' && (
+                                            <div>
+                                                <div className="text-[9px] text-slate-500 mb-0.5">Équipe</div>
+                                                <select className={SEL} value={editData.team || 'home'} onChange={e => setEditData(d => ({ ...d, team: e.target.value }))}>
+                                                    <option value="home">Nous</option>
+                                                    <option value="away">Eux</option>
+                                                </select>
                                             </div>
                                         )}
                                         <div className="flex gap-2 items-center">

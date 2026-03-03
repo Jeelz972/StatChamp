@@ -1460,7 +1460,7 @@ function detectRuns(history, players) {
 }
 
 // --- A6 : Calcul timestamp YouTube ---
-function getYouTubeLink(action, videoUrl, settings) {
+function getYouTubeLink(action, videoUrl, settings, allActions) {
   if (!settings || !settings.offsets || !videoUrl) return null;
   const qt = 'q' + (action.q || 1);
   const offset = settings.offsets[qt];
@@ -1470,7 +1470,19 @@ function getYouTubeLink(action, videoUrl, settings) {
   const leadTime = leadTimes[aType] || leadTimes['default'] || 2;
   const qtDuration = 600;
   const elapsedInQt = qtDuration - (action.time || 0);
-  let finalSeconds = offset.start + elapsedInQt - leadTime;
+  // --- STOPPAGE correction : sommer les durées d'arrêt antérieures dans ce QT ---
+  let stoppageTotal = 0;
+  if (allActions) {
+    allActions.forEach(function(a) {
+      if (a.type !== 'STOPPAGE' || !a.duration) return;
+      if ((a.q || 1) !== (action.q || 1)) return;
+      // STOPPAGE antérieure = chrono >= chrono action (temps décompte)
+      if ((a.time || 0) >= (action.time || 0)) {
+        stoppageTotal += a.duration;
+      }
+    });
+  }
+  let finalSeconds = offset.start + elapsedInQt + stoppageTotal - leadTime;
   finalSeconds = Math.max(finalSeconds, offset.start);
   const baseUrl = videoUrl.includes('?') ? videoUrl : videoUrl + '?';
   const separator = baseUrl.endsWith('?') ? '' : '&';
@@ -1653,341 +1665,6 @@ function MomentumChart({ scoreHistory, actions, players: matchPlayers }) {
     </div>
   );
 }
-
-// --- LIVE TRACKER ---
-function LiveTracker({ players, onSaveGame, initialGame, phases, selectedPhase }) {
-  const [gameState, setGameState] = useState({
-    quarter: 1,
-    opponent: 'Adversaire',
-    actions: [],
-    phase: selectedPhase,
-  });
-  const [gameTime, setGameTime] = useState(0);
-  const [isTimerRunning, setIsTimerRunning] = useState(false);
-  const [onCourt, setOnCourt] = useState([]);
-  const [accumulatedMinutes, setAccumulatedMinutes] = useState({});
-  const [derived, setDerived] = useState(recalculateGameStats([], players));
-  const [modal, setModal] = useState({ type: null, data: null });
-
-  useEffect(() => {
-    if (initialGame) setGameState((prev) => ({ ...prev, ...initialGame }));
-  }, [initialGame]);
-  useEffect(() => {
-    setDerived(recalculateGameStats(gameState.actions, players));
-  }, [gameState.actions, players]);
-  useEffect(() => {
-    let interval;
-    if (isTimerRunning) {
-      interval = setInterval(() => {
-        setGameTime((p) => p + 1);
-        setAccumulatedMinutes((prev) => {
-          const next = { ...prev };
-          onCourt.forEach((id) => (next[id] = (next[id] || 0) + 1));
-          return next;
-        });
-      }, 1000);
-    }
-    return () => clearInterval(interval);
-  }, [isTimerRunning, onCourt]);
-
-  const registerAction = (actionType, player, extraData = {}) => {
-    const newAction = {
-      id: generateId(),
-      type: actionType,
-      playerId: player === 'opponent' ? 'OPP' : player.id,
-      playerName: player === 'opponent' ? 'Adversaire' : player.name,
-      q: gameState.quarter,
-      consequence: extraData.consequence,
-      onCourt: [...onCourt],
-    };
-    setGameState((prev) => ({ ...prev, actions: [...prev.actions, newAction] }));
-    setModal({ type: null, data: null });
-  };
-
-  const finalizeGame = () => {
-    const finalStats = { ...derived.playerStats };
-    Object.keys(accumulatedMinutes).forEach((pid) => {
-      if (finalStats[pid]) finalStats[pid].minutes += Math.round(accumulatedMinutes[pid] / 60);
-    });
-    onSaveGame({ ...gameState, ...derived, playerStats: finalStats });
-  };
-
-  return (
-    <div className="flex flex-col h-full gap-4 relative">
-      <div className="bg-slate-800 p-2 flex justify-between items-center rounded-lg border border-slate-700">
-        <div className="flex items-center gap-4">
-          <Button
-            size="sm"
-            className={isTimerRunning ? 'bg-red-500' : 'bg-green-500'}
-            onClick={() => setIsTimerRunning(!isTimerRunning)}
-          >
-            <Icon path={isTimerRunning ? Icons.Pause : Icons.Play} />{' '}
-            {isTimerRunning ? 'Stop' : 'Start'}
-          </Button>
-          <div className="font-mono text-xl text-white font-bold">
-            {Math.floor(gameTime / 60)
-              .toString()
-              .padStart(2, '0')}
-            :{(gameTime % 60).toString().padStart(2, '0')}
-          </div>
-        </div>
-        <div className="flex items-center gap-4">
-          <select
-            value={gameState.phase}
-            onChange={(e) => setGameState((p) => ({ ...p, phase: e.target.value }))}
-            className="bg-slate-700 text-white text-xs px-2 py-1 rounded border border-slate-600"
-          >
-            {phases.map((ph) => (
-              <option key={ph.id} value={ph.id}>
-                {ph.name}
-              </option>
-            ))}
-          </select>
-          <span className="text-xs text-slate-400">
-            Terrain:{' '}
-            <span className={onCourt.length === 5 ? 'text-green-400' : 'text-orange-400'}>
-              {onCourt.length}/5
-            </span>
-          </span>
-        </div>
-      </div>
-      <Card className="bg-slate-900 p-4 flex justify-between items-center sticky top-0 z-10 border-b-4 border-orange-500">
-        <div className="text-4xl font-bold text-white">{derived.homeScore}</div>
-        <div className="flex flex-col items-center">
-          <div className="text-xl font-bold text-orange-500">Q{gameState.quarter}</div>
-          <div className="flex gap-2 mt-1">
-            <button
-              onClick={() => setGameState((p) => ({ ...p, quarter: Math.max(1, p.quarter - 1) }))}
-              className="text-xs text-slate-500 hover:text-white"
-            >
-              -
-            </button>
-            <button
-              onClick={() => setGameState((p) => ({ ...p, quarter: p.quarter + 1 }))}
-              className="text-xs text-slate-500 hover:text-white"
-            >
-              +
-            </button>
-          </div>
-        </div>
-        <div className="text-4xl font-bold text-red-500">{derived.awayScore}</div>
-      </Card>
-      <div className="flex-1 overflow-y-auto grid grid-cols-2 md:grid-cols-4 gap-3 pb-20">
-        {players.map((player) => {
-          const pStats = derived.playerStats[player.id] || { pts: 0, plusMinus: 0 };
-          const isOnCourt = onCourt.includes(player.id);
-          return (
-            <div
-              key={player.id}
-              className={`relative p-3 rounded-xl border shadow-md transition-all ${isOnCourt ? 'bg-slate-800 border-orange-500' : 'bg-slate-800/60 border-slate-700 opacity-80'}`}
-            >
-              <div className="absolute top-2 right-2">
-                <input
-                  type="checkbox"
-                  checked={isOnCourt}
-                  onChange={() => {
-                    if (onCourt.includes(player.id))
-                      setOnCourt((p) => p.filter((x) => x !== player.id));
-                    else if (onCourt.length < 5) setOnCourt((p) => [...p, player.id]);
-                  }}
-                  className="w-5 h-5 accent-orange-500 cursor-pointer"
-                />
-              </div>
-              <div
-                onClick={() => setModal({ type: 'ACTION_MENU', data: player })}
-                className="cursor-pointer"
-              >
-                <div className="flex justify-between pr-6">
-                  <span
-                    className={`font-bold truncate ${isOnCourt ? 'text-white' : 'text-slate-400'}`}
-                  >
-                    {player.name}
-                  </span>
-                  <span className="text-xs text-slate-500">#{player.number}</span>
-                </div>
-                <div className="text-xs mt-2 space-x-2 text-slate-300">
-                  <span>
-                    Pts: <b className="text-white">{pStats.pts}</b>
-                  </span>
-                  <span>
-                    +/-:{' '}
-                    <b className={pStats.plusMinus >= 0 ? 'text-green-400' : 'text-red-400'}>
-                      {pStats.plusMinus > 0 ? '+' : ''}
-                      {pStats.plusMinus}
-                    </b>
-                  </span>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-        <div
-          onClick={() => setModal({ type: 'ACTION_MENU', data: 'opponent' })}
-          className="bg-red-900/40 p-3 rounded-xl border border-red-700 hover:border-red-500 cursor-pointer flex items-center justify-center"
-        >
-          <span className="font-bold text-red-200">{gameState.opponent.toUpperCase()}</span>
-        </div>
-      </div>
-      <div className="fixed bottom-0 left-0 right-0 bg-slate-900 p-4 border-t border-slate-800 flex justify-end z-20 gap-2">
-        <Button variant="secondary" onClick={() => setModal({ type: 'STATS' })}>
-          <Icon path={Icons.Eye} /> Stats
-        </Button>
-        <Button variant="success" onClick={finalizeGame}>
-          <Icon path={Icons.Check} /> Finir
-        </Button>
-      </div>
-      <Modal
-        isOpen={modal.type === 'ACTION_MENU'}
-        onClose={() => setModal({ type: null })}
-        title={modal.data?.name || 'Adversaire'}
-        size="max-w-md"
-      >
-        <div className="grid grid-cols-3 gap-3">
-          <Button className="bg-green-600 h-12" onClick={() => registerAction('FGM2', modal.data)}>
-            +2
-          </Button>
-          <Button className="bg-green-600 h-12" onClick={() => registerAction('FGM3', modal.data)}>
-            +3
-          </Button>
-          <Button className="bg-green-600 h-12" onClick={() => registerAction('FGM1', modal.data)}>
-            +1 LF
-          </Button>
-          <Button className="bg-red-500 h-10" onClick={() => registerAction('FGA2', modal.data)}>
-            Miss 2
-          </Button>
-          <Button className="bg-red-500 h-10" onClick={() => registerAction('FGA3', modal.data)}>
-            Miss 3
-          </Button>
-          <Button className="bg-red-500 h-10" onClick={() => registerAction('FGA1', modal.data)}>
-            Miss LF
-          </Button>
-          <div className="col-span-3 h-px bg-slate-600 my-1"></div>
-          <Button className="bg-blue-600" onClick={() => registerAction('DREB', modal.data)}>
-            Reb D
-          </Button>
-          <Button className="bg-blue-500" onClick={() => registerAction('OREB', modal.data)}>
-            Reb O
-          </Button>
-          <Button className="bg-purple-600" onClick={() => registerAction('AST', modal.data)}>
-            Passe
-          </Button>
-          <Button
-            className="bg-yellow-600"
-            onClick={() =>
-              modal.data !== 'opponent'
-                ? setModal({ type: 'CONSEQ_STL', data: modal.data })
-                : registerAction('STL', 'opponent')
-            }
-          >
-            Int
-          </Button>
-          <Button
-            className="bg-orange-600"
-            onClick={() =>
-              modal.data !== 'opponent'
-                ? setModal({ type: 'CONSEQ_TOV', data: modal.data })
-                : registerAction('TOV', 'opponent')
-            }
-          >
-            BP
-          </Button>
-          <Button className="bg-slate-600" onClick={() => registerAction('BLK', modal.data)}>
-            Contre
-          </Button>
-          <Button
-            variant="danger"
-            className="col-span-3 mt-2"
-            onClick={() => registerAction('PF', modal.data)}
-          >
-            Faute
-          </Button>
-        </div>
-      </Modal>
-      <Modal
-        isOpen={modal.type === 'CONSEQ_TOV'}
-        onClose={() => setModal({ type: null })}
-        title="Consequence ?"
-        size="max-w-sm"
-      >
-        <div className="flex flex-col gap-2">
-          <Button
-            onClick={() => registerAction('TOV', modal.data, { consequence: 'score_2' })}
-            className="bg-red-600"
-          >
-            Adv +2
-          </Button>
-          <Button
-            onClick={() => registerAction('TOV', modal.data, { consequence: 'score_3' })}
-            className="bg-red-600"
-          >
-            Adv +3
-          </Button>
-          <Button
-            onClick={() => registerAction('TOV', modal.data, { consequence: 'none' })}
-            className="bg-slate-600"
-          >
-            Rien
-          </Button>
-        </div>
-      </Modal>
-      <Modal
-        isOpen={modal.type === 'CONSEQ_STL'}
-        onClose={() => setModal({ type: null })}
-        title="Suite ?"
-        size="max-w-sm"
-      >
-        <div className="flex flex-col gap-2">
-          <Button
-            onClick={() => registerAction('STL', modal.data, { consequence: 'score_2' })}
-            className="bg-green-600"
-          >
-            Nous +2
-          </Button>
-          <Button
-            onClick={() => registerAction('STL', modal.data, { consequence: 'none' })}
-            className="bg-slate-600"
-          >
-            Rien
-          </Button>
-        </div>
-      </Modal>
-      <Modal
-        isOpen={modal.type === 'STATS'}
-        onClose={() => setModal({ type: null })}
-        title="Stats Live"
-      >
-        <table className="w-full text-left text-xs text-slate-300">
-          <thead className="bg-slate-700 text-white">
-            <tr>
-              <th className="p-2">Joueur</th>
-              <th className="p-2">Pts</th>
-              <th className="p-2">+/-</th>
-              <th className="p-2">Fte</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-700">
-            {players.map((p) => {
-              const s = derived.playerStats[p.id] || {};
-              return (
-                <tr key={p.id}>
-                  <td className="p-2 font-bold">{p.name}</td>
-                  <td className="p-2">{s.pts}</td>
-                  <td
-                    className={`p-2 font-bold ${(s.plusMinus || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}
-                  >
-                    {s.plusMinus}
-                  </td>
-                  <td className="p-2 text-red-400">{s.pf}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </Modal>
-    </div>
-  );
-}
-
 // --- IMPORT REVIEW MODAL ---
 function ImportReviewModal({ importData, currentPlayers, phases, onConfirm, onCancel }) {
   const [mapping, setMapping] = useState({});
@@ -2184,7 +1861,7 @@ function VideoPlayByPlay({ game, players }) {
 
       const row = [name, num, desc, `Q${a.q || 1}`, timeStr, a.play || ''];
       if (hasVideo) {
-        const link = getYouTubeLink(a, game.videoUrl, game.videoSettings);
+        const link = getYouTubeLink(a, game.videoUrl, game.videoSettings, game.actions);
         const tMatch = link ? link.match(/[?&]t=(\d+)/) : null;
         const tSec = tMatch ? parseInt(tMatch[1]) : '';
         row.push(tSec, link || '');
@@ -2254,7 +1931,7 @@ function VideoPlayByPlay({ game, players }) {
             {selectMode ? 'Annuler selection' : 'Selectionner'}
           </button>
           {selectMode && selectedActions.size > 0 && (
-            <React.Fragment>
+            <>
             <button
               onClick={exportSelectedClips}
               className="px-2 py-0.5 bg-green-600 text-white text-[10px] font-bold rounded hover:bg-green-500"
@@ -2274,7 +1951,7 @@ function VideoPlayByPlay({ game, players }) {
                 {exporting ? 'Decoupe en cours...' : `Exporter ${selectedActions.size} clip${selectedActions.size > 1 ? 's' : ''} (Video)`}
               </button>
             )}
-            </React.Fragment>
+            </>
           )}
           <span className="text-xs text-slate-500">{filteredActions.length} actions</span>
         </div>
