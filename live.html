@@ -11,8 +11,8 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="design-tokens.css">
-    <link rel="stylesheet" href="live.css">
+    <link rel="stylesheet" href="design-tokens.css" />
+    <link rel="stylesheet" href="live.css" />
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
   </head>
@@ -165,18 +165,13 @@
         <div class="main-area">
           <div class="roster-panel">
             <div class="roster-section home">
-              <div class="roster-header"><span class="roster-title">🏠 Nous</span></div>
-              <div class="roster-list" id="rosterHome"></div>
-            </div>
-
-            <div class="roster-section away">
               <div
                 class="roster-header"
                 style="display: flex; justify-content: space-between; align-items: center"
               >
-                <span class="roster-title">🚨 Eux</span>
+                <span class="roster-title">🏠 Nous</span>
                 <button
-                  onclick="OppLineupEditor.show()"
+                  onclick="HomeRosterEditor.show()"
                   style="
                     background: none;
                     border: 1px solid var(--border);
@@ -186,10 +181,52 @@
                     border-radius: 4px;
                     cursor: pointer;
                   "
-                  title="Modifier lineup adverse"
+                  title="Gerer effectif actif"
                 >
-                  ✏️
+                  👥
                 </button>
+              </div>
+              <div class="roster-list" id="rosterHome"></div>
+            </div>
+
+            <div class="roster-section away">
+              <div
+                class="roster-header"
+                style="display: flex; justify-content: space-between; align-items: center"
+              >
+                <span class="roster-title">🚨 Eux</span>
+                <div style="display: flex; gap: 4px">
+                  <button
+                    onclick="OppRosterEditor.show()"
+                    style="
+                      background: none;
+                      border: 1px solid var(--border);
+                      color: var(--text-muted);
+                      font-size: 0.5rem;
+                      padding: 2px 6px;
+                      border-radius: 4px;
+                      cursor: pointer;
+                    "
+                    title="Gerer roster adverse"
+                  >
+                    👥
+                  </button>
+                  <button
+                    onclick="OppLineupEditor.show()"
+                    style="
+                      background: none;
+                      border: 1px solid var(--border);
+                      color: var(--text-muted);
+                      font-size: 0.5rem;
+                      padding: 2px 6px;
+                      border-radius: 4px;
+                      cursor: pointer;
+                    "
+                    title="Modifier lineup adverse"
+                  >
+                    ✏️
+                  </button>
+                </div>
               </div>
               <div class="roster-list" id="rosterAway"></div>
             </div>
@@ -667,6 +704,17 @@
         },
         select(assisterId) {
           document.getElementById('assistPopup').classList.remove('show');
+          for (let i = State.actions.length - 1; i >= 0; i--) {
+            if (
+              State.actions[i].type === 'SHOT' &&
+              State.actions[i].pid === this.scorerId &&
+              State.actions[i].made &&
+              !State.actions[i].astId
+            ) {
+              State.actions[i].astId = assisterId;
+              break;
+            }
+          }
           State.players[assisterId].stats.ast++;
           GameEngine.log('AST', assisterId, { scorerId: this.scorerId, ...this.shotData });
           UI.renderRoster();
@@ -1023,7 +1071,7 @@
           document.getElementById('startersTitle').innerHTML =
             `<div style="margin-bottom:10px;">5 de départ Q${this.quarter}</div>` +
             `<div style="display:flex;gap:8px;justify-content:center;">` +
-            `<button class="btn-mod ${isHome ? 'prim' : ''}" onclick="StartersModal.setTab('home')" style="padding:6px 16px;font-size:0.75rem;">🏠 NOUS</button>` +
+            `<button class="btn-mod ${isHome && !p.inactive ? 'prim' : ''}" onclick="StartersModal.setTab('home')" style="padding:6px 16px;font-size:0.75rem;">🏠 NOUS</button>` +
             `<button class="btn-mod ${!isHome ? 'prim' : ''}" onclick="StartersModal.setTab('away')" style="padding:6px 16px;font-size:0.75rem;">🚨 EUX</button>` +
             `</div>`;
 
@@ -1299,7 +1347,72 @@
           this.hide();
         },
       };
+      const HomeRosterEditor = {
+        show() {
+          const homePlayers = Object.values(State.players).filter((p) => p.team === 'home');
+          homePlayers.sort((a, b) => parseInt(a.number) - parseInt(b.number));
 
+          let html = `<div style="text-align:center;margin-bottom:12px;color:var(--text-muted);font-size:0.75rem;">
+            Desactiver des joueurs pour les retirer de la liste active.<br>
+            <span style="color:var(--warning);font-size:0.65rem;">Les joueurs sur terrain doivent d'abord etre remplaces.</span>
+          </div>`;
+
+          html += `<div style="max-height:50vh;overflow-y:auto;">`;
+          homePlayers.forEach((p) => {
+            const isOnCourt = State.onCourt.home.includes(p.id);
+            const isInactive = p.inactive === true;
+            const bg = isInactive
+              ? 'rgba(100,116,139,0.2)'
+              : isOnCourt
+                ? 'rgba(34,197,94,0.1)'
+                : 'rgba(255,255,255,0.03)';
+            const border = isInactive
+              ? 'rgba(100,116,139,0.4)'
+              : isOnCourt
+                ? 'rgba(34,197,94,0.3)'
+                : 'var(--border)';
+            html += `<div style="display:flex;align-items:center;gap:8px;padding:8px;background:${bg};border:1px solid ${border};border-radius:6px;margin-bottom:4px;">
+              <span style="font-weight:800;min-width:30px;color:${isInactive ? 'var(--text-muted)' : 'white'};">#${p.number}</span>
+              <span style="flex:1;font-size:0.8rem;color:${isInactive ? 'var(--text-muted)' : 'var(--text-secondary)'};">${p.name}</span>
+              ${isOnCourt ? '<span style="font-size:0.6rem;color:var(--success);font-weight:700;">TERRAIN</span>' : ''}
+              <button onclick="HomeRosterEditor.toggle(${p.id})" style="background:${isInactive ? 'var(--success)' : 'var(--danger)'};border:none;color:white;padding:4px 10px;border-radius:6px;font-size:0.7rem;font-weight:700;cursor:pointer;">
+                ${isInactive ? 'Activer' : 'Retirer'}
+              </button>
+            </div>`;
+          });
+          html += `</div>`;
+
+          UI.showModal(
+            '👥 Effectif Actif',
+            html,
+            [{ text: 'Fermer', action: 'UI.closeModal()', class: 'prim' }],
+            'g-1'
+          );
+        },
+
+        toggle(pid) {
+          const p = State.players[pid];
+          if (!p) return;
+
+          if (!p.inactive) {
+            // Desactiver
+            if (State.onCourt.home.includes(pid)) {
+              UI.toast('Remplacez ce joueur avant de le retirer', 'error');
+              return;
+            }
+            p.inactive = true;
+            UI.toast(`#${p.number} ${p.name} retiré`);
+          } else {
+            // Reactiver
+            p.inactive = false;
+            UI.toast(`#${p.number} ${p.name} réactivé`);
+          }
+
+          UI.renderRoster();
+          OfflineManager.save();
+          this.show(); // Re-ouvrir le modal avec l'etat mis a jour
+        },
+      };
       const OppLineupEditor = {
         show() {
           const awayPlayers = Object.values(State.players).filter((p) => p.team === 'away');
@@ -1362,6 +1475,137 @@
           }
         },
       };
+      const OppRosterEditor = {
+        show() {
+          const awayPlayers = Object.values(State.players)
+            .filter((p) => p.team === 'away')
+            .sort((a, b) => parseInt(a.number) - parseInt(b.number));
+
+          let html = `<div style="text-align:center;margin-bottom:12px;color:var(--text-muted);font-size:0.75rem;">
+            Modifier, ajouter ou supprimer des joueurs adverses.
+          </div>`;
+
+          html += `<div id="oppRosterEditList" style="max-height:45vh;overflow-y:auto;">`;
+          awayPlayers.forEach((p) => {
+            const isOnCourt = State.onCourt.away.includes(p.id);
+            const hasStats =
+              p.stats &&
+              (p.stats.pts > 0 ||
+                p.stats.oreb > 0 ||
+                p.stats.dreb > 0 ||
+                p.stats.ast > 0 ||
+                p.stats.stl > 0 ||
+                p.stats.blk > 0 ||
+                p.stats.tov > 0 ||
+                p.stats.fouls > 0);
+            html += `<div style="display:flex;align-items:center;gap:6px;padding:6px;background:rgba(239,68,68,0.05);border:1px solid rgba(239,68,68,0.2);border-radius:6px;margin-bottom:4px;">
+              <input id="oppNum_${p.id}" value="${p.number}" style="width:40px;background:var(--bg-elevated);border:1px solid var(--border);color:white;padding:4px;border-radius:4px;font-size:0.8rem;font-weight:800;text-align:center;" />
+              <input id="oppName_${p.id}" value="${p.name}" style="flex:1;background:var(--bg-elevated);border:1px solid var(--border);color:var(--text-secondary);padding:4px 6px;border-radius:4px;font-size:0.75rem;" />
+              ${isOnCourt ? '<span style="font-size:0.55rem;color:var(--danger);font-weight:700;white-space:nowrap;">TERRAIN</span>' : ''}
+              <button onclick="OppRosterEditor.remove(${p.id})" ${isOnCourt || hasStats ? 'disabled style="opacity:0.3;cursor:not-allowed;"' : ''} style="background:var(--danger);border:none;color:white;width:24px;height:24px;border-radius:50%;font-size:0.7rem;cursor:pointer;flex-shrink:0;">✕</button>
+            </div>`;
+          });
+          html += `</div>`;
+
+          html += `<button onclick="OppRosterEditor.add()" style="margin-top:8px;width:100%;padding:8px;background:rgba(34,197,94,0.15);border:1px dashed rgba(34,197,94,0.5);border-radius:6px;color:var(--success);font-size:0.75rem;font-weight:700;cursor:pointer;">+ Ajouter joueur adverse</button>`;
+
+          UI.showModal(
+            '👥 Roster Adverse',
+            html,
+            [
+              { text: 'Annuler', action: 'UI.closeModal()', class: '' },
+              { text: '✓ Appliquer', action: 'OppRosterEditor.apply()', class: 'prim' },
+            ],
+            'g-2'
+          );
+        },
+
+        add() {
+          // Trouver le prochain ID disponible
+          const awayIds = Object.values(State.players)
+            .filter((p) => p.team === 'away')
+            .map((p) => p.id);
+          let nextId = 1000;
+          while (awayIds.includes(nextId)) nextId++;
+          const nextNum = nextId - 1000;
+
+          State.players[nextId] = {
+            id: nextId,
+            number: String(nextNum),
+            name: `Adv #${nextNum}`,
+            team: 'away',
+            stats: {
+              pts: 0,
+              oreb: 0,
+              dreb: 0,
+              ast: 0,
+              stl: 0,
+              blk: 0,
+              tov: 0,
+              fouls: 0,
+              foulDrawn: 0,
+              fgm: 0,
+              fga: 0,
+              fg3m: 0,
+              fg3a: 0,
+              ftm: 0,
+              fta: 0,
+              min: 0,
+              plusMinus: 0,
+            },
+          };
+
+          OfflineManager.save();
+          this.show(); // Re-ouvrir avec le nouveau joueur
+        },
+
+        remove(pid) {
+          const p = State.players[pid];
+          if (!p) return;
+          if (State.onCourt.away.includes(pid)) {
+            UI.toast('Joueur sur terrain, impossible de supprimer', 'error');
+            return;
+          }
+          if (!confirm(`Supprimer #${p.number} ${p.name} ?`)) return;
+
+          delete State.players[pid];
+          // Nettoyer des starters si present
+          Object.keys(State.opponentStarters).forEach((q) => {
+            State.opponentStarters[q] = (State.opponentStarters[q] || []).filter(
+              (id) => id !== pid
+            );
+          });
+
+          UI.renderRoster();
+          OfflineManager.save();
+          this.show(); // Re-ouvrir
+        },
+
+        apply() {
+          const awayPlayers = Object.values(State.players).filter((p) => p.team === 'away');
+          let changed = 0;
+
+          awayPlayers.forEach((p) => {
+            const numEl = document.getElementById(`oppNum_${p.id}`);
+            const nameEl = document.getElementById(`oppName_${p.id}`);
+            if (numEl && numEl.value !== String(p.number)) {
+              p.number = numEl.value.trim();
+              changed++;
+            }
+            if (nameEl && nameEl.value !== p.name) {
+              p.name = nameEl.value.trim();
+              changed++;
+            }
+          });
+
+          UI.closeModal();
+          if (changed > 0) {
+            UI.renderRoster();
+            UI.toast(`Roster adverse mis à jour`);
+          }
+          OfflineManager.save();
+        },
+      };
       // ===== TIMELINE FLOAT =====
       const TimelineFloat = {
         render() {
@@ -1414,7 +1658,7 @@
               } else if (a.type === 'TIMEOUT') {
                 icon = '⏸';
                 desc = `Timeout ${a.team === 'home' ? 'Nous' : 'Eux'}`;
-              }else if (a.type === 'STOPPAGE') {
+              } else if (a.type === 'STOPPAGE') {
                 icon = '⏱';
                 desc = `Arrêt chrono ${a.duration || 0}s`;
               }
@@ -2650,6 +2894,17 @@
               }
             }
             if (a.type === 'TOV') p.stats.tov++;
+            if (a.type === 'AST') {
+              const alreadyCounted = State.actions.some(
+                (s) =>
+                  s.type === 'SHOT' &&
+                  s.made &&
+                  s.astId === a.pid &&
+                  s.pid === a.scorerId &&
+                  s.q === a.q
+              );
+              if (!alreadyCounted) p.stats.ast++;
+            }
             if (a.type === 'FOUL') {
               p.stats.fouls++;
               State.teamFouls[p.team][a.q - 1]++;
@@ -2847,10 +3102,12 @@
           const defM = Math.floor(defTime / 60),
             defS = defTime % 60;
           let html = `<div style="margin-bottom:10px;"><label style="font-size:0.75rem;color:var(--text-muted);display:block;margin-bottom:4px;">Joueur</label><select id="insP" class="inp">${all.map((x) => `<option value="${x.id}">#${x.number} ${x.name}</option>`).join('')}</select></div>`;
-          html += `<div style="margin-bottom:10px;"><label style="font-size:0.75rem;color:var(--text-muted);display:block;margin-bottom:4px;">Type</label><select id="insT" class="inp" onchange="GameEngine.toggleInsertFields()"><option value="SHOT">Tir</option><option value="OREB">Reb Off</option><option value="DREB">Reb Def</option><option value="STL">Interception</option><option value="TOV">Perte</option><option value="FOUL">Faute</option><option value="FT">Lancers Francs</option><option value="BLK">Contre</option><option value="STOPPAGE">Arrêt Chrono</option></select></div>`;          html += `<div id="insShot" style="margin-bottom:10px;"><div style="display:flex;gap:8px;"><div style="flex:1;"><label style="font-size:0.75rem;color:var(--text-muted);">Valeur</label><select id="insV" class="inp"><option value="2">2pts</option><option value="3">3pts</option></select></div><div style="flex:1;"><label style="font-size:0.75rem;color:var(--text-muted);">Résultat</label><select id="insM" class="inp"><option value="1">Réussi</option><option value="0">Raté</option></select></div></div></div>`;
+          html += `<div style="margin-bottom:10px;"><label style="font-size:0.75rem;color:var(--text-muted);display:block;margin-bottom:4px;">Type</label><select id="insT" class="inp" onchange="GameEngine.toggleInsertFields()"><option value="SHOT">Tir</option><option value="OREB">Reb Off</option><option value="DREB">Reb Def</option><option value="STL">Interception</option><option value="TOV">Perte</option><option value="FOUL">Faute</option><option value="FT">Lancers Francs</option><option value="BLK">Contre</option><option value="STOPPAGE">Arrêt Chrono</option></select></div>`;
+          html += `<div id="insShot" style="margin-bottom:10px;"><div style="display:flex;gap:8px;"><div style="flex:1;"><label style="font-size:0.75rem;color:var(--text-muted);">Valeur</label><select id="insV" class="inp"><option value="2">2pts</option><option value="3">3pts</option></select></div><div style="flex:1;"><label style="font-size:0.75rem;color:var(--text-muted);">Résultat</label><select id="insM" class="inp"><option value="1">Réussi</option><option value="0">Raté</option></select></div></div></div>`;
           html += `<div id="insFT" style="margin-bottom:10px;display:none;"><div style="display:flex;gap:8px;"><div style="flex:1;"><label style="font-size:0.75rem;color:var(--text-muted);">Réussis</label><input type="number" id="insFTM" class="inp" value="0" min="0" max="3"></div><div style="flex:1;"><label style="font-size:0.75rem;color:var(--text-muted);">Tentés</label><input type="number" id="insFTA" class="inp" value="2" min="0" max="3"></div></div></div>`;
           html += `<div id="insFoulVic" style="margin-bottom:10px;display:none;"><label style="font-size:0.75rem;color:var(--text-muted);">Type de faute</label><select id="insFoulType" class="inp"><option value="personal">🚨 Personnelle</option><option value="shooting">🎯 Sur tir</option><option value="technical">🟡 Technique</option><option value="unsportsmanlike">🟥 Antisportive</option><option value="offensive">🔄 Offensive</option></select>`;
-          html += `<div id="insStoppage" style="margin-bottom:10px;display:none;"><label style="font-size:0.75rem;color:var(--text-muted);display:block;margin-bottom:4px;">Durée arrêt (secondes)</label><input type="number" id="insDuration" class="inp" value="30" min="1" max="600"></div>`;          html += `<div style="margin-bottom:10px;"><label style="font-size:0.75rem;color:var(--text-muted);display:block;margin-bottom:4px;">Temps (Q${defQ})</label><div style="display:flex;gap:8px;align-items:center;"><input type="number" id="insMin" class="inp" value="${defM}" min="0" max="10" style="width:60px;text-align:center;"><span style="font-weight:800;">:</span><input type="number" id="insSec" class="inp" value="${defS}" min="0" max="59" style="width:60px;text-align:center;"></div></div>`;
+          html += `<div id="insStoppage" style="margin-bottom:10px;display:none;"><label style="font-size:0.75rem;color:var(--text-muted);display:block;margin-bottom:4px;">Durée arrêt (secondes)</label><input type="number" id="insDuration" class="inp" value="30" min="1" max="600"></div>`;
+          html += `<div style="margin-bottom:10px;"><label style="font-size:0.75rem;color:var(--text-muted);display:block;margin-bottom:4px;">Temps (Q${defQ})</label><div style="display:flex;gap:8px;align-items:center;"><input type="number" id="insMin" class="inp" value="${defM}" min="0" max="10" style="width:60px;text-align:center;"><span style="font-weight:800;">:</span><input type="number" id="insSec" class="inp" value="${defS}" min="0" max="59" style="width:60px;text-align:center;"></div></div>`;
           html += `<input type="hidden" id="insQ" value="${defQ}">`;
           UI.showModal(
             '➕ Insérer action',
@@ -2871,7 +3128,8 @@
           const type = document.getElementById('insT').value;
           document.getElementById('insShot').style.display = type === 'SHOT' ? 'block' : 'none';
           document.getElementById('insFT').style.display = type === 'FT' ? 'block' : 'none';
-          document.getElementById('insStoppage').style.display = type === 'STOPPAGE' ? 'block' : 'none';
+          document.getElementById('insStoppage').style.display =
+            type === 'STOPPAGE' ? 'block' : 'none';
         },
 
         confirmInsert(insertIdx) {
@@ -3350,7 +3608,7 @@
           };
           const sortRoster = (team) =>
             Object.values(State.players)
-              .filter((p) => p.team === team)
+              .filter((p) => p.team === team && !p.inactive)
               .sort((a, b) => {
                 const aOn = State.onCourt[team].includes(a.id) ? 0 : 1;
                 const bOn = State.onCourt[team].includes(b.id) ? 0 : 1;
@@ -3435,7 +3693,7 @@
               } else if (a.type === 'TIMEOUT') {
                 icon = '⏸';
                 desc = `Timeout ${a.team === 'home' ? 'Nous' : 'Eux'}`;
-              }else if (a.type === 'STOPPAGE') {
+              } else if (a.type === 'STOPPAGE') {
                 icon = '⏱';
                 desc = `Arrêt chrono ${a.duration || 0}s`;
               }

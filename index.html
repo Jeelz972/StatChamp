@@ -12,8 +12,8 @@
       rel="stylesheet"
     />
 
-    <link rel="stylesheet" href="design-tokens.css">
-    <link rel="stylesheet" href="app.css">
+    <link rel="stylesheet" href="design-tokens.css" />
+    <link rel="stylesheet" href="app.css" />
 
     <script src="https://cdn.tailwindcss.com"></script>
 
@@ -30,24 +30,38 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script>
-    tailwind.config = {
+      tailwind.config = {
         theme: {
           extend: {
             fontFamily: {
-              'sans': ['Inter', 'sans-serif'],
+              sans: ['Inter', 'sans-serif'],
             },
             colors: {
-              'slate': {
-                50: '#F4F4F5', 100: '#E4E4E7', 200: '#D4D4D8',
-                300: '#A1A1AA', 400: '#71717A', 500: '#52525B',
-                600: '#3F3F46', 700: '#252530', 800: '#1C1C28',
-                900: '#161620', 950: '#0C0C12'
+              slate: {
+                50: '#F4F4F5',
+                100: '#E4E4E7',
+                200: '#D4D4D8',
+                300: '#A1A1AA',
+                400: '#71717A',
+                500: '#52525B',
+                600: '#3F3F46',
+                700: '#252530',
+                800: '#1C1C28',
+                900: '#161620',
+                950: '#0C0C12',
               },
-              'orange': {
-                50: '#FFF7ED', 100: '#FFEDD5', 200: '#FED7AA',
-                300: '#FDBA74', 400: '#FF8C5A', 500: '#FF6B35',
-                600: '#E05520', 700: '#C2410C', 800: '#9A3412',
-                900: '#7C2D12', 950: '#431407'
+              orange: {
+                50: '#FFF7ED',
+                100: '#FFEDD5',
+                200: '#FED7AA',
+                300: '#FDBA74',
+                400: '#FF8C5A',
+                500: '#FF6B35',
+                600: '#E05520',
+                700: '#C2410C',
+                800: '#9A3412',
+                900: '#7C2D12',
+                950: '#431407',
               },
               'court-orange': '#FF6B35',
               'coach-dark': '#161620',
@@ -55,8 +69,8 @@
             },
           },
         },
-      };    </script>
-
+      };
+    </script>
   </head>
   <body>
     <div id="root"></div>

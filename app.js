@@ -1473,7 +1473,7 @@ function getYouTubeLink(action, videoUrl, settings, allActions) {
   // --- STOPPAGE correction : sommer les durées d'arrêt antérieures dans ce QT ---
   let stoppageTotal = 0;
   if (allActions) {
-    allActions.forEach(function(a) {
+    allActions.forEach(function (a) {
       if (a.type !== 'STOPPAGE' || !a.duration) return;
       if ((a.q || 1) !== (action.q || 1)) return;
       // STOPPAGE antérieure = chrono >= chrono action (temps décompte)
@@ -1494,7 +1494,9 @@ function getYouTubeEmbedUrl(videoUrl, seconds) {
   let videoId = null;
   // Format: https://www.youtube.com/watch?v=XXXXXXXXXXX
   const watchMatch = videoUrl.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
-  if (watchMatch) { videoId = watchMatch[1]; }
+  if (watchMatch) {
+    videoId = watchMatch[1];
+  }
   // Format: https://youtu.be/XXXXXXXXXXX
   if (!videoId) {
     const shortMatch = videoUrl.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/);
@@ -1509,32 +1511,33 @@ function getYouTubeEmbedUrl(videoUrl, seconds) {
   return `https://www.youtube.com/embed/${videoId}?start=${Math.floor(seconds || 0)}&autoplay=1&rel=0`;
 }
 
-
 async function requestClipExport(videoUrl, videoSettings, actions) {
   if (!CLIP_SERVER_URL) throw new Error('Serveur de clips non configure');
 
-  const segments = actions.map(a => {
-    const link = getYouTubeLink(a, videoUrl, videoSettings);
-    const tMatch = link ? link.match(/[?&]t=(\d+)/) : null;
-    const start = tMatch ? parseInt(tMatch[1]) : 0;
+  const segments = actions
+    .map((a) => {
+      const link = getYouTubeLink(a, videoUrl, videoSettings);
+      const tMatch = link ? link.match(/[?&]t=(\d+)/) : null;
+      const start = tMatch ? parseInt(tMatch[1]) : 0;
 
-    let label = a.type;
-    if (a.type === 'SHOT') label = `Tir_${a.val}pts_${a.made ? 'OK' : 'rate'}`;
-    else if (a.type === 'FT') label = `LF_${a.ftMade || 0}_${a.ftAtt || 0}`;
-    const pid = a.pid ?? a.playerId;
-    label = `Q${a.q || 1}_${label}_J${pid}`;
+      let label = a.type;
+      if (a.type === 'SHOT') label = `Tir_${a.val}pts_${a.made ? 'OK' : 'rate'}`;
+      else if (a.type === 'FT') label = `LF_${a.ftMade || 0}_${a.ftAtt || 0}`;
+      const pid = a.pid ?? a.playerId;
+      label = `Q${a.q || 1}_${label}_J${pid}`;
 
-    return {
-      start: Math.max(0, start),
-      end: start + 12,
-      label
-    };
-  }).filter(s => s.start >= 0);
+      return {
+        start: Math.max(0, start),
+        end: start + 12,
+        label,
+      };
+    })
+    .filter((s) => s.start >= 0);
 
   const resp = await fetch(`${CLIP_SERVER_URL}/api/clips`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ videoUrl, segments })
+    body: JSON.stringify({ videoUrl, segments }),
   });
 
   if (!resp.ok) {
@@ -1798,54 +1801,54 @@ function VideoPlayByPlay({ game, players }) {
 
   const availableQuarters = useMemo(() => {
     if (!game.actions) return [];
-    const qs = [...new Set(game.actions.map(a => a.q || 1))].sort((a, b) => a - b);
+    const qs = [...new Set(game.actions.map((a) => a.q || 1))].sort((a, b) => a - b);
     return qs;
   }, [game.actions]);
 
   const availablePlays = useMemo(() => {
     if (!game.actions) return [];
-    const plays = [...new Set(game.actions.map(a => a.play).filter(Boolean))].sort();
+    const plays = [...new Set(game.actions.map((a) => a.play).filter(Boolean))].sort();
     return plays;
   }, [game.actions]);
 
   const filteredActions = useMemo(() => {
-  if (!game.actions) return [];
-  let acts = game.actions.filter(a => a.type !== 'SUB');
-  if (playerFilter !== 'all') {
-    const fp = parseInt(playerFilter);
-    acts = acts.filter(a => (a.pid ?? a.playerId) === fp);
-  }
-  if (typeFilter !== 'all') {
-    acts = acts.filter(a => a.type === typeFilter);
-  }
-  if (quarterFilter !== 'all') {
-    const qf = parseInt(quarterFilter);
-    acts = acts.filter(a => (a.q || 1) === qf);
-  }
-  if (playFilter !== 'all') {
-    acts = acts.filter(a => a.play === playFilter);
-  }
-  return acts.sort((a, b) => {
-    if ((a.q || 1) !== (b.q || 1)) return (a.q || 1) - (b.q || 1);
-    return (b.time || 0) - (a.time || 0);
-  });
-}, [game.actions, playerFilter, typeFilter, quarterFilter, playFilter]);
+    if (!game.actions) return [];
+    let acts = game.actions.filter((a) => a.type !== 'SUB');
+    if (playerFilter !== 'all') {
+      const fp = parseInt(playerFilter);
+      acts = acts.filter((a) => (a.pid ?? a.playerId) === fp);
+    }
+    if (typeFilter !== 'all') {
+      acts = acts.filter((a) => a.type === typeFilter);
+    }
+    if (quarterFilter !== 'all') {
+      const qf = parseInt(quarterFilter);
+      acts = acts.filter((a) => (a.q || 1) === qf);
+    }
+    if (playFilter !== 'all') {
+      acts = acts.filter((a) => a.play === playFilter);
+    }
+    return acts.sort((a, b) => {
+      if ((a.q || 1) !== (b.q || 1)) return (a.q || 1) - (b.q || 1);
+      return (b.time || 0) - (a.time || 0);
+    });
+  }, [game.actions, playerFilter, typeFilter, quarterFilter, playFilter]);
 
   const homePlayers = players.filter((p) => game.playerStats && game.playerStats[p.id]);
 
   const exportSelectedClips = () => {
-    const selected = filteredActions.filter(a => selectedActions.has(a.id));
+    const selected = filteredActions.filter((a) => selectedActions.has(a.id));
     if (selected.length === 0) return;
 
     const hasVideo = game.videoUrl && game.videoSettings;
     const headers = ['Joueur', 'Numero', 'Action', 'Quart', 'Chrono', 'Systeme'];
     if (hasVideo) headers.push('Timestamp_Video', 'Lien_YouTube');
 
-    const rows = selected.map(a => {
+    const rows = selected.map((a) => {
       const pid = a.pid ?? a.playerId;
       const isHome = typeof pid === 'number' ? pid < 1000 : false;
-      const player = isHome ? players.find(p => p.id === pid) : null;
-      const num = player ? player.number : (pid >= 1000 ? pid - 1000 : '?');
+      const player = isHome ? players.find((p) => p.id === pid) : null;
+      const num = player ? player.number : pid >= 1000 ? pid - 1000 : '?';
       const name = player ? player.name : 'Adversaire';
       const timeMin = Math.floor((a.time || 0) / 60);
       const timeSec = (a.time || 0) % 60;
@@ -1869,7 +1872,9 @@ function VideoPlayByPlay({ game, players }) {
       return row;
     });
 
-    const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${c}"`).join(','))].join('\n');
+    const csv = [headers.join(','), ...rows.map((r) => r.map((c) => `"${c}"`).join(','))].join(
+      '\n'
+    );
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1880,7 +1885,7 @@ function VideoPlayByPlay({ game, players }) {
   };
 
   const handleClipExport = async () => {
-    const selected = filteredActions.filter(a => selectedActions.has(a.id));
+    const selected = filteredActions.filter((a) => selectedActions.has(a.id));
     if (selected.length === 0 || !game.videoUrl || !game.videoSettings) return;
 
     setExporting(true);
@@ -1897,7 +1902,7 @@ function VideoPlayByPlay({ game, players }) {
   };
 
   const toggleSelection = (actionId) => {
-    setSelectedActions(prev => {
+    setSelectedActions((prev) => {
       const next = new Set(prev);
       if (next.has(actionId)) next.delete(actionId);
       else next.add(actionId);
@@ -1909,7 +1914,7 @@ function VideoPlayByPlay({ game, players }) {
     if (selectedActions.size === filteredActions.length) {
       setSelectedActions(new Set());
     } else {
-      setSelectedActions(new Set(filteredActions.map(a => a.id)));
+      setSelectedActions(new Set(filteredActions.map((a) => a.id)));
     }
   };
 
@@ -1921,7 +1926,10 @@ function VideoPlayByPlay({ game, players }) {
         </h4>
         <div className="flex gap-2 items-center">
           <button
-            onClick={() => { setSelectMode(s => !s); setSelectedActions(new Set()); }}
+            onClick={() => {
+              setSelectMode((s) => !s);
+              setSelectedActions(new Set());
+            }}
             className={`px-2 py-0.5 text-[10px] font-bold rounded transition-colors ${
               selectMode
                 ? 'bg-orange-600 text-white'
@@ -1932,25 +1940,27 @@ function VideoPlayByPlay({ game, players }) {
           </button>
           {selectMode && selectedActions.size > 0 && (
             <>
-            <button
-              onClick={exportSelectedClips}
-              className="px-2 py-0.5 bg-green-600 text-white text-[10px] font-bold rounded hover:bg-green-500"
-            >
-              Exporter {selectedActions.size} clip{selectedActions.size > 1 ? 's' : ''} (CSV)
-            </button>
-            {CLIP_SERVER_URL && game.videoUrl && game.videoSettings && (
               <button
-                onClick={handleClipExport}
-                disabled={exporting}
-                className={`px-2 py-0.5 text-[10px] font-bold rounded transition-colors ${
-                  exporting
-                    ? 'bg-slate-600 text-slate-400 cursor-wait'
-                    : 'bg-purple-600 text-white hover:bg-purple-500'
-                }`}
+                onClick={exportSelectedClips}
+                className="px-2 py-0.5 bg-green-600 text-white text-[10px] font-bold rounded hover:bg-green-500"
               >
-                {exporting ? 'Decoupe en cours...' : `Exporter ${selectedActions.size} clip${selectedActions.size > 1 ? 's' : ''} (Video)`}
+                Exporter {selectedActions.size} clip{selectedActions.size > 1 ? 's' : ''} (CSV)
               </button>
-            )}
+              {CLIP_SERVER_URL && game.videoUrl && game.videoSettings && (
+                <button
+                  onClick={handleClipExport}
+                  disabled={exporting}
+                  className={`px-2 py-0.5 text-[10px] font-bold rounded transition-colors ${
+                    exporting
+                      ? 'bg-slate-600 text-slate-400 cursor-wait'
+                      : 'bg-purple-600 text-white hover:bg-purple-500'
+                  }`}
+                >
+                  {exporting
+                    ? 'Decoupe en cours...'
+                    : `Exporter ${selectedActions.size} clip${selectedActions.size > 1 ? 's' : ''} (Video)`}
+                </button>
+              )}
             </>
           )}
           <span className="text-xs text-slate-500">{filteredActions.length} actions</span>
@@ -1983,7 +1993,8 @@ function VideoPlayByPlay({ game, players }) {
         <div className="mb-3 p-3 bg-green-950/30 border border-green-700 rounded-lg">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs text-green-400 font-bold">
-              {exportResult.clips.length} clip{exportResult.clips.length > 1 ? 's' : ''} pret{exportResult.clips.length > 1 ? 's' : ''}
+              {exportResult.clips.length} clip{exportResult.clips.length > 1 ? 's' : ''} pret
+              {exportResult.clips.length > 1 ? 's' : ''}
             </span>
             <button
               onClick={() => setExportResult(null)}
@@ -2013,27 +2024,31 @@ function VideoPlayByPlay({ game, players }) {
       <div className="flex flex-wrap gap-2 mb-3">
         <select
           value={quarterFilter}
-          onChange={e => setQuarterFilter(e.target.value)}
+          onChange={(e) => setQuarterFilter(e.target.value)}
           className="bg-slate-900 text-white text-xs border border-slate-600 rounded px-2 py-1"
         >
           <option value="all">Tous les QT</option>
-          {availableQuarters.map(q => (
-            <option key={q} value={q}>{q <= 4 ? `Q${q}` : `OT${q - 4}`}</option>
+          {availableQuarters.map((q) => (
+            <option key={q} value={q}>
+              {q <= 4 ? `Q${q}` : `OT${q - 4}`}
+            </option>
           ))}
         </select>
         <select
           value={playerFilter}
-          onChange={e => setPlayerFilter(e.target.value)}
+          onChange={(e) => setPlayerFilter(e.target.value)}
           className="bg-slate-900 text-white text-xs border border-slate-600 rounded px-2 py-1"
         >
           <option value="all">Tous les joueurs</option>
-          {homePlayers.map(p => (
-            <option key={p.id} value={p.id}>#{p.number} {p.name}</option>
+          {homePlayers.map((p) => (
+            <option key={p.id} value={p.id}>
+              #{p.number} {p.name}
+            </option>
           ))}
         </select>
         <select
           value={typeFilter}
-          onChange={e => setTypeFilter(e.target.value)}
+          onChange={(e) => setTypeFilter(e.target.value)}
           className="bg-slate-900 text-white text-xs border border-slate-600 rounded px-2 py-1"
         >
           <option value="all">Toutes actions</option>
@@ -2048,12 +2063,14 @@ function VideoPlayByPlay({ game, players }) {
         {availablePlays.length > 0 && (
           <select
             value={playFilter}
-            onChange={e => setPlayFilter(e.target.value)}
+            onChange={(e) => setPlayFilter(e.target.value)}
             className="bg-slate-900 text-white text-xs border border-slate-600 rounded px-2 py-1"
           >
             <option value="all">Tous systemes</option>
-            {availablePlays.map(p => (
-              <option key={p} value={p}>{p}</option>
+            {availablePlays.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
             ))}
           </select>
         )}
@@ -2066,7 +2083,9 @@ function VideoPlayByPlay({ game, players }) {
             onClick={toggleSelectAll}
             className="text-[10px] text-slate-400 hover:text-white underline"
           >
-            {selectedActions.size === filteredActions.length ? 'Tout deselectionner' : 'Tout selectionner'}
+            {selectedActions.size === filteredActions.length
+              ? 'Tout deselectionner'
+              : 'Tout selectionner'}
           </button>
         </div>
       )}
@@ -2079,8 +2098,8 @@ function VideoPlayByPlay({ game, players }) {
         {filteredActions.map((a, i) => {
           const pid = a.pid ?? a.playerId;
           const isHome = typeof pid === 'number' ? pid < 1000 : false;
-          const player = isHome ? players.find(p => p.id === pid) : null;
-          const num = player ? player.number : (pid >= 1000 ? pid - 1000 : '?');
+          const player = isHome ? players.find((p) => p.id === pid) : null;
+          const num = player ? player.number : pid >= 1000 ? pid - 1000 : '?';
           const name = player ? player.name : 'Adv';
           const timeMin = Math.floor((a.time || 0) / 60);
           const timeSec = (a.time || 0) % 60;
@@ -2105,7 +2124,7 @@ function VideoPlayByPlay({ game, players }) {
             <div
               key={a.id || i}
               className={`flex items-center gap-2 px-3 py-1.5 text-xs border-b border-slate-800 transition-colors ${
-                isSelected ? 'bg-orange-950/30' : (isHome ? 'bg-blue-950/20' : 'bg-red-950/20')
+                isSelected ? 'bg-orange-950/30' : isHome ? 'bg-blue-950/20' : 'bg-red-950/20'
               } ${activeVideo?.actionId === a.id ? 'ring-1 ring-purple-500' : ''}`}
             >
               {selectMode && (
@@ -2122,9 +2141,7 @@ function VideoPlayByPlay({ game, players }) {
               </span>
               <span className="flex-1 text-slate-300">
                 {desc}
-                {a.play && (
-                  <span className="ml-1 text-[10px] text-teal-400/70">({a.play})</span>
-                )}
+                {a.play && <span className="ml-1 text-[10px] text-teal-400/70">({a.play})</span>}
               </span>
               {link && !selectMode && (
                 <button
@@ -2140,170 +2157,6 @@ function VideoPlayByPlay({ game, players }) {
       </div>
     </div>
   );
-}
-
-// --- S3 : Section Rapport IA ---
-function AiReportSection({ game }) {
-  const [regenerating, setRegenerating] = useState(false);
-
-  const report = game.aiReport;
-  if (!report) return null;
-
-  let parsed = report;
-  if (typeof report === 'string') {
-    try {
-      parsed = JSON.parse(report);
-    } catch (e) {
-      parsed = { summary: report };
-    }
-  }
-
-  const handleRegenerate = async () => {
-    const apiKey = localStorage.getItem('gemini_api_key');
-    if (!apiKey) {
-      alert('Cle API Gemini non configuree.');
-      return;
-    }
-    setRegenerating(true);
-    try {
-      const prompt = buildGeminiPrompt(game);
-      const resp = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-        }
-      );
-      const data = await resp.json();
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      const cleaned = text
-        .replace(/```json\s*/g, '')
-        .replace(/```\s*/g, '')
-        .trim();
-      let aiReport;
-      try {
-        aiReport = JSON.parse(cleaned);
-      } catch (e) {
-        aiReport = { summary: cleaned };
-      }
-      if (window.db && game.id) {
-        const gamesSnap = await window.db.collection('team_data').doc('games').get();
-        if (gamesSnap.exists) {
-          const list = gamesSnap.data().list || [];
-          const idx = list.findIndex((g) => g.id === game.id);
-          if (idx >= 0) {
-            list[idx].aiReport = aiReport;
-            await window.db.collection('team_data').doc('games').set({ list });
-          }
-        }
-      }
-      game.aiReport = aiReport;
-      setRegenerating(false);
-      window.location.reload();
-    } catch (e) {
-      console.error('Gemini regenerate error:', e);
-      setRegenerating(false);
-    }
-  };
-
-  return (
-    <div className="mt-4">
-      <Card className="p-4 border-l-4 border-indigo-500">
-        <div className="flex items-center justify-between mb-3">
-          <h4 className="text-sm text-indigo-400 uppercase font-bold flex items-center gap-2">
-            <span>&#129302;</span> Rapport IA
-          </h4>
-          <button
-            onClick={handleRegenerate}
-            disabled={regenerating}
-            className="text-[10px] px-2 py-1 bg-indigo-600/30 text-indigo-300 rounded hover:bg-indigo-600/50 disabled:opacity-50"
-          >
-            {regenerating ? 'Generation...' : 'Regenerer'}
-          </button>
-        </div>
-        {parsed.summary && <p className="text-sm text-slate-300 mb-3">{parsed.summary}</p>}
-        {parsed.keyMoments && (
-          <div className="mb-3">
-            <div className="text-xs text-slate-500 uppercase font-bold mb-1">Moments cles</div>
-            <p className="text-xs text-slate-400">
-              {Array.isArray(parsed.keyMoments) ? parsed.keyMoments.join(' | ') : parsed.keyMoments}
-            </p>
-          </div>
-        )}
-        {parsed.mvp && (
-          <div className="mb-3">
-            <div className="text-xs text-slate-500 uppercase font-bold mb-1">MVP</div>
-            <p className="text-xs text-yellow-400 font-bold">
-              {typeof parsed.mvp === 'object'
-                ? `${parsed.mvp.name || parsed.mvp.player || ''} — ${parsed.mvp.justification || ''}`
-                : parsed.mvp}
-            </p>
-          </div>
-        )}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-          {parsed.strengths && (
-            <div className="bg-green-900/20 rounded p-2 border border-green-800/30">
-              <div className="text-green-400 font-bold mb-1">Points forts</div>
-              <p className="text-slate-400">
-                {Array.isArray(parsed.strengths) ? parsed.strengths.join(', ') : parsed.strengths}
-              </p>
-            </div>
-          )}
-          {parsed.weaknesses && (
-            <div className="bg-red-900/20 rounded p-2 border border-red-800/30">
-              <div className="text-red-400 font-bold mb-1">A ameliorer</div>
-              <p className="text-slate-400">
-                {Array.isArray(parsed.weaknesses)
-                  ? parsed.weaknesses.join(', ')
-                  : parsed.weaknesses}
-              </p>
-            </div>
-          )}
-        </div>
-        {parsed.recommendations && (
-          <div className="mt-3 bg-indigo-900/20 rounded p-2 border border-indigo-800/30">
-            <div className="text-indigo-400 font-bold mb-1 text-xs">Recommandations</div>
-            <p className="text-xs text-slate-400">
-              {Array.isArray(parsed.recommendations)
-                ? parsed.recommendations.join(', ')
-                : parsed.recommendations}
-            </p>
-          </div>
-        )}
-      </Card>
-    </div>
-  );
-}
-
-// --- S3 : Construction du prompt Gemini ---
-function buildGeminiPrompt(game) {
-  const ps = game.playerStats || {};
-  const topPlayers = Object.entries(ps)
-    .map(([id, s]) => ({
-      id,
-      pts: s.pts || 0,
-      reb: (s.oreb || 0) + (s.dreb || 0),
-      ast: s.ast || 0,
-      name: s.name || '#' + id,
-    }))
-    .sort((a, b) => b.pts - a.pts)
-    .slice(0, 5)
-    .map((p) => `${p.name}: ${p.pts}pts ${p.reb}reb ${p.ast}ast`)
-    .join(', ');
-
-  return `Tu es un analyste basketball. Voici les donnees du match vs ${game.opponent} (${game.date}).
-Score final : ${game.homeScore} - ${game.awayScore}.
-Top joueurs : ${topPlayers}.
-Genere un rapport structure contenant :
-1. Resume narratif (3-5 phrases)
-2. Moments cles du match
-3. MVP propose avec justification
-4. Points forts de l'equipe
-5. Points a ameliorer
-6. Recommandations pour le prochain match
-Format : JSON avec les cles { summary, keyMoments, mvp, strengths, weaknesses, recommendations }
-Reponds UNIQUEMENT en JSON valide, sans backticks, sans markdown.`;
 }
 
 // --- A6 : Panneau de configuration video (admin) ---
@@ -3228,12 +3081,7 @@ function GameDetailsModal({ game, isOpen, onClose, players, isAdmin }) {
       )}
       {game.actions?.length > 0 && isAdmin && <VideoSettingsPanel game={game} />}
       {/* A6 — VIDEO PBP (affichage liens) */}
-     {game.actions?.length > 0 && (
-  <VideoPlayByPlay game={game} players={players} />
-)}
-
-      {/* S3 — RAPPORT IA */}
-      <AiReportSection game={game} />
+      {game.actions?.length > 0 && <VideoPlayByPlay game={game} players={players} />}
       {/* CLUTCH ANALYSIS */}
       <ClutchPanel game={game} players={players} />
 
@@ -4125,11 +3973,11 @@ function History({
 }) {
   const [selectedGame, setSelectedGame] = useState(null);
   useEffect(() => {
-  if (selectedGame) {
-    const fresh = games.find(g => g.id === selectedGame.id);
-    if (fresh && fresh !== selectedGame) setSelectedGame(fresh);
-  }
-}, [games]);
+    if (selectedGame) {
+      const fresh = games.find((g) => g.id === selectedGame.id);
+      if (fresh && fresh !== selectedGame) setSelectedGame(fresh);
+    }
+  }, [games]);
   const [editingPBP, setEditingPBP] = useState(null);
   const sortedGames = useMemo(
     () => [...games].sort((a, b) => parseDate(b.date) - parseDate(a.date)),
@@ -4270,12 +4118,67 @@ function Settings({
   onUpdatePhases,
   firebaseConfig,
   setFirebaseConfig,
+  games,
+  setGames,
+  seasons,
 }) {
   const [localConfig, setLocalConfig] = useState(JSON.stringify(firebaseConfig, null, 2) || '');
   const [newPhaseName, setNewPhaseName] = useState('');
   const [playTypes, setPlayTypes] = useState([]);
   const [newPlayType, setNewPlayType] = useState('');
   const [playTypesLoaded, setPlayTypesLoaded] = useState(false);
+  const [showArchiveModal, setShowArchiveModal] = useState(false);
+  const [archiveSeasonName, setArchiveSeasonName] = useState('');
+  const [archiveClearGames, setArchiveClearGames] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+
+  const handleArchiveSeason = async () => {
+    if (!window.db) {
+      alert('Firebase non connecté');
+      return;
+    }
+    if (!archiveSeasonName.trim()) {
+      alert('Nom de saison requis');
+      return;
+    }
+    const name = archiveSeasonName.trim();
+    if (seasons && seasons.some((s) => s.id === name)) {
+      alert('Une saison avec ce nom existe déjà');
+      return;
+    }
+    if (
+      !confirm(
+        `Archiver la saison "${name}" ?\n\nCela va sauvegarder une copie de tous les matchs (${games.length}), du roster (${players.length} joueurs) et des phases.\n\n${archiveClearGames ? '⚠️ Les matchs seront VIDÉS après archivage.' : 'Les matchs resteront en place.'}`
+      )
+    )
+      return;
+    setArchiving(true);
+    try {
+      const snapshot = {
+        id: name,
+        name: name,
+        archivedAt: new Date().toISOString(),
+        games: JSON.parse(JSON.stringify(games)),
+        roster: JSON.parse(JSON.stringify(players)),
+        phases: JSON.parse(JSON.stringify(phases)),
+      };
+      const currentSeasons = seasons ? [...seasons] : [];
+      currentSeasons.push(snapshot);
+      await window.db.collection('team_data').doc('seasons').set({ list: currentSeasons });
+      if (archiveClearGames) {
+        setGames([]);
+        await window.db.collection('team_data').doc('games').set({ list: [] });
+      }
+      setShowArchiveModal(false);
+      setArchiveSeasonName('');
+      setArchiveClearGames(false);
+      alert('Saison archivée avec succès !');
+    } catch (e) {
+      console.error('Archive error:', e);
+      alert('Erreur : ' + e.message);
+    }
+    setArchiving(false);
+  };
   useEffect(() => {
     if (window.db) {
       window.db
@@ -4452,19 +4355,6 @@ function Settings({
           </Button>
         </div>
       </Card>
-      <Card className="p-6 border-l-4 border-indigo-500">
-        <h3 className="text-lg font-bold text-white mb-4">Gemini AI</h3>
-        <input
-          type="password"
-          className="w-full bg-slate-900 text-white px-3 py-2 rounded border border-slate-600 text-sm font-mono"
-          placeholder="Clé API Gemini"
-          defaultValue={localStorage.getItem('gemini_api_key') || ''}
-          onChange={(e) => localStorage.setItem('gemini_api_key', e.target.value.trim())}
-        />
-        <p className="text-xs text-slate-500 mt-2">
-          Utilisée pour les analyses IA dans le Scouting Report.
-        </p>
-      </Card>
       <Card className="p-6 border-l-4 border-purple-500">
         <h3 className="text-lg font-bold text-white mb-4">
           <Icon path={Icons.Cloud} /> Firebase
@@ -4488,6 +4378,73 @@ function Settings({
         >
           Sauvegarder
         </Button>
+      </Card>
+      <Card className="p-6 border-l-4 border-amber-500">
+        <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+          <Icon path={Icons.Layers} /> Gestion des Saisons
+        </h3>
+        <p className="text-sm text-slate-400 mb-4">
+          Archivez la saison en cours pour conserver un historique complet (matchs, effectif,
+          phases). Vous pourrez ensuite comparer les saisons dans le Dashboard Saison.
+        </p>
+        {seasons && seasons.length > 0 && (
+          <div className="mb-4 p-3 bg-slate-900 rounded border border-slate-700">
+            <div className="text-xs text-slate-500 uppercase font-bold mb-2">Saisons archivées</div>
+            {seasons.map((s) => (
+              <div
+                key={s.id}
+                className="flex items-center justify-between py-1 border-b border-slate-800 last:border-0"
+              >
+                <span className="text-sm text-white font-bold">{s.name}</span>
+                <span className="text-xs text-slate-500">
+                  {s.games ? s.games.length : 0} matchs — {s.roster ? s.roster.length : 0} joueurs
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        <Button variant="secondary" onClick={() => setShowArchiveModal(true)}>
+          Archiver la saison en cours
+        </Button>
+        {showArchiveModal && (
+          <div className="mt-4 p-4 bg-slate-900 rounded border border-amber-700 space-y-3">
+            <div className="text-sm font-bold text-amber-400">Nouvelle archive</div>
+            <input
+              type="text"
+              placeholder="Nom de la saison (ex: 2024-2025)"
+              value={archiveSeasonName}
+              onChange={(e) => setArchiveSeasonName(e.target.value)}
+              className="w-full bg-slate-800 text-white px-4 py-2 rounded border border-slate-600 outline-none focus:border-amber-500"
+            />
+            <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={archiveClearGames}
+                onChange={(e) => setArchiveClearGames(e.target.checked)}
+                className="accent-amber-500"
+              />
+              Vider les matchs après archivage (pour démarrer la nouvelle saison à vide)
+            </label>
+            <div className="flex gap-2 pt-2">
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setShowArchiveModal(false);
+                  setArchiveSeasonName('');
+                }}
+              >
+                Annuler
+              </Button>
+              <Button
+                variant="success"
+                onClick={handleArchiveSeason}
+                disabled={archiving || !archiveSeasonName.trim()}
+              >
+                {archiving ? 'Archivage...' : "Confirmer l'archivage"}
+              </Button>
+            </div>
+          </div>
+        )}
       </Card>
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-white">Effectif</h2>
@@ -4615,6 +4572,7 @@ function App() {
   const [players, setPlayers] = useState([]);
   const [games, setGames] = useState([]);
   const [phases, setPhases] = useState(DEFAULT_PHASES);
+  const [seasons, setSeasons] = useState([]);
   const [activeGame, setActiveGame] = useState(null);
   const [firebaseConfig, setFirebaseConfig] = useState(null);
   const [db, setDb] = useState(null);
@@ -4672,6 +4630,12 @@ function App() {
           .doc('phases')
           .onSnapshot((doc) => {
             if (doc.exists && doc.data().list) setPhases(doc.data().list);
+          });
+        database
+          .collection('team_data')
+          .doc('seasons')
+          .onSnapshot((doc) => {
+            if (doc.exists && doc.data().list) setSeasons(doc.data().list);
           });
       } catch (e) {
         console.error('Firebase:', e);
@@ -4896,8 +4860,21 @@ function App() {
               <Icon path={Icons.Play} />
               {(() => {
                 const ts = parseInt(localStorage.getItem('liveMatchActive') || '0');
-                const isActive = ts > 0 && (Date.now() - ts) < 7200000;
-                return isActive ? <span style={{position:'absolute',top:'6px',right:'6px',width:'8px',height:'8px',borderRadius:'50%',background:'#ef4444',animation:'livePulse 1.5s ease-in-out infinite'}} /> : null;
+                const isActive = ts > 0 && Date.now() - ts < 7200000;
+                return isActive ? (
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: '6px',
+                      right: '6px',
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      background: '#ef4444',
+                      animation: 'livePulse 1.5s ease-in-out infinite',
+                    }}
+                  />
+                ) : null;
               })()}
             </button>
           )}
@@ -4920,7 +4897,7 @@ function App() {
                   console.error('window.PlayerReportModule is undefined');
                 }
               }}
-              className={`p-3 rounded-xl transition-all ${showReport ? 'bg-orange-500 text-white shadow-lg shadow-indigo-500/50' : 'text-indigo-400 hover:bg-slate-800'}`}
+              className={`p-3 rounded-xl transition-all ${showReport ? 'bg-orange-500 text-white shadow-lg' : 'text-indigo-400 hover:bg-slate-800'}`}
               title="Scouting Report"
             >
               <Icon path={Icons.Target} />
@@ -5046,10 +5023,18 @@ function App() {
               onUpdatePhases={handleUpdatePhases}
               firebaseConfig={firebaseConfig}
               setFirebaseConfig={setFirebaseConfig}
+              games={games}
+              setGames={setGames}
+              seasons={seasons}
             />
           )}
           {view === 'season' && window.SeasonDashboard && (
-            <window.SeasonDashboard games={games} players={players} phases={phases} />
+            <window.SeasonDashboard
+              games={games}
+              players={players}
+              phases={phases}
+              seasons={seasons}
+            />
           )}
           {view === 'scouting' && !prepOpponent && window.OpponentScouting && (
             <window.OpponentScouting
