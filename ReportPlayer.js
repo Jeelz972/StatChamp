@@ -3,7 +3,9 @@
 // Dépendances : React, TailwindCSS
 
 // --- CONFIGURATION ---
-const parseFrenchDate = (dateStr) => {
+
+// --- UTILITAIRE : Gestion des Dates ---
+var parseFrenchDate = (dateStr) => {
   if (!dateStr) return new Date(0);
   if (dateStr.match(/^\d{1,2}\/\d{1,2}\/\d{4}/)) {
     const [day, month, year] = dateStr.split('/');
@@ -14,12 +16,7 @@ const parseFrenchDate = (dateStr) => {
 };
 
 // =================================================================================
-// 2. MOTEUR D'ANALYSE STATISTIQUE (MATHS)
-// =================================================================================
-
-// =================================================================================
-// REFONTE AnalysisEngine — NetRtg + Fallback Narrative
-// Remplace les sections correspondantes dans reportPlayer.js
+// 2. MOTEUR D'ANALYSE STATISTIQUE
 // =================================================================================
 
 const LEVEL_BENCHMARKS = {
@@ -99,6 +96,44 @@ const LEVEL_BENCHMARKS = {
     threePct_good: 34,
     trend_delta: 3,
   },
+  ProB: {
+    id: 'ProB',
+    label: 'Pro B',
+    ts_elite: 57,
+    ts_good: 52,
+    ts_bad: 47,
+    usage_high: 25,
+    usage_low: 14,
+    ast_good: 4.5,
+    astTov_good: 2.2,
+    astTov_bad: 1.2,
+    oreb_good: 1.8,
+    reb_dom: 8,
+    def_active: 2.2,
+    pf36_warn: 4.2,
+    pf36_bad: 5.5,
+    threePct_good: 34,
+    trend_delta: 3,
+  },
+  NM1: {
+    id: 'NM1',
+    label: 'NM1',
+    ts_elite: 56,
+    ts_good: 51,
+    ts_bad: 46,
+    usage_high: 25,
+    usage_low: 14,
+    ast_good: 4.5,
+    astTov_good: 2.2,
+    astTov_bad: 1.2,
+    oreb_good: 1.8,
+    reb_dom: 8,
+    def_active: 2.2,
+    pf36_warn: 4.2,
+    pf36_bad: 5.5,
+    threePct_good: 34,
+    trend_delta: 3,
+  },
   NM2: {
     id: 'NM2',
     label: 'NM2',
@@ -121,51 +156,47 @@ const LEVEL_BENCHMARKS = {
   U21_Elite: {
     id: 'U21_Elite',
     label: 'U21 Élite',
-    ts_elite: 55,
-    ts_good: 50,
-    ts_bad: 45,
-    usage_high: 26,
-    usage_low: 14,
-    ast_good: 4,
-    astTov_good: 2.0,
-    astTov_bad: 1.0,
-    oreb_good: 2.2,
-    reb_dom: 9,
-    def_active: 2.2,
-    pf36_warn: 4.5,
-    pf36_bad: 5.5,
-    threePct_good: 32,
-    trend_delta: 4,
+    ts_elite: 58, // Top 10% des scoreurs du championnat (ex: Fodzo, Boisdur)
+    ts_good: 52, // Moyenne d'efficacité globale (Team FG% ~44, 3P% ~31)
+    ts_bad: 46, // Seuil de faible rendement offensif
+    usage_high: 25, // Responsabilité de leader (1ère/2ème option offensive)
+    usage_low: 14, // Joueur de rotation / Role player
+    ast_good: 4.5, // Profil créateur (Top 15 des passeurs de la ligue)
+    astTov_good: 1.8, // Ratio de sécurité optimal pour le rythme U21
+    astTov_bad: 0.8, // Perte de contrôle du jeu (plus de TOV que d'AST)
+    oreb_good: 2.4, // Impact fort au rebond offensif (profil intérieur actif)
+    reb_dom: 8.5, // Seuil de domination statistique au rebond total
+    def_active: 2.5, // Activité cumulée (Interceptions + Contres par match)
+    pf36_warn: 4.2, // Alerte gestion des fautes rapportée à 36 min
+    pf36_bad: 5.5, // Indiscipline défensive récurrente
+    threePct_good: 34, // Fiabilité extérieure supérieure (Moyenne ligue ~31%)
+    trend_delta: 5,
   },
   U18_Elite: {
     id: 'U18_Elite',
     label: 'U18 Élite',
-    ts_elite: 48,
-    ts_good: 40,
-    ts_bad: 33,
-    usage_high: 25,
-    usage_low: 13,
-    ast_good: 3.5,
-    astTov_good: 1.8,
-    astTov_bad: 1.0,
-    oreb_good: 2.5,
-    reb_dom: 9,
-    def_active: 2.5,
-    pf36_warn: 2.5,
-    pf36_bad: 6.0,
-    threePct_good: 30,
-    trend_delta: 4,
+    ts_elite: 56, // Top tiers d'efficacité (inférieur à l'U21, tir moins régulier)
+    ts_good: 50, // Moyenne correcte pour la catégorie
+    ts_bad: 44, // Seuil critique de rendement offensif
+    usage_high: 25, // Responsabilité majeure (joueur à 15-20+ tirs/match)
+    usage_low: 15, // Joueur de rotation / Complément
+    ast_good: 4.5, // Excellent créateur (Moyenne haute pour les meneurs U18)
+    astTov_good: 1.6, // Ratio de sécurité (plus bas qu'en U21 dû au nombre de TOV élevé)
+    astTov_bad: 0.7, // Perte de contrôle fréquente (plus de turnovers que de passes)
+    oreb_good: 2.5, // Impact fort au rebond offensif (plus d'opportunités en U18)
+    reb_dom: 8.5, // Seuil de domination physique au rebond
+    def_active: 2.5, // Activité (Stl + Blk) ; reflète l'intensité défensive U18
+    pf36_warn: 4.5, // Alerte fautes rapide (fréquent en formation)
+    pf36_bad: 5.8, // Indiscipline défensive marquée
+    threePct_good: 31, // Réussite extérieure "Good" (Moyenne ligue ~28-30%)
+    trend_delta: 5, // Seuil de fluctuation de performance
   },
 };
 
-// Niveau par défaut (modifiable via l'UI)
 let CURRENT_LEVEL = 'U18_Elite';
-
 const getBenchmarks = () => LEVEL_BENCHMARKS[CURRENT_LEVEL] || LEVEL_BENCHMARKS['U18_Elite'];
 
 const AnalysisEngine = {
-  // --- ESTIMATION DES POSSESSIONS ---
-  // Utilise les stats adverses si disponibles, sinon estimation symétrique
   _estimatePoss: (teamTotals, oppTotals) => {
     return window.StatsEngine.possAdvanced(teamTotals, oppTotals);
   },
@@ -186,8 +217,6 @@ const AnalysisEngine = {
     const Impact = ((Ois + Dis) / playerStats.avg.min) * 40;
     return Impact;
   },
-  // --- CALCUL NetRtg PAR MATCH ---
-  // Retourne un NetRtg normalisé /100 poss pour un joueur dans un match donné
   _calcPlayerNetRtg: (playerStat, teamTotals, oppTotals, teamMin) => {
     const pMin = parseFloat(playerStat.min || playerStat.minutes || 0);
     const poss = window.StatsEngine.possAdvanced(teamTotals, oppTotals);
@@ -195,18 +224,16 @@ const AnalysisEngine = {
     return window.StatsEngine.playerNetRtg(pm, poss, pMin, teamMin);
   },
 
-  // --- PROCESSEUR PRINCIPAL (modifié) ---
+  // --- PROCESSEUR PRINCIPAL ---
   processPlayerData: (games, roster) => {
     if (!roster || !Array.isArray(roster)) return [];
 
-    // Phase 1 : Agréger les totaux par match (équipe + adversaire si dispo)
     const gameContext = {};
     if (games && Array.isArray(games)) {
       games.forEach((game) => {
         const rawData = game.players || game.playerStats;
         if (!rawData) return;
         const list = Array.isArray(rawData) ? rawData : Object.values(rawData);
-
         const team = { min: 0, fga: 0, fgm: 0, fta: 0, ftm: 0, tov: 0, oreb: 0, dreb: 0 };
         list.forEach((s) => {
           team.min += parseFloat(s.min || s.minutes || 0);
@@ -218,15 +245,11 @@ const AnalysisEngine = {
           team.oreb += parseFloat(s.oreb || 0);
           team.dreb += parseFloat(s.dreb || 0);
         });
-
-        // Stats adverses (si le format du match les fournit)
         const opp = game.opponentStats || game.oppStats || null;
-
         gameContext[game.id] = { team, opp };
       });
     }
 
-    // Phase 2 : Mapper les joueurs
     const playerMap = {};
     roster.forEach((p) => (playerMap[p.id] = { ...p, logs: [] }));
 
@@ -234,7 +257,6 @@ const AnalysisEngine = {
       const sortedGames = [...games].sort(
         (a, b) => parseFrenchDate(b.date) - parseFrenchDate(a.date)
       );
-
       sortedGames.forEach((game) => {
         const rawData = game.players || game.playerStats;
         if (!rawData) return;
@@ -242,7 +264,6 @@ const AnalysisEngine = {
           team: { min: 200, fga: 50, fta: 10, tov: 10, oreb: 0, dreb: 0, fgm: 20, ftm: 5 },
           opp: null,
         };
-
         let matchStats = Array.isArray(rawData)
           ? rawData
           : Object.keys(rawData).map((key) => ({ ...rawData[key], id: rawData[key].id || key }));
@@ -256,7 +277,6 @@ const AnalysisEngine = {
               logs: [],
             };
           }
-
           const min = parseFloat(stat.min || stat.minutes || 0);
           const pts = parseFloat(stat.pts || 0);
           const fga = parseFloat(stat.fga || 0);
@@ -277,22 +297,16 @@ const AnalysisEngine = {
             const oreb = parseFloat(stat.oreb || 0);
             const threea = parseFloat(stat.threea || stat.threePA || 0);
             const threem = parseFloat(stat.threem || stat.threePM || 0);
-
             const missedFG = Math.max(0, fga - fgm);
             const missedFT = Math.max(0, fta - ftm);
             const eff = pts + reb + ast + stl + blk - (missedFG + missedFT + tov);
-
-            // Usage% (inchangé)
             let usage = 0;
             if (min > 0 && ctx.team.min > 0) {
               const teamPoss = ctx.team.fga + 0.44 * ctx.team.fta + ctx.team.tov;
               const playPoss = fga + 0.44 * fta + tov;
               usage = 100 * ((playPoss * (ctx.team.min / 5)) / (min * teamPoss));
             }
-
-            // NetRtg (NOUVEAU : via estimation possessions)
             const netRtg = AnalysisEngine._calcPlayerNetRtg(stat, ctx.team, ctx.opp, ctx.team.min);
-
             playerMap[stat.id].logs.push({
               date: game.date || '',
               rawDate: parseFrenchDate(game.date),
@@ -317,13 +331,14 @@ const AnalysisEngine = {
               eff,
               usage,
               netRtg,
+              _hasFteData: stat.foulDrawn !== undefined,
+              foulDrawn: parseFloat(stat.foulDrawn || 0),
             });
           }
         });
       });
     }
 
-    // Phase 3 : Calcul des moyennes (identique à l'existant)
     return Object.values(playerMap)
       .map((p) => {
         p.logs.sort((a, b) => b.rawDate - a.rawDate);
@@ -352,11 +367,19 @@ const AnalysisEngine = {
               oreb: 0,
               stl: 0,
               blk: 0,
+              tov: 0,
+              fouls: 0,
+              plusMinus: 0,
+              impactTotal: 0,
+              fte: 0,
+              threem: 0,
+              fga: 0,
+              fgm: 0,
+              fta: 0,
+              ftm: 0,
             },
           };
-
         const sum = (k) => p.logs.reduce((acc, c) => acc + (c[k] || 0), 0);
-
         const avg = {
           pts: sum('pts') / gp,
           reb: sum('reb') / gp,
@@ -373,14 +396,13 @@ const AnalysisEngine = {
           netRtg: sum('netRtg') / gp,
           fga: sum('fga'),
           fgm: sum('fgm'),
-          threea: sum('threea') / gp,
+          threea: sum('threea'),
           threem: sum('threem'),
           fta: sum('fta'),
           ftm: sum('ftm'),
         };
-
         avg.fgPct = avg.fga > 0 ? (avg.fgm / avg.fga) * 100 : 0;
-        avg.threePct = avg.threea > 0 ? (avg.threem / avg.threea) * 100 : 0;
+        avg.threePct = avg.threea > 0 ? avg.threem / avg.threea : 0;
         avg.ftPct = avg.fta > 0 ? (avg.ftm / avg.fta) * 100 : 0;
         avg.threePAr = avg.fga > 0 ? avg.threea / avg.fga : 0;
         avg.FTr = avg.fga > 0 ? avg.fta / avg.fga : 0;
@@ -388,7 +410,7 @@ const AnalysisEngine = {
         avg.eFG = window.StatsEngine.eFG(avg.fgm, avg.threem, avg.fga);
         avg.astTov = window.StatsEngine.astTovRatio(avg.ast, avg.tov);
         avg.pf36 = window.StatsEngine.per36(avg.fouls, avg.min);
-        // --- FTE : données réelles + estimation pour les matchs sans tracking ---
+        // FTE
         const trackedLogs = p.logs.filter((l) => l._hasFteData);
         const untrackedLogs = p.logs.filter((l) => !l._hasFteData);
         let totalFte;
@@ -399,27 +421,23 @@ const AnalysisEngine = {
           const estimatedFte = untrackedLogs.reduce((a, l) => a + ftePerMin * (l.min || 0), 0);
           totalFte = trackedFte + estimatedFte;
         } else {
-          // Aucun match avec tracking FTE — fallback FTA/2
           totalFte = sum('fta') / 2;
         }
         avg.fte = totalFte / gp;
-
-        // --- IMPACT TOTAL = (OIS + DIS) / MIN × 30 ---
+        // Impact Total
         const dreb_pg = avg.reb - avg.oreb;
         const DIS =
           avg.stl * 2.5 + avg.blk * 2 + dreb_pg * 1.2 - avg.fouls * 0.8 + avg.plusMinus * 0.5;
         const OIS = avg.pts + 2 * avg.ast + 1.5 * avg.oreb + 1.2 * avg.fte - 2 * avg.tov;
         avg.impactTotal = avg.min > 0 ? ((OIS + DIS) / avg.min) * 100 : 0;
-
         return { ...p, avg };
       })
       .sort((a, b) => b.avg.eff - a.avg.eff);
   },
 
-  // --- ARCHETYPE (Dynamique, Relatif, Élargi et Ultra-Sécurisé) ---
+  // --- ARCHETYPE ---
   getArchetype: (p, allPlayers = []) => {
-    // 1. Protection absolue : si l'argument est vide ou invalide
-    if (!p) {
+    if (!p)
       return {
         name: 'Non Évalué',
         desc: 'Données manquantes.',
@@ -427,12 +445,8 @@ const AnalysisEngine = {
         border: 'border-slate-700',
         bg: 'bg-slate-800',
       };
-    }
-
-    // 2. Rétrocompatibilité : l'utilisateur a pu passer 'p' (le joueur complet) ou 'p.avg' (les moyennes)
     const avg = p.avg || p;
-
-    if (!avg || typeof avg !== 'object' || (avg.pts === undefined && avg.reb === undefined)) {
+    if (!avg || typeof avg !== 'object' || (avg.pts === undefined && avg.reb === undefined))
       return {
         name: 'Non Évalué',
         desc: 'Pas de données.',
@@ -440,17 +454,11 @@ const AnalysisEngine = {
         border: 'border-slate-700',
         bg: 'bg-slate-800',
       };
-    }
-
-    // On s'assure de récupérer un ID valide pour les classements
     const playerId = p.id || (p.info ? p.info.id : null) || 'unknown';
-
-    // 3. Isoler la rotation de manière ultra-sécurisée
     const rotation =
       Array.isArray(allPlayers) && allPlayers.length > 0
         ? allPlayers.filter((x) => x && x.avg && typeof x.avg.min === 'number' && x.avg.min > 5)
         : [];
-
     let isTopUsage = false,
       isTopEfficiency = false,
       isTopCreator = false,
@@ -460,23 +468,19 @@ const AnalysisEngine = {
       isTopOreb = false,
       isLowUsage = false;
 
-    // --- LOGIQUE RELATIVE ---
     if (rotation.length >= 4) {
       const topTier = Math.max(2, Math.ceil(rotation.length * 0.25));
       const bottomTier = rotation.length - topTier;
-
-      // Fonction utilitaire sécurisée pour trouver le rang
       const getRank = (stat) =>
         [...rotation]
           .sort((a, b) => (b.avg[stat] || 0) - (a.avg[stat] || 0))
           .findIndex((x) => x.id === playerId) + 1;
-
-      const rankUsage = getRank('usage');
-      const rankTS = getRank('TS');
-      const rankAst = getRank('ast');
-      const rankAstTov = getRank('astTov');
-      const rank3PAr = getRank('threePAr');
-      const rankReb = getRank('reb');
+      const rankUsage = getRank('usage'),
+        rankTS = getRank('TS'),
+        rankAst = getRank('ast');
+      const rankAstTov = getRank('astTov'),
+        rank3PAr = getRank('threePAr'),
+        rankReb = getRank('reb');
       const rankOreb = getRank('oreb');
       const rankDef =
         [...rotation]
@@ -484,7 +488,6 @@ const AnalysisEngine = {
             (a, b) => (b.avg.stl || 0) + (b.avg.blk || 0) - ((a.avg.stl || 0) + (a.avg.blk || 0))
           )
           .findIndex((x) => x.id === playerId) + 1;
-
       isTopUsage = rankUsage > 0 && rankUsage <= topTier;
       isLowUsage = rankUsage > bottomTier;
       isTopEfficiency = rankTS > 0 && rankTS <= topTier;
@@ -493,9 +496,7 @@ const AnalysisEngine = {
       isTopRebounder = rankReb > 0 && rankReb <= topTier;
       isTopOreb = rankOreb > 0 && rankOreb <= topTier;
       isTopDefender = rankDef > 0 && rankDef <= topTier;
-    }
-    // --- FALLBACK ---
-    else {
+    } else {
       isTopUsage = (avg.usage || 0) > 24;
       isLowUsage = (avg.usage || 0) < 15;
       isTopEfficiency = (avg.TS || 0) > 52;
@@ -506,7 +507,6 @@ const AnalysisEngine = {
       isTopDefender = (avg.stl || 0) + (avg.blk || 0) > 2.0;
     }
 
-    // --- ATTRIBUTIONS DES ARCHÉTYPES ---
     if (isTopUsage && isTopDefender)
       return {
         name: 'Two-Way Star',
@@ -611,7 +611,6 @@ const AnalysisEngine = {
         border: 'border-emerald-500',
         bg: 'bg-emerald-900/20',
       };
-
     return {
       name: 'Rotation',
       desc: 'Joueur de collectif.',
@@ -621,7 +620,7 @@ const AnalysisEngine = {
     };
   },
 
-  // --- SWOT (calibré par niveau) ---
+  // --- SWOT ---
   getSWOT: (p) => {
     const s = [],
       w = [],
@@ -642,22 +641,15 @@ const AnalysisEngine = {
     return { strengths: s, weaknesses: w };
   },
 
-  // =================================================================================
-  // FALLBACK NARRATIVE — Texte "scout" calibré par niveau de compétition
-  // =================================================================================
+  // --- FALLBACK NARRATIVE ---
   getFallbackNarrative: (p) => {
     const a = p.avg;
     const gp = p.logs.length;
     if (!a || gp === 0) return 'Pas assez de données pour établir un profil.';
-
     const B = getBenchmarks();
     const arch = AnalysisEngine.getArchetype(a);
     const parts = [];
-
-    // --- Bloc 1 : Identité ---
     parts.push(`Profil ${arch.name} sur ${gp} match${gp > 1 ? 's' : ''} (réf. ${B.label}).`);
-
-    // --- Bloc 2 : Scoring (seuils TS calibrés au niveau) ---
     if (a.usage > B.usage_high) {
       if (a.TS > B.ts_elite)
         parts.push(
@@ -687,61 +679,43 @@ const AnalysisEngine = {
         );
       else parts.push(`Rôle offensif mineur (USG ${a.usage.toFixed(0)}%).`);
     }
-
-    // --- Bloc 3 : Shoot extérieur ---
-    if (a.threePAr > 0.5 && a.threePct > B.threePct_good) {
+    if (a.threePAr > 0.5 && a.threePct > B.threePct_good)
       parts.push(
         `Menace extérieure confirmée (${a.threePct.toFixed(0)}% à 3pts, rate ${a.threePAr.toFixed(2)}).`
       );
-    } else if (a.threePAr > 0.4 && a.threePct < B.threePct_good - 4) {
+    else if (a.threePAr > 0.4 && a.threePct < B.threePct_good - 4)
       parts.push(
         `Shoot trop de 3pts (rate ${a.threePAr.toFixed(2)}) pour son adresse (${a.threePct.toFixed(0)}%, réf. ${B.label} : ${B.threePct_good}%). Sélection à revoir.`
       );
-    }
-
-    // --- Bloc 4 : Création / Passes ---
-    if (a.ast > B.ast_good && a.astTov > B.astTov_good) {
+    if (a.ast > B.ast_good && a.astTov > B.astTov_good)
       parts.push(
         `Gestionnaire de balle sûr (${a.ast.toFixed(1)} ast, ratio ${a.astTov.toFixed(1)}).`
       );
-    } else if (a.ast > B.ast_good * 0.75 && a.astTov < B.astTov_bad) {
+    else if (a.ast > B.ast_good * 0.75 && a.astTov < B.astTov_bad)
       parts.push(
         `Crée du jeu (${a.ast.toFixed(1)} ast) mais perd trop de ballons (ratio ${a.astTov.toFixed(1)}). Discipline à travailler.`
       );
-    } else if (a.astTov < 1.0 && a.tov > 1.5) {
+    else if (a.astTov < 1.0 && a.tov > 1.5)
       parts.push(`Pertes de balle préoccupantes (ratio Ast/TO ${a.astTov.toFixed(1)}).`);
-    }
-
-    // --- Bloc 5 : Impact / Rebond ---
-    if (a.oreb > B.oreb_good) {
+    if (a.oreb > B.oreb_good)
       parts.push(`Présence au rebond offensif (${a.oreb.toFixed(1)}/match). Seconde chance.`);
-    }
-    if (a.reb > B.reb_dom) {
-      parts.push(`Dominant au rebond (${a.reb.toFixed(1)}/match).`);
-    }
-    if (a.netRtg > 10) {
+    if (a.reb > B.reb_dom) parts.push(`Dominant au rebond (${a.reb.toFixed(1)}/match).`);
+    if (a.netRtg > 10)
       parts.push(
         `Impact collectif fort : l'équipe performe nettement mieux avec lui sur le terrain.`
       );
-    } else if (a.netRtg < -8) {
+    else if (a.netRtg < -8)
       parts.push(`Impact collectif négatif : le groupe souffre sur ses minutes.`);
-    }
-
-    // --- Bloc 6 : Défense / Discipline ---
-    if (a.stl + (a.blk || 0) > B.def_active) {
+    if (a.stl + (a.blk || 0) > B.def_active)
       parts.push(
         `Activité défensive notable (${a.stl.toFixed(1)} int + ${(a.blk || 0).toFixed(1)} ctr).`
       );
-    }
-    if (a.pf36 > B.pf36_bad) {
+    if (a.pf36 > B.pf36_bad)
       parts.push(
         `Problème de fautes récurrent (${a.pf36.toFixed(1)}/36m). Risque de foul trouble.`
       );
-    } else if (a.pf36 > B.pf36_warn) {
+    else if (a.pf36 > B.pf36_warn)
       parts.push(`Discipline limite (${a.pf36.toFixed(1)} fautes/36m).`);
-    }
-
-    // --- Bloc 7 : Tendance récente ---
     if (gp >= 5) {
       const last3 = p.logs.slice(0, 3);
       const recentPts = last3.reduce((s, l) => s + l.pts, 0) / 3;
@@ -753,7 +727,6 @@ const AnalysisEngine = {
       else if (diff < -B.trend_delta)
         parts.push(`En baisse de régime sur les 3 derniers matchs (${diff.toFixed(1)} pts).`);
     }
-
     return parts.join(' ');
   },
 };
@@ -761,7 +734,6 @@ const AnalysisEngine = {
 // =================================================================================
 // 3. COMPOSANTS VISUELS
 // =================================================================================
-
 const ScoutingRadar = ({ avg }) => {
   const MAX = { pts: 22, reb: 11, ast: 7, def: 4.5, eff: 20 };
   const val = (v, m) => Math.min((v || 0) / m, 1);
@@ -773,15 +745,15 @@ const ScoutingRadar = ({ avg }) => {
     { l: 'EFF', v: val(avg.eff, MAX.eff) },
   ];
   const c = 60,
-    r = 40,
-    poly = (d, f) =>
-      d
-        .map((s, i) => {
-          const a = (Math.PI * 2 * i) / 5 - Math.PI / 2,
-            v = f ? f(s.v) : r;
-          return `${c + Math.cos(a) * v},${c + Math.sin(a) * v}`;
-        })
-        .join(' ');
+    r = 40;
+  const poly = (d, f) =>
+    d
+      .map((s, i) => {
+        const a = (Math.PI * 2 * i) / 5 - Math.PI / 2,
+          v = f ? f(s.v) : r;
+        return `${c + Math.cos(a) * v},${c + Math.sin(a) * v}`;
+      })
+      .join(' ');
   return (
     <svg viewBox="0 0 120 120" className="w-full h-40 filter drop-shadow-lg">
       {[0.2, 0.4, 0.6, 0.8, 1].map((k, i) => (
@@ -823,16 +795,12 @@ function calcFiveManLineups(playerId, games, roster) {
   const MIN_POSS = 8;
   const homeIds = new Set(roster.map((p) => p.id || parseInt(p.id)));
   const lineupMap = {};
-
   games.forEach((game) => {
-    if (!game.actions || !game.actions.length) return;
-    if (!game.actions[0].onCourt) return;
+    if (!game.actions || !game.actions.length || !game.actions[0].onCourt) return;
     game.actions.forEach((a) => {
       if (!a.onCourt) return;
       const homeOnCourt = a.onCourt.filter((id) => homeIds.has(id)).sort((x, y) => x - y);
-      if (homeOnCourt.length !== 5) return;
-      if (!homeOnCourt.includes(playerId)) return;
-
+      if (homeOnCourt.length !== 5 || !homeOnCourt.includes(playerId)) return;
       const key = homeOnCourt.join('-');
       if (!lineupMap[key])
         lineupMap[key] = {
@@ -851,7 +819,6 @@ function calcFiveManLineups(playerId, games, roster) {
         };
       const m = lineupMap[key];
       const isHome = homeIds.has(a.pid);
-
       m.actions++;
       if (a.type === 'SHOT') {
         if (isHome) {
@@ -881,21 +848,18 @@ function calcFiveManLineups(playerId, games, roster) {
       }
     });
   });
-
   const results = Object.values(lineupMap)
     .map((m) => {
       const poss = Math.max(1, m.fga + 0.44 * m.fta + m.tov - m.orb);
       const oppPoss = Math.max(1, m.oppFga + 0.44 * m.oppFta + m.oppTov - m.oppOrb);
       const avgPoss = (poss + oppPoss) / 2;
       if (avgPoss < MIN_POSS) return null;
-
       const ortg = Math.round((m.pts / avgPoss) * 100);
       const drtg = Math.round((m.ptsConceded / avgPoss) * 100);
       const names = m.ids.map((id) => {
         const p = roster.find((r) => (r.id || parseInt(r.id)) === id);
         return p ? '#' + (p.number || '?') : '#' + id;
       });
-
       return {
         ids: m.ids,
         names,
@@ -909,21 +873,16 @@ function calcFiveManLineups(playerId, games, roster) {
     })
     .filter(Boolean)
     .sort((a, b) => b.netRtg - a.netRtg);
-
-  return {
-    best: results.slice(0, 5),
-    worst: results.slice(-5).reverse(),
-    total: results.length,
-  };
+  return { best: results.slice(0, 5), worst: results.slice(-5).reverse(), total: results.length };
 }
 
 // =================================================================================
 // 4. COMPOSANT PRINCIPAL
 // =================================================================================
-
 const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: propRoster }) => {
   const [players, setPlayers] = React.useState([]);
   const [selectedId, setSelectedId] = React.useState(null);
+  const [aiNarrative, setAiNarrative] = React.useState(null);
   const [isExportingPDF, setIsExportingPDF] = React.useState(false);
 
   const exportPlayerPDF = async (player) => {
@@ -951,11 +910,9 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
       const pageH = pdf.internal.pageSize.getHeight();
       const imgW = pageW - 16;
       const imgH = (canvas.height / canvas.width) * imgW;
-      let yOffset = 8;
       if (imgH <= pageH - 16) {
-        pdf.addImage(imgData, 'PNG', 8, yOffset, imgW, imgH);
+        pdf.addImage(imgData, 'PNG', 8, 8, imgW, imgH);
       } else {
-        // Multi-page
         const pageImgH = pageH - 16;
         const totalPages = Math.ceil(imgH / pageImgH);
         for (let pg = 0; pg < totalPages; pg++) {
@@ -990,12 +947,28 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
     }
     setIsExportingPDF(false);
   };
+
   React.useEffect(() => {
     if (propRoster) setPlayers(AnalysisEngine.processPlayerData(propGames || [], propRoster));
   }, [propGames, propRoster]);
 
+  React.useEffect(() => {
+    setAiNarrative(null);
+    if (!selectedId) return;
+    if (!players || players.length === 0) return;
+    const player = players.find(
+      (p) =>
+        p.id === selectedId ||
+        String(p.id) === String(selectedId) ||
+        Number(p.id) === Number(selectedId)
+    );
+    if (!player || !player.logs || player.logs.length === 0) return;
+    setAiNarrative(AnalysisEngine.getFallbackNarrative(player));
+  }, [selectedId, players]);
+
   if (!currentUser || (currentUser.role !== 'coach' && currentUser.role !== 'admin')) return null;
 
+  // --- LISTE DES JOUEURS ---
   if (!selectedId) {
     return (
       <div className="fixed inset-0 z-[60] bg-slate-950 flex flex-col font-sans text-slate-200">
@@ -1016,7 +989,6 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
         <div className="flex-1 overflow-y-auto p-6 bg-slate-950">
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
             {players.map((p) => {
-              // FIX: passer p (le joueur complet) + players pour classement relatif
               const arch = AnalysisEngine.getArchetype(p, players);
               return (
                 <button
@@ -1073,16 +1045,17 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
     );
   }
 
+  // --- VUE DETAIL ---
   const p = players.find((x) => x.id === selectedId);
   if (!p) return null;
-  // FIX: passer p (le joueur complet) + players pour classement relatif
   const arch = AnalysisEngine.getArchetype(p, players);
   const swot = AnalysisEngine.getSWOT(p);
-  const narrativeText = AnalysisEngine.getFallbackNarrative(p);
+  const narrativeText = aiNarrative || AnalysisEngine.getFallbackNarrative(p);
   const last5 = p.logs.slice(0, 5);
 
   return (
     <div className="fixed inset-0 z-[60] bg-slate-950 overflow-y-auto font-sans text-slate-200">
+      {/* STICKY HEADER */}
       <div className="sticky top-0 bg-slate-950/95 backdrop-blur border-b border-slate-800 p-3 flex justify-between items-center z-50 print:hidden shadow-md">
         <button
           onClick={() => setSelectedId(null)}
@@ -1103,11 +1076,12 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
             className="bg-indigo-700 hover:bg-indigo-600 disabled:opacity-50 text-white px-4 py-1.5 rounded text-xs font-bold uppercase flex items-center gap-2"
           >
             <span>📄</span> {isExportingPDF ? 'Export...' : 'Export PDF'}
-          </button>{' '}
+          </button>
         </div>
       </div>
 
       <div className="max-w-6xl mx-auto p-4 md:p-8 space-y-6 pb-24 print:p-0">
+        {/* HERO HEADER */}
         <section
           className={`rounded-2xl p-8 border-l-8 ${arch.border} bg-slate-900 relative overflow-hidden shadow-2xl`}
         >
@@ -1154,133 +1128,436 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
           </div>
         </section>
 
+        {/* NARRATIVE */}
         <div className="border p-6 rounded-xl relative overflow-hidden bg-slate-900 border-slate-800">
           <h3 className="text-slate-400 font-bold uppercase text-xs mb-2 flex items-center gap-2">
-            Note Rapide
+            <span className="text-lg">📝</span> Note Rapide
           </h3>
           <p className="text-slate-200 text-lg leading-relaxed font-medium">{narrativeText}</p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-1 bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col items-center">
-            <h3 className="text-xs font-bold text-slate-400 uppercase mb-4 w-full">
-              Empreinte Statistique
-            </h3>
-            <ScoutingRadar avg={p.avg} />
-          </div>
-          <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-xl p-6">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-                <span className="text-indigo-400">Advanced</span> Metrics
-              </h3>
-              <span className="text-xs font-mono text-slate-600 bg-slate-950 px-2 py-1 rounded">
-                {p.logs.length} Matchs
-              </span>
-            </div>
-            <div className="bg-gradient-to-r from-indigo-950/50 to-cyan-950/50 p-4 rounded-xl border border-indigo-500/30 mb-6 flex items-center justify-between">
-              <div>
-                <div className="text-xs font-bold text-indigo-400 uppercase tracking-widest">
-                  Impact Total
-                </div>
-                <div className="text-[12px] text-slate-500 mt-0.5">
-                  Elite ≥ 110 Bon ≥ 85 Correct ≥ 60 Faible ≤ 59
-                </div>
-              </div>
-              <div
-                className={`text-3xl font-black ${p.avg.impactTotal > 110 ? 'text-blue-400' : p.avg.impactTotal > 85 ? 'text-green-400' : p.avg.impactTotal > 59 ? 'text-white' : 'text-red-400'}`}
-              >
-                {p.avg.impactTotal.toFixed(1)}
-              </div>
-            </div>
-            <div className="grid grid-cols-4 gap-4 mb-6">
-              <div className="bg-slate-950/50 p-3 rounded border border-slate-800/50 text-center">
-                <div
-                  className={`text-xl font-bold ${p.avg.TS > 58 ? 'text-green-400' : 'text-white'}`}
-                >
-                  {p.avg.TS.toFixed(0)}%
-                </div>
-                <div className="text-[10px] uppercase text-slate-500">True Shooting</div>
-              </div>
-              <div className="bg-slate-950/50 p-3 rounded border border-slate-800/50 text-center">
-                <div className="text-xl font-bold text-white">{p.avg.eFG.toFixed(0)}%</div>
-                <div className="text-[10px] uppercase text-slate-500">eFG%</div>
-              </div>
-              <div className="bg-slate-950/50 p-3 rounded border border-slate-800/50 text-center">
-                <div className="text-xl font-bold text-white">{p.avg.threePAr.toFixed(2)}</div>
-                <div className="text-[10px] uppercase text-slate-500">3P Rate</div>
-              </div>
-              <div className="bg-slate-950/50 p-3 rounded border border-slate-800/50 text-center">
-                <div className="text-xl font-bold text-white">{p.avg.FTr.toFixed(2)}</div>
-                <div className="text-[10px] uppercase text-slate-500">FT Rate</div>
-              </div>
-            </div>
-            <div className="grid grid-cols-4 gap-4">
-              <div className="p-3 bg-slate-950/30 rounded text-center">
-                <div className="text-xl font-bold text-slate-200">{p.avg.usage.toFixed(1)}%</div>
-                <div className="text-[10px] uppercase text-slate-500">Usage %</div>
-              </div>
-              <div className="p-3 bg-slate-950/30 rounded text-center">
-                <div
-                  className={`text-xl font-bold ${p.avg.astTov > 2.5 ? 'text-green-400' : p.avg.astTov < 1 ? 'text-red-400' : 'text-slate-200'}`}
-                >
-                  {p.avg.astTov.toFixed(1)}
-                </div>
-                <div className="text-[10px] uppercase text-slate-500">Ast/TO</div>
-              </div>
-              <div className="p-3 bg-slate-950/30 rounded text-center">
-                <div
-                  className={`text-xl font-bold ${p.avg.netRtg > 0 ? 'text-green-400' : 'text-red-400'}`}
-                >
-                  {p.avg.netRtg > 0 ? '+' : ''}
-                  {p.avg.netRtg.toFixed(0)}
-                </div>
-                <div className="text-[10px] uppercase text-slate-500">Net Rtg</div>
-              </div>
-              <div className="p-3 bg-slate-950/30 rounded text-center">
-                <div
-                  className={`text-xl font-bold ${p.avg.pf36 > 4 ? 'text-red-400' : 'text-slate-200'}`}
-                >
-                  {p.avg.pf36.toFixed(1)}
-                </div>
-                <div className="text-[10px] uppercase text-slate-500">PF / 36m</div>
-              </div>
-            </div>
-          </div>
-        </div>
+        {/* ============================================================ */}
+        {/* TABLEAU DE BORD — 5 SECTIONS                                 */}
+        {/* ============================================================ */}
+        {(() => {
+          const a = p.avg;
+          const gp = p.logs.length;
+          const B = getBenchmarks();
+          const dreb = a.reb - a.oreb;
+          const total3PA = a.threea * gp;
+          const totalFGA = a.fga + total3PA;
+          const totalFGM = a.fgm + a.threem;
+          const fgPctGlobal = totalFGA > 0 ? (totalFGM / totalFGA) * 100 : 0;
+          const per30 = (stat) => (a.min > 0 ? (stat / a.min) * 30 : 0);
+          const p30 = {
+            pts: per30(a.pts),
+            reb: per30(a.reb),
+            ast: per30(a.ast),
+            stl: per30(a.stl),
+            pf: per30(a.fouls),
+          };
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-24 h-24 bg-green-500/5 rounded-bl-full pointer-events-none"></div>
-            <h4 className="text-green-400 font-black uppercase text-sm mb-4">▲ Forces</h4>
-            <ul className="space-y-3">
-              {swot.strengths.map((s, i) => (
-                <li
-                  key={i}
-                  className="flex gap-3 text-slate-300 text-sm p-3 bg-slate-950/50 rounded-lg border border-green-900/20"
-                >
-                  <span className="text-green-500 font-bold">✓</span>
-                  {s}
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-24 h-24 bg-red-500/5 rounded-bl-full pointer-events-none"></div>
-            <h4 className="text-red-400 font-black uppercase text-sm mb-4">▼ Vigilance</h4>
-            <ul className="space-y-3">
-              {swot.weaknesses.map((w, i) => (
-                <li
-                  key={i}
-                  className="flex gap-3 text-slate-300 text-sm p-3 bg-slate-950/50 rounded-lg border border-red-900/20"
-                >
-                  <span className="text-red-500 font-bold">!</span>
-                  {w}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
+          // Analyse Coach
+          const strengths = [];
+          const improvements = [];
+          if (a.TS > B.ts_elite)
+            strengths.push({
+              icon: '🟢',
+              text: `Efficacité au scoring élite (TS% ${a.TS.toFixed(1)}%). Excellent choix de tirs.`,
+            });
+          else if (a.TS > B.ts_good)
+            strengths.push({
+              icon: '🟢',
+              text: `Bonne efficacité au scoring (TS% ${a.TS.toFixed(1)}%).`,
+            });
+          if (a.astTov > B.astTov_good && a.ast > 2)
+            strengths.push({
+              icon: '🟢',
+              text: `Gestionnaire fiable — ratio AST/TOV de ${a.astTov.toFixed(1)} avec ${a.ast.toFixed(1)} passes décisives/match.`,
+            });
+          if (a.threePct > B.threePct_good && a.threea > 2)
+            strengths.push({
+              icon: '🟢',
+              text: `Menace à 3 points : ${a.threePct.toFixed(1)}% sur ${a.threea.toFixed(1)} tentatives/match.`,
+            });
+          if (p30.reb > 8 && strengths.length < 3)
+            strengths.push({
+              icon: '🟢',
+              text: `Présence au rebond : ${p30.reb.toFixed(1)} rebonds projetés sur 30 min.`,
+            });
+          if (a.stl + a.blk > B.def_active && strengths.length < 3)
+            strengths.push({
+              icon: '🟢',
+              text: `Activité défensive notable : ${a.stl.toFixed(1)} INT + ${a.blk.toFixed(1)} CTR/match.`,
+            });
+          if (a.oreb > B.oreb_good && strengths.length < 3)
+            strengths.push({
+              icon: '🟢',
+              text: `Guerrier au rebond offensif (${a.oreb.toFixed(1)}/match).`,
+            });
+          if (a.min < 20 && a.min > 5 && p30.pts > 15 && strengths.length < 3)
+            strengths.push({
+              icon: '🟢',
+              text: `Impact fort rapporté au temps de jeu : ${p30.pts.toFixed(1)} PTS projetés sur 30 min (${a.min.toFixed(1)} min jouées).`,
+            });
+          if (a.plusMinus > 5 && strengths.length < 3)
+            strengths.push({
+              icon: '🟢',
+              text: `Impact collectif positif : +${a.plusMinus.toFixed(1)} de +/- moyen.`,
+            });
+          if (a.FTr > 0.35 && strengths.length < 3)
+            strengths.push({
+              icon: '🟢',
+              text: `Provoque des fautes régulièrement (FTr ${a.FTr.toFixed(2)}).`,
+            });
+          if (a.netRtg > 8 && strengths.length < 3)
+            strengths.push({
+              icon: '🟢',
+              text: `L'équipe performe nettement mieux avec lui (NetRtg +${a.netRtg.toFixed(0)}).`,
+            });
+          if (p30.pf > 4.5)
+            improvements.push({
+              icon: '🟠',
+              text: `Gestion des fautes à travailler — ${p30.pf.toFixed(1)} fautes projetées sur 30 min. Risque de foul trouble si temps de jeu élargi.`,
+            });
+          else if (a.pf36 > B.pf36_warn)
+            improvements.push({
+              icon: '🟠',
+              text: `Discipline : ${a.pf36.toFixed(1)} fautes/36 min, au-dessus du seuil d'alerte (${B.pf36_warn}).`,
+            });
+          if (a.astTov < B.astTov_bad && a.tov > 1.5)
+            improvements.push({
+              icon: '🟠',
+              text: `Ratio AST/TOV faible (${a.astTov.toFixed(1)}). Réduire les pertes de balle (${a.tov.toFixed(1)}/match).`,
+            });
+          if (a.TS < B.ts_bad && a.usage > B.usage_low + 5 && improvements.length < 2)
+            improvements.push({
+              icon: '🟠',
+              text: `Efficacité offensive insuffisante (TS% ${a.TS.toFixed(1)}%) pour le volume de tirs.`,
+            });
+          if (a.ftPct < 60 && a.fta / Math.max(gp, 1) > 1.5 && improvements.length < 2)
+            improvements.push({
+              icon: '🟠',
+              text: `Lancer-franc à travailler : ${a.ftPct.toFixed(1)}%. Points gratuits perdus.`,
+            });
+          if (a.threePct < B.threePct_good - 5 && a.threea > 2 && improvements.length < 2)
+            improvements.push({
+              icon: '🟠',
+              text: `Adresse extérieure insuffisante (${a.threePct.toFixed(1)}% à 3pts sur ${a.threea.toFixed(1)} tent./match).`,
+            });
+          if (a.netRtg < -8 && improvements.length < 2)
+            improvements.push({
+              icon: '🟠',
+              text: `Impact collectif négatif (NetRtg ${a.netRtg.toFixed(0)}). Le groupe souffre sur ses minutes.`,
+            });
+          const topS = strengths.slice(0, 3),
+            topI = improvements.slice(0, 2);
 
+          return (
+            <React.Fragment>
+              {/* S1 : VUE D'ENSEMBLE */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-1 bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col items-center">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase mb-4 w-full">
+                    Empreinte Statistique
+                  </h3>
+                  <ScoutingRadar avg={a} />
+                </div>
+                <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-xl p-6">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">
+                    <span className="text-orange-400">1.</span> Vue d'ensemble{' '}
+                    <span className="text-xs font-mono text-slate-600 bg-slate-950 px-2 py-0.5 rounded ml-3">
+                      {gp} Matchs
+                    </span>
+                  </h3>
+                  <div className="grid grid-cols-3 gap-4 mb-4">
+                    <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-800/50 text-center">
+                      <div
+                        className={`text-3xl font-black ${a.eff > 12 ? 'text-yellow-400' : a.eff > 6 ? 'text-white' : 'text-slate-400'}`}
+                      >
+                        {a.eff.toFixed(1)}
+                      </div>
+                      <div className="text-[10px] text-slate-500 uppercase font-bold mt-1">
+                        Évaluation (PIR)
+                      </div>
+                    </div>
+                    <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-800/50 text-center">
+                      <div
+                        className={`text-3xl font-black ${a.plusMinus > 0 ? 'text-green-400' : a.plusMinus < 0 ? 'text-red-400' : 'text-slate-400'}`}
+                      >
+                        {a.plusMinus > 0 ? '+' : ''}
+                        {a.plusMinus.toFixed(1)}
+                      </div>
+                      <div className="text-[10px] text-slate-500 uppercase font-bold mt-1">
+                        Plus / Minus
+                      </div>
+                    </div>
+                    <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-800/50 text-center">
+                      <div className="text-3xl font-black text-cyan-400">{a.min.toFixed(1)}</div>
+                      <div className="text-[10px] text-slate-500 uppercase font-bold mt-1">
+                        Minutes
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-gradient-to-r from-indigo-950/50 to-cyan-950/50 p-3 rounded-xl border border-indigo-500/30 flex items-center justify-between">
+                    <div>
+                      <div className="text-[11px] font-bold text-indigo-400 uppercase">
+                        Impact Total
+                      </div>
+                      <div className="text-[10px] text-slate-500">
+                        Elite ≥ 110 · Bon ≥ 85 · Correct ≥ 60
+                      </div>
+                    </div>
+                    <div
+                      className={`text-2xl font-black ${a.impactTotal > 110 ? 'text-blue-400' : a.impactTotal > 85 ? 'text-green-400' : a.impactTotal > 59 ? 'text-white' : 'text-red-400'}`}
+                    >
+                      {a.impactTotal.toFixed(1)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* S2 : EFFICACITE OFFENSIVE */}
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-5">
+                  <span className="text-orange-400">2.</span> Efficacité Offensive
+                </h3>
+                <div className="grid grid-cols-4 md:grid-cols-8 gap-3">
+                  <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 text-center">
+                    <div className="text-2xl font-black text-orange-400">{a.pts.toFixed(1)}</div>
+                    <div className="text-[10px] text-slate-500 uppercase font-bold">PTS</div>
+                  </div>
+                  <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 text-center">
+                    <div
+                      className={`text-2xl font-black ${fgPctGlobal > 50 ? 'text-green-400' : fgPctGlobal > 40 ? 'text-white' : 'text-red-400'}`}
+                    >
+                      {fgPctGlobal.toFixed(1)}
+                    </div>
+                    <div className="text-[10px] text-slate-500 uppercase font-bold">FG%</div>
+                    <div className="text-[9px] text-slate-600">
+                      {totalFGM}/{totalFGA > 0 ? totalFGA.toFixed(0) : 0}
+                    </div>
+                  </div>
+                  <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 text-center">
+                    <div
+                      className={`text-2xl font-black ${a.threePct > B.threePct_good ? 'text-green-400' : a.threePct > 30 ? 'text-white' : 'text-red-400'}`}
+                    >
+                      {a.threePct.toFixed(1)}
+                    </div>
+                    <div className="text-[10px] text-slate-500 uppercase font-bold">3P%</div>
+                    <div className="text-[9px] text-slate-600">
+                      {a.threem}/{total3PA.toFixed(0)}
+                    </div>
+                  </div>
+                  <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 text-center">
+                    <div
+                      className={`text-2xl font-black ${a.ftPct > 75 ? 'text-green-400' : a.ftPct > 60 ? 'text-white' : 'text-red-400'}`}
+                    >
+                      {a.ftPct.toFixed(1)}
+                    </div>
+                    <div className="text-[10px] text-slate-500 uppercase font-bold">FT%</div>
+                    <div className="text-[9px] text-slate-600">
+                      {a.ftm}/{a.fta}
+                    </div>
+                  </div>
+                  <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 text-center">
+                    <div
+                      className={`text-2xl font-black ${a.TS > B.ts_elite ? 'text-blue-400' : a.TS > B.ts_good ? 'text-green-400' : a.TS > B.ts_bad ? 'text-white' : 'text-red-400'}`}
+                    >
+                      {a.TS.toFixed(1)}
+                    </div>
+                    <div className="text-[10px] text-slate-500 uppercase font-bold">TS%</div>
+                  </div>
+                  <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 text-center">
+                    <div className="text-2xl font-black text-white">{a.eFG.toFixed(1)}</div>
+                    <div className="text-[10px] text-slate-500 uppercase font-bold">eFG%</div>
+                  </div>
+                  <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 text-center">
+                    <div
+                      className={`text-2xl font-black ${a.usage > B.usage_high ? 'text-orange-400' : 'text-white'}`}
+                    >
+                      {a.usage.toFixed(0)}
+                    </div>
+                    <div className="text-[10px] text-slate-500 uppercase font-bold">USG%</div>
+                  </div>
+                  <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 text-center">
+                    <div
+                      className={`text-2xl font-black ${a.astTov > B.astTov_good ? 'text-green-400' : a.astTov > 1.0 ? 'text-white' : 'text-red-400'}`}
+                    >
+                      {a.astTov.toFixed(1)}
+                    </div>
+                    <div className="text-[10px] text-slate-500 uppercase font-bold">AST/TOV</div>
+                    <div className="text-[9px] text-slate-600">
+                      {a.ast.toFixed(1)} / {a.tov.toFixed(1)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* S3 : IMPACT DEFENSIF */}
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-5">
+                  <span className="text-orange-400">3.</span> Impact Défensif & Hustle
+                </h3>
+                <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+                  <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 text-center">
+                    <div className="text-2xl font-black text-white">{a.reb.toFixed(1)}</div>
+                    <div className="text-[10px] text-slate-500 uppercase font-bold">TRB</div>
+                    <div className="text-[9px] text-slate-600 mt-0.5">
+                      <span className="text-orange-400">{a.oreb.toFixed(1)} OFF</span>
+                      {' / '}
+                      <span className="text-blue-400">{dreb.toFixed(1)} DEF</span>
+                    </div>
+                  </div>
+                  <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 text-center">
+                    <div
+                      className={`text-2xl font-black ${a.stl > 1.5 ? 'text-green-400' : 'text-white'}`}
+                    >
+                      {a.stl.toFixed(1)}
+                    </div>
+                    <div className="text-[10px] text-slate-500 uppercase font-bold">STL</div>
+                  </div>
+                  <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 text-center">
+                    <div
+                      className={`text-2xl font-black ${a.blk > 1.0 ? 'text-green-400' : 'text-white'}`}
+                    >
+                      {a.blk.toFixed(1)}
+                    </div>
+                    <div className="text-[10px] text-slate-500 uppercase font-bold">BLK</div>
+                  </div>
+                  <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 text-center">
+                    <div
+                      className={`text-2xl font-black ${a.fouls > 3.5 ? 'text-red-400' : a.fouls > 2.5 ? 'text-yellow-400' : 'text-white'}`}
+                    >
+                      {a.fouls.toFixed(1)}
+                    </div>
+                    <div className="text-[10px] text-slate-500 uppercase font-bold">PF</div>
+                    <div className="text-[9px] text-slate-600">{a.pf36.toFixed(1)} /36m</div>
+                  </div>
+                  <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 text-center">
+                    <div
+                      className={`text-2xl font-black ${a.netRtg > 0 ? 'text-green-400' : a.netRtg < 0 ? 'text-red-400' : 'text-slate-400'}`}
+                    >
+                      {a.netRtg > 0 ? '+' : ''}
+                      {a.netRtg.toFixed(0)}
+                    </div>
+                    <div className="text-[10px] text-slate-500 uppercase font-bold">Net Rtg</div>
+                  </div>
+                  <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 text-center">
+                    <div className="text-2xl font-black text-white">
+                      {(a.stl + a.blk).toFixed(1)}
+                    </div>
+                    <div className="text-[10px] text-slate-500 uppercase font-bold">STL+BLK</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* S4 : PER 30 */}
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
+                  <span className="text-orange-400">4.</span> Projection Titulaire FIBA
+                </h3>
+                <p className="text-[11px] text-slate-500 mb-5">
+                  Statistiques projetées sur 30 minutes — (Stat / MIN) × 30.
+                  {a.min < 10 && (
+                    <span className="text-amber-400 ml-1">
+                      ⚠ Faible échantillon ({a.min.toFixed(1)} min/match).
+                    </span>
+                  )}
+                </p>
+                <div className="grid grid-cols-5 gap-3">
+                  <div className="bg-gradient-to-b from-slate-950 to-slate-950/50 p-4 rounded-lg border border-slate-800/50 text-center">
+                    <div className="text-2xl font-black text-orange-400">{p30.pts.toFixed(1)}</div>
+                    <div className="text-[10px] text-slate-500 uppercase font-bold">PTS</div>
+                    <div className="text-[9px] text-slate-600">réel: {a.pts.toFixed(1)}</div>
+                  </div>
+                  <div className="bg-gradient-to-b from-slate-950 to-slate-950/50 p-4 rounded-lg border border-slate-800/50 text-center">
+                    <div className="text-2xl font-black text-blue-400">{p30.reb.toFixed(1)}</div>
+                    <div className="text-[10px] text-slate-500 uppercase font-bold">REB</div>
+                    <div className="text-[9px] text-slate-600">réel: {a.reb.toFixed(1)}</div>
+                  </div>
+                  <div className="bg-gradient-to-b from-slate-950 to-slate-950/50 p-4 rounded-lg border border-slate-800/50 text-center">
+                    <div className="text-2xl font-black text-purple-400">{p30.ast.toFixed(1)}</div>
+                    <div className="text-[10px] text-slate-500 uppercase font-bold">AST</div>
+                    <div className="text-[9px] text-slate-600">réel: {a.ast.toFixed(1)}</div>
+                  </div>
+                  <div className="bg-gradient-to-b from-slate-950 to-slate-950/50 p-4 rounded-lg border border-slate-800/50 text-center">
+                    <div className="text-2xl font-black text-green-400">{p30.stl.toFixed(1)}</div>
+                    <div className="text-[10px] text-slate-500 uppercase font-bold">STL</div>
+                    <div className="text-[9px] text-slate-600">réel: {a.stl.toFixed(1)}</div>
+                  </div>
+                  <div className="bg-gradient-to-b from-slate-950 to-slate-950/50 p-4 rounded-lg border border-slate-800/50 text-center">
+                    <div
+                      className={`text-2xl font-black ${p30.pf > 4.5 ? 'text-red-400' : p30.pf > 3.5 ? 'text-yellow-400' : 'text-white'}`}
+                    >
+                      {p30.pf.toFixed(1)}
+                    </div>
+                    <div className="text-[10px] text-slate-500 uppercase font-bold">PF</div>
+                    <div className="text-[9px] text-slate-600">réel: {a.fouls.toFixed(1)}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* S5 : ANALYSE DU COACH */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-green-500/5 rounded-bl-full pointer-events-none"></div>
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">
+                    <span className="text-orange-400">5.</span> Analyse du Coach
+                  </h4>
+                  <h4 className="text-green-400 font-black uppercase text-sm mb-4">
+                    ▲ Points Forts
+                  </h4>
+                  {topS.length > 0 ? (
+                    <div className="space-y-2">
+                      {topS.map((s, i) => (
+                        <div
+                          key={i}
+                          className="flex gap-3 text-slate-300 text-sm p-3 bg-slate-950/50 rounded-lg border border-green-900/20"
+                        >
+                          <span className="shrink-0">{s.icon}</span>
+                          <span>{s.text}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-slate-500 text-sm italic">
+                      Pas de point fort marquant identifié.
+                    </p>
+                  )}
+                </div>
+                <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-orange-500/5 rounded-bl-full pointer-events-none"></div>
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">
+                    &nbsp;
+                  </h4>
+                  <h4 className="text-orange-400 font-black uppercase text-sm mb-4">
+                    ▼ Axes de Progression
+                  </h4>
+                  {topI.length > 0 ? (
+                    <div className="space-y-2">
+                      {topI.map((s, i) => (
+                        <div
+                          key={i}
+                          className="flex gap-3 text-slate-300 text-sm p-3 bg-slate-950/50 rounded-lg border border-orange-900/20"
+                        >
+                          <span className="shrink-0">{s.icon}</span>
+                          <span>{s.text}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-slate-500 text-sm italic">
+                      Aucun axe de progression critique détecté.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </React.Fragment>
+          );
+        })()}
+
+        {/* 5 DERNIERS MATCHS */}
         <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
           <div className="p-4 bg-slate-950 border-b border-slate-800">
             <h3 className="text-xs font-bold text-slate-400 uppercase">5 Derniers Matchs</h3>
@@ -1318,10 +1595,10 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
               ))}
             </tbody>
           </table>
+          {/* SHOT CHART */}
           {(() => {
             const ShotChart = window.ShotChart;
             if (!ShotChart || !propGames) return null;
-            // FIX: accès direct à p.id (pas de p.info)
             const rawPid = p.id;
             if (!rawPid) return null;
             const numPid = Number(rawPid);
@@ -1329,9 +1606,8 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
             propGames.forEach((g) => {
               if (!g.actions || !g.actions.length) return;
               g.actions.forEach((a) => {
-                if (a.type === 'SHOT' && (a.pid === rawPid || a.pid === numPid)) {
+                if (a.type === 'SHOT' && (a.pid === rawPid || a.pid === numPid))
                   playerShots.push(a);
-                }
               });
             });
             if (playerShots.length === 0) return null;
@@ -1341,12 +1617,11 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
               </div>
             );
           })()}
+          {/* 5-MAN LINEUPS */}
           {(() => {
             const currentPlayerId = p.id;
             const lineups = calcFiveManLineups(currentPlayerId, propGames, propRoster);
-
             if (lineups.total === 0) return null;
-
             const renderLineup = (lu, idx) => (
               <div
                 key={idx}
@@ -1382,7 +1657,6 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
                 </div>
               </div>
             );
-
             return (
               <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden mt-6">
                 <div className="p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
