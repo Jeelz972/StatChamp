@@ -15,6 +15,7 @@
     <link rel="stylesheet" href="live.css" />
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="db-layer.js"></script>
   </head>
   <body>
     <div id="app-container">
@@ -423,6 +424,15 @@
           { id: 'phase2', name: 'Phase 2' },
         ],
         firebaseGames = [];
+      var urlParams = new URLSearchParams(window.location.search);
+      var urlWk = urlParams.get('wk');
+      if (urlWk) {
+        sessionStorage.setItem('statchamp_wk', urlWk);
+        var cleanUrl = window.location.pathname;
+        var resume = urlParams.get('resume');
+        if (resume) cleanUrl += '?resume=' + resume;
+        history.replaceState(null, '', cleanUrl);
+      }
 
       const State = {
         match: {
@@ -2046,17 +2056,23 @@
         try {
           firebase.initializeApp(FIREBASE_CONFIG);
           db = firebase.firestore();
-          const [rosterDoc, phasesDoc, gamesDoc] = await Promise.all([
+          const [rosterDoc, phasesDoc, gamesSnap] = await Promise.all([
             db.collection('team_data').doc('roster').get(),
             db.collection('team_data').doc('phases').get(),
-            db.collection('team_data').doc('games').get(),
+            db.collection('games').get(),
           ]);
           const configDoc = await db.collection('team_data').doc('config').get();
           if (configDoc.exists && configDoc.data().playTypes)
             State.playTypes = configDoc.data().playTypes;
           if (rosterDoc.exists && rosterDoc.data().list) firebaseRoster = rosterDoc.data().list;
           if (phasesDoc.exists && phasesDoc.data().list) firebasePhases = phasesDoc.data().list;
-          if (gamesDoc.exists && gamesDoc.data().list) firebaseGames = gamesDoc.data().list;
+          firebaseGames = gamesSnap.docs
+            .map(function (doc) {
+              return doc.data();
+            })
+            .filter(function (g) {
+              return !g._deleted;
+            });
           document.getElementById('loadingScreen').classList.add('hidden');
           document.getElementById('setupScreen').classList.remove('hidden');
           Setup.init();
@@ -3260,11 +3276,17 @@
             actions: State.actions,
             specialFouls: State.specialFouls,
           };
-          const idx = firebaseGames.findIndex((g) => g.id === game.id);
+          const idx = firebaseGames.findIndex(function (g) {
+            return g.id === game.id;
+          });
           if (idx >= 0) firebaseGames[idx] = game;
           else firebaseGames.unshift(game);
           try {
-            await db.collection('team_data').doc('games').set({ list: firebaseGames });
+            var wk = sessionStorage.getItem('statchamp_wk') || '';
+            await db
+              .collection('games')
+              .doc(game.id)
+              .set(Object.assign({}, game, { _wk: wk, updatedAt: new Date().toISOString() }));
             UI.toast('✅ Sauvegardé !');
             UI.setSyncStatus('online');
             OfflineManager.clear();

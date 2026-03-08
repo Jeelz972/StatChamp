@@ -2234,14 +2234,15 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                 onChange={(e) => setPlayerNotes(e.target.value)}
                 onBlur={() => {
                   if (window.db && selectedPlayer) {
-                    const ref = window.db.collection('team_data').doc('roster');
-                    ref.get().then((doc) => {
+                    const ref = window.DB.getRoster().then(function (doc) {
                       if (doc.exists) {
-                        const list = doc.data().list || [];
-                        const idx = list.findIndex((p) => p.id === selectedPlayer.info.id);
+                        var list = doc.data().list || [];
+                        var idx = list.findIndex(function (p) {
+                          return p.id === selectedPlayer.info.id;
+                        });
                         if (idx >= 0) {
                           list[idx].coachNotes = playerNotes;
-                          ref.set({ list });
+                          window.DB.saveRoster(list);
                         }
                       }
                     });

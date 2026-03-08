@@ -1184,10 +1184,10 @@ const recalculateGameStats = (actions, players) => {
   return { playerStats: pStats, opponentStats: oppStats, homeScore: home, awayScore: away };
 };
 
-const saveDataToCloud = (db, collection, data) => {
+/*const saveDataToCloud = (db, collection, data) => {
   if (!db) return Promise.resolve();
   return db.collection('team_data').doc(collection).set({ list: data });
-};
+};*/
 
 // --- ICONS ---
 const Icon = ({ path, className }) => (
@@ -2188,20 +2188,13 @@ function VideoSettingsPanel({ game }) {
     }
     setSaving(true);
     try {
-      const snap = await window.db.collection('team_data').doc('games').get();
-      if (snap.exists) {
-        const list = snap.data().list || [];
-        const idx = list.findIndex((g) => g.id === game.id);
-        if (idx >= 0) {
-          list[idx].videoUrl = videoUrl;
-          list[idx].videoSettings = { offsets, leadTimes };
-          await window.db.collection('team_data').doc('games').set({ list });
-          game.videoUrl = videoUrl;
-          game.videoSettings = { offsets, leadTimes };
-          setSaved(true);
-          setTimeout(() => setSaved(false), 2000);
-        }
-      }
+      game.videoUrl = videoUrl;
+      game.videoSettings = { offsets, leadTimes };
+      await window.DB.saveGame(game);
+      setSaved(true);
+      setTimeout(function () {
+        setSaved(false);
+      }, 2000);
     } catch (e) {
       console.error('Video settings save error:', e);
       alert('Erreur sauvegarde');
@@ -2837,17 +2830,9 @@ function GameDetailsModal({ game, isOpen, onClose, players, isAdmin }) {
               onChange={(e) => setGameNotes(e.target.value)}
               onBlur={() => {
                 if (window.db && game.id) {
-                  const snap = window.db.collection('team_data').doc('games');
-                  snap.get().then((doc) => {
-                    if (doc.exists) {
-                      const list = doc.data().list || [];
-                      const idx = list.findIndex((g) => g.id === game.id);
-                      if (idx >= 0) {
-                        list[idx].coachNotes = gameNotes;
-                        snap.set({ list });
-                        game.coachNotes = gameNotes;
-                      }
-                    }
+                  game.coachNotes = gameNotes;
+                  window.DB.saveGame(game).catch(function (e) {
+                    console.error('Coach notes save error:', e);
                   });
                 }
               }}
@@ -4043,7 +4028,9 @@ function History({
                     onClick={(e) => {
                       e.stopPropagation();
                       if (confirm(`Reprendre le match vs ${g.opponent} en live ?`)) {
-                        window.location.href = `live.html?resume=${g.id}`;
+                        var wk = sessionStorage.getItem('statchamp_wk') || '';
+                        window.location.href =
+                          'live.html?resume=' + g.id + '&wk=' + encodeURIComponent(wk);
                       }
                     }}
                   >
@@ -4068,9 +4055,15 @@ function History({
                   onClick={(e) => {
                     e.stopPropagation();
                     if (confirm('Supprimer ?')) {
-                      const newG = games.filter((x) => x.id !== g.id);
+                      const newG = games.filter(function (x) {
+                        return x.id !== g.id;
+                      });
                       setGames(newG);
-                      if (window.db) saveDataToCloud(window.db, 'games', newG);
+                      if (window.db) {
+                        window.DB.deleteGame(g.id).catch(function (e) {
+                          console.error('Delete game error:', e);
+                        });
+                      }
                     }
                   }}
                 >
@@ -4099,7 +4092,7 @@ function History({
             newGames[idx] = updatedGame;
             setGames(newGames);
             if (window.db) {
-              await window.db.collection('team_data').doc('games').set({ list: newGames });
+              await window.DB.saveGame(updatedGame);
             }
             setEditingPBP(null);
           }}
@@ -4164,10 +4157,13 @@ function Settings({
       };
       const currentSeasons = seasons ? [...seasons] : [];
       currentSeasons.push(snapshot);
-      await window.db.collection('team_data').doc('seasons').set({ list: currentSeasons });
+      await window.DB.saveSeasons(currentSeasons);
       if (archiveClearGames) {
         setGames([]);
-        await window.db.collection('team_data').doc('games').set({ list: [] });
+        var deletePromises = games.map(function (g) {
+          return window.DB.deleteGame(g.id);
+        });
+        await Promise.all(deletePromises);
       }
       setShowArchiveModal(false);
       setArchiveSeasonName('');
@@ -4181,10 +4177,7 @@ function Settings({
   };
   useEffect(() => {
     if (window.db) {
-      window.db
-        .collection('team_data')
-        .doc('config')
-        .get()
+      window.DB.getConfig()
         .then((doc) => {
           if (doc.exists && doc.data().playTypes) {
             setPlayTypes(doc.data().playTypes);
@@ -4230,7 +4223,7 @@ function Settings({
   const savePlayTypes = (newTypes) => {
     setPlayTypes(newTypes);
     if (window.db) {
-      window.db.collection('team_data').doc('config').set({ playTypes: newTypes }, { merge: true });
+      window.DB.saveConfig({ playTypes: newTypes });
     }
     localStorage.setItem('basket_play_types', JSON.stringify(newTypes));
   };
@@ -4524,31 +4517,33 @@ function Settings({
 
 // --- LOGIN MODAL ---
 function LoginModal({ isOpen, onLogin, onClose }) {
-  const [pwd, setPwd] = useState('');
+  const [token, setToken] = useState('');
   const [error, setError] = useState(false);
   if (!isOpen) return null;
   const handleLogin = () => {
-    if (pwd === 'coach2025') {
-      onLogin();
+    if (token.trim().length > 0) {
+      onLogin(token.trim());
       onClose();
-    } else setError(true);
+    } else {
+      setError(true);
+    }
   };
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Acces Coach" size="max-w-sm">
       <div className="space-y-4 p-2">
-        <p className="text-sm text-slate-400">Veuillez entrer le mot de passe.</p>
+        <p className="text-sm text-slate-400">Entrez le token d'acces coach.</p>
         <input
           type="password"
           className="w-full bg-slate-900 text-white p-3 rounded border border-slate-700 outline-none focus:border-orange-500"
-          placeholder="Mot de passe..."
-          value={pwd}
+          placeholder="Token d'acces..."
+          value={token}
           onChange={(e) => {
-            setPwd(e.target.value);
+            setToken(e.target.value);
             setError(false);
           }}
           onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
         />
-        {error && <div className="text-red-500 text-xs">Mot de passe incorrect</div>}
+        {error && <div className="text-red-500 text-xs">Token requis</div>}
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
             Annuler
@@ -4618,13 +4613,17 @@ function App() {
             else setPlayers(JSON.parse(localStorage.getItem('basket_players')) || defaultPlayers);
             setIsDataLoaded(true);
           });
-        database
-          .collection('team_data')
-          .doc('games')
-          .onSnapshot((doc) => {
-            if (doc.exists && doc.data().list) setGames(doc.data().list);
-            else setGames(JSON.parse(localStorage.getItem('basket_games')) || []);
-          });
+        database.collection('games').onSnapshot(function (snapshot) {
+          var gamesList = snapshot.docs
+            .map(function (doc) {
+              return doc.data();
+            })
+            .filter(function (g) {
+              return !g._deleted;
+            });
+          if (gamesList.length > 0) setGames(gamesList);
+          else setGames(JSON.parse(localStorage.getItem('basket_games')) || []);
+        });
         database
           .collection('team_data')
           .doc('phases')
@@ -4670,7 +4669,12 @@ function App() {
       ? games.map((g) => (g.id === gameId ? newGame : g))
       : [newGame, ...games];
     setGames(newGamesList);
-    if (window.db && !isPlayerMode) saveDataToCloud(window.db, 'games', newGamesList);
+    if (window.db && !isPlayerMode) {
+      window.DB.saveGame(newGame).catch(function (e) {
+        console.error('Save game error:', e);
+        alert('Erreur sauvegarde: ' + e.message);
+      });
+    }
     setActiveGame(null);
     setView('history');
   };
@@ -4678,15 +4682,16 @@ function App() {
   const handleUpdatePhases = (newPhases) => {
     if (!isAdmin) return;
     setPhases(newPhases);
-    if (window.db && !isPlayerMode) saveDataToCloud(window.db, 'phases', newPhases);
+    if (window.db && !isPlayerMode) window.DB.savePhases(newPhases);
   };
   const handleSettingsUpdate = (newPlayers) => {
     if (!isAdmin) return;
     setPlayers(newPlayers);
-    if (window.db && !isPlayerMode) saveDataToCloud(window.db, 'roster', newPlayers);
+    if (window.db && !isPlayerMode) window.DB.saveRoster(newPlayers);
   };
-  const performLogin = () => {
+  const performLogin = (token) => {
     setIsAdmin(true);
+    sessionStorage.setItem('statchamp_wk', token);
     localStorage.setItem('statchamp_admin', 'true');
     setView('live');
   };
@@ -4726,8 +4731,8 @@ function App() {
     setGames(newGamesList);
     if (window.db && !isPlayerMode) {
       try {
-        await saveDataToCloud(window.db, 'roster', updatedPlayers);
-        await saveDataToCloud(window.db, 'games', newGamesList);
+        await window.DB.saveRoster(updatedPlayers);
+        await window.DB.saveGame(newGame);
         alert('Importe !');
       } catch (e) {
         console.error('Firebase write error:', e);
@@ -4746,8 +4751,8 @@ function App() {
     setGames(newGamesList);
     if (window.db && !isPlayerMode) {
       try {
-        await saveDataToCloud(window.db, 'roster', updatedPlayers);
-        await saveDataToCloud(window.db, 'games', newGamesList);
+        await window.DB.saveRoster(updatedPlayers);
+        await window.DB.saveGame(newGame);
         alert('Importe !');
       } catch (e) {
         console.error('Firebase write error:', e);
