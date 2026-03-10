@@ -13,6 +13,27 @@
     />
     <link rel="stylesheet" href="design-tokens.css" />
     <link rel="stylesheet" href="live.css" />
+    <style>
+      .p-card.foul-warn { border-color: #f59e0b !important; box-shadow: 0 0 6px rgba(245,158,11,0.35) !important; }
+      .p-card.foul-danger { border-color: #ef4444 !important; box-shadow: 0 0 8px rgba(239,68,68,0.45) !important; animation: foul-pulse 1.4s ease-in-out infinite; }
+      @keyframes foul-pulse { 0%,100%{ box-shadow:0 0 8px rgba(239,68,68,0.45); } 50%{ box-shadow:0 0 16px rgba(239,68,68,0.8); } }
+      .qscore-band { display:flex; justify-content:center; gap:0; background:rgba(0,0,0,0.4); border-bottom:1px solid var(--border); font-family:'JetBrains Mono',monospace; font-size:0.6rem; }
+      .qscore-col { flex:1; max-width:60px; text-align:center; padding:3px 2px; }
+      .qscore-label { color:var(--text-muted); font-weight:700; font-size:0.55rem; letter-spacing:0.05em; }
+      .qscore-home { color:var(--home-color); font-weight:800; font-size:0.75rem; }
+      .qscore-away { color:var(--away-color); font-weight:800; font-size:0.75rem; }
+      .qscore-col.active-q .qscore-label { color:var(--accent); }
+      .lineup-pm { display:inline-block; font-size:0.6rem; font-family:'JetBrains Mono',monospace; font-weight:800; padding:1px 5px; border-radius:4px; margin-left:4px; }
+      .lineup-pm.pos { background:rgba(34,197,94,0.2); color:#4ade80; }
+      .lineup-pm.neg { background:rgba(239,68,68,0.2); color:#f87171; }
+      .lineup-pm.neu { background:rgba(100,116,139,0.2); color:#94a3b8; }
+      #matchReport { position:fixed; inset:0; z-index:200; background:var(--bg-0); overflow-y:auto; display:none; padding:24px 16px 60px; font-family:'Inter',sans-serif; }
+      #matchReport.show { display:block; }
+      .report-section { background:var(--bg-2); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:14px; }
+      .report-title { font-size:0.65rem; font-weight:800; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-muted); margin-bottom:10px; }
+      #toastTimeout { position:fixed; left:50%; transform:translateX(-50%); top:80px; z-index:150; background:var(--bg-3); border:1px solid var(--border); border-radius:10px; padding:14px 18px; min-width:260px; max-width:340px; display:none; font-size:0.75rem; box-shadow:0 8px 32px rgba(0,0,0,0.5); }
+      #toastTimeout.show { display:block; }
+    </style>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="db-layer.js"></script>
@@ -101,6 +122,7 @@
                 ✏️
               </button>
 
+              <span id="lineupPM" style="display:none;font-size:0.55rem;font-family:'JetBrains Mono',monospace;font-weight:800;padding:2px 6px;border-radius:4px;"></span>
               <span class="context-badge attack" id="contextBadge" onclick="ContextManager.toggle()"
                 >🏀 ATT</span
               >
@@ -140,16 +162,16 @@
           </div>
         </header>
 
+        <div class="qscore-band" id="qscoreBand"></div>
+
         <div class="quick-stats-toggle" id="qsToggle" onclick="QuickStats.toggle()">
           ▼ Stats rapides
         </div>
         <div class="quick-stats-wrap" id="qsWrap">
-          <div class="quick-stats-row" id="qsRow">
-            <div class="qs-home qs-vals" id="qsHome">--</div>
-            <div class="qs-labels">
-              <span>FG%</span><span>REB</span><span>AST</span><span>TO</span>
-            </div>
-            <div class="qs-away qs-vals" id="qsAway">--</div>
+          <div class="quick-stats-row" id="qsRow" style="display:flex;width:100%;gap:0;">
+            <div class="qs-home qs-vals" id="qsHome" style="display:flex;flex:1;"></div>
+            <div style="width:1px;background:var(--border);flex-shrink:0;"></div>
+            <div class="qs-away qs-vals" id="qsAway" style="display:flex;flex:1;"></div>
           </div>
         </div>
         <div id="pendingAction" class="pending-action">⏳ Action en attente...</div>
@@ -392,6 +414,19 @@
 
       <div id="conflictAlert" class="conflict-alert">⚠️ Trop rapide !</div>
       <div id="toastBox"></div>
+      <div id="toastTimeout"></div>
+      <div id="matchReport">
+        <div style="max-width:640px;margin:0 auto;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+            <h2 style="font-size:1.2rem;font-weight:900;text-transform:uppercase;letter-spacing:0.05em;">Rapport de match</h2>
+            <div style="display:flex;gap:8px;">
+              <button onclick="window.print()" style="background:var(--bg-4);border:1px solid var(--border);color:var(--text-secondary);padding:6px 14px;border-radius:6px;font-size:0.72rem;font-weight:700;cursor:pointer;">Imprimer</button>
+              <button onclick="MatchReport.hide()" style="background:var(--accent);border:none;color:white;padding:6px 14px;border-radius:6px;font-size:0.72rem;font-weight:700;cursor:pointer;">Fermer</button>
+            </div>
+          </div>
+          <div id="matchReportBody"></div>
+        </div>
+      </div>
       <div id="statsModal" class="stats-modal">
         <div class="stats-modal-content">
           <div class="stats-modal-header">
@@ -726,7 +761,6 @@
             }
           }
           State.players[assisterId].stats.ast++;
-          GameEngine.log('AST', assisterId, { scorerId: this.scorerId, ...this.shotData });
           UI.renderRoster();
           UI.renderPBP();
           TimelineFloat.render();
@@ -1351,6 +1385,7 @@
             UI.renderRoster();
             UI.renderPBP();
             TimelineFloat.render();
+            LineupTracker.render();
             UI.toast(`${count} changement${count > 1 ? 's' : ''} effectué${count > 1 ? 's' : ''}`);
             OfflineManager.save();
           }
@@ -2146,6 +2181,7 @@
               TimeoutManager.renderDots();
               QuickStats.render();
               KeyboardShortcuts.init();
+              GameEngine.startAutoSave();
               window.addEventListener('beforeunload', function (e) {
                 if (State.match.running || State.actions.length > 0) {
                   e.preventDefault();
@@ -2329,11 +2365,7 @@
             unsportsmanlike: [],
             offensive: [],
           };
-          if (saved.playTypes) State.playTypes = saved.playTypes;
-          if (saved.currentPlay) {
-            State.currentPlay = saved.currentPlay;
-            PlaySelector.renderBadge();
-          }
+          if (game.playTypes) State.playTypes = game.playTypes;
 
           // --- Lancement de l'interface ---
           document.getElementById('setupScreen').classList.add('hidden');
@@ -2348,6 +2380,7 @@
 
           // Sauvegarder immédiatement en localStorage pour la reprise standard
           OfflineManager.save();
+          GameEngine.startAutoSave();
 
           UI.toast(`Match vs ${game.opponent} repris (${State.actions.length} actions)`);
           // Nettoyer l'URL
@@ -2401,9 +2434,6 @@
               ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`
               : new Date().toLocaleDateString('fr-FR');
 
-          State.match.opponent = document.getElementById('oppName').value || 'Adversaire';
-          State.match.id = Date.now();
-          State.match.date = new Date().toLocaleDateString('fr-FR');
           State.match.opponent = document.getElementById('oppName').value || 'Adversaire';
           document.getElementById('lblAway').textContent = State.match.opponent;
           State.selectedIds.forEach((id) => {
@@ -2486,6 +2516,7 @@
           TimeoutManager.renderDots();
           QuickStats.render();
           KeyboardShortcuts.init();
+          GameEngine.startAutoSave();
           window.addEventListener('beforeunload', function (e) {
             if (State.match.running || State.actions.length > 0) {
               e.preventDefault();
@@ -2493,29 +2524,13 @@
             }
           });
           StartersModal.show(1);
-
-          // B5: beforeunload
-          window.addEventListener('beforeunload', function (e) {
-            if (State.match.running || State.actions.length > 0) {
-              e.preventDefault();
-              e.returnValue = '';
-            }
-          });
-
-          // B1: init timeout dots
-          TimeoutManager.renderDots();
-
-          // C4: init quick stats
-          QuickStats.render();
-
-          // B10: init keyboard shortcuts
-          KeyboardShortcuts.init();
         },
       };
 
       // ===== GAME ENGINE =====
       const GameEngine = {
         timer: null,
+        autoSaveTimer: null,
         toggleTimer() {
           State.match.running = !State.match.running;
           if (State.match.running) {
@@ -2567,14 +2582,70 @@
               'g-2'
             );
           } else {
+            const sc = this.getScore();
+            const body = `<p style="text-align:center;font-size:1.2rem;margin-bottom:12px;">Score Final: <strong>${sc.home} - ${sc.away}</strong></p>` +
+              (sc.home === sc.away ? `<p style="text-align:center;font-size:0.8rem;color:var(--warning);margin-bottom:8px;">Egalité — Prolongation disponible</p>` : '');
             UI.showModal(
               'Fin du match',
-              `<p style="text-align:center;font-size:1.2rem;">Score Final: ${this.getScore().home} - ${this.getScore().away}</p>`,
-              [{ text: 'Sauvegarder', action: 'GameEngine.saveToFirebase()', class: 'success' }],
+              body,
+              [
+                { text: 'Rapport', action: 'MatchReport.show()', class: '' },
+                { text: 'Prolongation (5 min)', action: 'GameEngine.startOT()', class: '' },
+                { text: 'Sauvegarder', action: 'GameEngine.saveToFirebase()', class: 'success' },
+              ],
               'g-2'
             );
           }
         },
+        startAutoSave() {
+          if (this.autoSaveTimer) clearInterval(this.autoSaveTimer);
+          this.autoSaveTimer = setInterval(async () => {
+            if (!db || !State.actions.length) return;
+            try {
+              const scores = this.getScore();
+              const playerStats = {};
+              Object.values(State.players).filter((p) => p.team === 'home').forEach((p) => {
+                playerStats[p.id] = { pts: p.stats.pts, reb: p.stats.oreb + p.stats.dreb, oreb: p.stats.oreb, dreb: p.stats.dreb, ast: p.stats.ast, stl: p.stats.stl, blk: p.stats.blk, tov: p.stats.tov, fga: p.stats.fga, fgm: p.stats.fgm, threePA: p.stats.fg3a, threePM: p.stats.fg3m, fta: p.stats.fta, ftm: p.stats.ftm, pf: p.stats.fouls, minutes: Math.round(p.stats.min / 60), plusMinus: p.stats.plusMinus, foulDrawn: p.stats.foulDrawn || 0 };
+              });
+              const opponentPlayerStats = {};
+              const opponentStats = { pts: scores.away, reb: 0, oreb: 0, tov: 0, fouls: 0, fga: 0, fgm: 0 };
+              Object.values(State.players).filter((p) => p.team === 'away').forEach((p) => {
+                opponentStats.reb += p.stats.oreb + p.stats.dreb;
+                opponentStats.oreb += p.stats.oreb;
+                opponentStats.tov += p.stats.tov;
+                opponentStats.fouls += p.stats.fouls;
+                opponentStats.fga += p.stats.fga + p.stats.fg3a;
+                opponentStats.fgm += p.stats.fgm + p.stats.fg3m;
+                opponentPlayerStats[p.id] = { pts: p.stats.pts, oreb: p.stats.oreb, dreb: p.stats.dreb, ast: p.stats.ast, stl: p.stats.stl, blk: p.stats.blk, tov: p.stats.tov, fga: p.stats.fga, fgm: p.stats.fgm, threePA: p.stats.fg3a, threePM: p.stats.fg3m, fta: p.stats.fta, ftm: p.stats.ftm, pf: p.stats.fouls, minutes: Math.round(p.stats.min / 60), plusMinus: p.stats.plusMinus, number: p.number, name: p.name, foulDrawn: p.stats.foulDrawn || 0 };
+              });
+              const game = { id: State.match.id.toString(36), date: State.match.date, opponent: State.match.opponent, homeScore: scores.home, awayScore: scores.away, phase: State.match.phase, playerStats, opponentStats, opponentPlayerStats, opponentStarters: State.opponentStarters, actions: State.actions, starters: State.starters, specialFouls: State.specialFouls, scoreHistory: State.scoreHistory };
+              var wk = sessionStorage.getItem('statchamp_wk') || '';
+              await db.collection('games').doc(game.id).set(Object.assign({}, game, { _wk: wk, updatedAt: new Date().toISOString() }));
+              const now = new Date();
+              const hhmm = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
+              const dot = document.getElementById('syncDot'), txt = document.getElementById('syncStatus');
+              if (dot) dot.className = 'sync-dot';
+              if (txt) txt.textContent = hhmm;
+            } catch(e) {
+              console.warn('auto-save failed', e);
+            }
+          }, 120000);
+        },
+
+        startOT() {
+          UI.closeModal();
+          const otQ = State.match.quarter + 1; // 5, 6, ...
+          State.match.quarter = otQ;
+          State.match.time = 300; // 5 minutes FIBA OT
+          // 1 timeout par équipe par prolongation
+          State.teamFouls.home[otQ - 1] = 0;
+          State.teamFouls.away[otQ - 1] = 0;
+          UI.updateHeader();
+          UI.updateFoulsDisplay();
+          UI.toast(`Prolongation ${otQ > 5 ? (otQ - 4) + 'e' : ''} — 5 min`);
+          StartersModal.show(otQ);
+        },
+
         startNextQuarter(q) {
           UI.closeModal();
           State.match.quarter = q;
@@ -3283,6 +3354,7 @@
           else firebaseGames.unshift(game);
           try {
             var wk = sessionStorage.getItem('statchamp_wk') || '';
+            console.log('wk au moment du save:', JSON.stringify(wk));
             await db
               .collection('games')
               .doc(game.id)
@@ -3292,6 +3364,7 @@
             OfflineManager.clear();
             localStorage.removeItem('liveMatchActive');
           } catch (e) {
+            console.error('saveToFirebase error:', e);
             UI.toast('Erreur sauvegarde', 'error');
             UI.setSyncStatus('error');
           }
@@ -3393,6 +3466,53 @@
           TimelineFloat.render();
           OfflineManager.save();
           UI.toast(`Timeout ${team === 'home' ? 'Nous' : 'Eux'}`);
+          this.showReport(team);
+        },
+        showReport(callingTeam) {
+          const sc = GameEngine.getScore();
+          // Run adverse récent (8 dernières actions scorantes)
+          const recent = State.scoreHistory.slice(-12);
+          let runHome = 0, runAway = 0;
+          if (recent.length >= 2) {
+            const first = recent[0], last = recent[recent.length - 1];
+            const hDiff = last.home - first.home, aDiff = last.away - first.away;
+            if (aDiff === 0 && hDiff > 0) runHome = hDiff;
+            if (hDiff === 0 && aDiff > 0) runAway = aDiff;
+          }
+          // Top scoreur sur ce QT
+          const q = State.match.quarter;
+          const qtPts = {};
+          State.actions.forEach(function(a) {
+            if ((a.q || 1) !== q) return;
+            const p = State.players[a.pid]; if (!p) return;
+            if (a.type === 'SHOT' && a.made) qtPts[a.pid] = (qtPts[a.pid] || 0) + a.val;
+            if (a.type === 'FT' && (a.ftMade||0) > 0) qtPts[a.pid] = (qtPts[a.pid] || 0) + a.ftMade;
+          });
+          const topScorerId = Object.keys(qtPts).sort(function(a,b){ return qtPts[b] - qtPts[a]; })[0];
+          const topScorer = topScorerId ? State.players[parseInt(topScorerId)] : null;
+          // FG% des 6 dernières tentatives maison
+          const last6 = State.actions.filter(function(a){ return a.type === 'SHOT' && State.players[a.pid] && State.players[a.pid].team === 'home'; }).slice(-6);
+          const l6Made = last6.filter(function(a){ return a.made; }).length;
+          const fgLast = last6.length > 0 ? Math.round(l6Made / last6.length * 100) : null;
+          // Rendu
+          const box = document.getElementById('toastTimeout');
+          if (!box) return;
+          let html = '<div style="font-weight:800;font-size:0.8rem;margin-bottom:8px;color:var(--text-1);">Bilan Timeout — ' + (callingTeam === 'home' ? 'Nous' : 'Eux') + '</div>';
+          html += '<div style="display:flex;justify-content:space-between;margin-bottom:6px;">';
+          html += '<div style="text-align:center;"><div style="font-size:1.1rem;font-weight:900;color:var(--home-color);">' + sc.home + '</div><div style="font-size:0.55rem;color:var(--text-muted);">NOUS</div></div>';
+          html += '<div style="font-size:1.1rem;font-weight:700;color:var(--text-muted);align-self:center;">-</div>';
+          html += '<div style="text-align:center;"><div style="font-size:1.1rem;font-weight:900;color:var(--away-color);">' + sc.away + '</div><div style="font-size:0.55rem;color:var(--text-muted);">EUX</div></div>';
+          html += '</div>';
+          if (runHome >= 6) html += '<div style="font-size:0.7rem;color:#4ade80;font-weight:700;margin-bottom:4px;">Run Nous ' + runHome + '-0 sur les dernieres actions</div>';
+          if (runAway >= 6) html += '<div style="font-size:0.7rem;color:#f87171;font-weight:700;margin-bottom:4px;">Run Eux ' + runAway + '-0 — repondre !</div>';
+          if (topScorer) html += '<div style="font-size:0.7rem;color:var(--text-secondary);margin-bottom:4px;">Top Q' + q + ' : #' + topScorer.number + ' ' + topScorer.name + ' (' + (qtPts[topScorer.id]||0) + ' pts)</div>';
+          if (fgLast !== null) html += '<div style="font-size:0.7rem;color:var(--text-muted);">FG% 6 dern. tentatives : <strong style="color:' + (fgLast >= 50 ? '#4ade80' : fgLast >= 33 ? 'var(--warning)' : '#f87171') + ';">' + fgLast + '%</strong></div>';
+          html += '<div style="font-size:0.6rem;color:var(--text-muted);margin-top:8px;text-align:right;">Tap pour fermer</div>';
+          box.innerHTML = html;
+          box.classList.add('show');
+          box.onclick = function(){ box.classList.remove('show'); };
+          clearTimeout(this._reportTimer);
+          this._reportTimer = setTimeout(function(){ box.classList.remove('show'); }, 8000);
         },
         renderDots() {
           const q = State.match.quarter;
@@ -3423,29 +3543,47 @@
         render() {
           const calc = (team) => {
             const players = Object.values(State.players).filter((p) => p.team === team);
-            let fgm = 0,
-              fga = 0,
-              reb = 0,
-              ast = 0,
-              tov = 0;
+            let fgm = 0, fga = 0, fg3m = 0, fg3a = 0, reb = 0, ast = 0, tov = 0, stl = 0;
             players.forEach((p) => {
-              fgm += p.stats.fgm + p.stats.fg3m;
-              fga += p.stats.fga + p.stats.fg3a;
+              fgm += p.stats.fgm; fg3m += p.stats.fg3m;
+              fga += p.stats.fga; fg3a += p.stats.fg3a;
               reb += p.stats.oreb + p.stats.dreb;
-              ast += p.stats.ast;
-              tov += p.stats.tov;
+              ast += p.stats.ast; tov += p.stats.tov; stl += p.stats.stl;
             });
-            const fgPct = fga > 0 ? Math.round((fgm / fga) * 100) : 0;
-            return { fgPct, reb, ast, tov };
+            const totalFgm = fgm + fg3m, totalFga = fga + fg3a;
+            const fgPct = totalFga > 0 ? Math.round((totalFgm / totalFga) * 100) : 0;
+            const fg3Pct = fg3a > 0 ? Math.round((fg3m / fg3a) * 100) : 0;
+            return { fgPct, fg3Pct, reb, ast, tov, stl };
           };
-          const h = calc('home'),
-            a = calc('away');
-          const mkVals = (d, cls) =>
-            `<div class="${cls} qs-vals"><span class="qs-val">${d.fgPct}%</span><span class="qs-val">${d.reb}</span><span class="qs-val">${d.ast}</span><span class="qs-val">${d.tov}</span></div>`;
-          const hEl = document.getElementById('qsHome'),
-            aEl = document.getElementById('qsAway');
-          if (hEl) hEl.outerHTML = mkVals(h, 'qs-home');
-          if (aEl) aEl.outerHTML = mkVals(a, 'qs-away');
+          const h = calc('home'), a = calc('away');
+          const STATS = [
+            { key: 'fgPct', lbl: 'FG%', fmt: function(v){ return v + '%'; } },
+            { key: 'fg3Pct', lbl: '3P%', fmt: function(v){ return v + '%'; } },
+            { key: 'reb',   lbl: 'REB', fmt: function(v){ return v; } },
+            { key: 'ast',   lbl: 'PD',  fmt: function(v){ return v; } },
+            { key: 'stl',   lbl: 'INT', fmt: function(v){ return v; } },
+            { key: 'tov',   lbl: 'BP',  fmt: function(v){ return v; } },
+          ];
+          const mkVals = function(d, side) {
+            return STATS.map(function(s) {
+              return '<div style="flex:1;text-align:center;padding:4px 2px;">' +
+                '<div style="font-size:0.75rem;font-weight:800;color:' + (side === 'home' ? 'var(--home-color)' : 'var(--away-color)') + ';">' + s.fmt(d[s.key]) + '</div>' +
+                '<div style="font-size:0.5rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;">' + s.lbl + '</div>' +
+                '</div>';
+            }).join('');
+          };
+          const hEl = document.getElementById('qsHome');
+          const aEl = document.getElementById('qsAway');
+          if (hEl) {
+            hEl.style.display = 'flex';
+            hEl.style.flex = '1';
+            hEl.innerHTML = mkVals(h, 'home');
+          }
+          if (aEl) {
+            aEl.style.display = 'flex';
+            aEl.style.flex = '1';
+            aEl.innerHTML = mkVals(a, 'away');
+          }
         },
       };
 
@@ -3558,12 +3696,41 @@
           const sc = GameEngine.getScore();
           document.getElementById('scH').textContent = sc.home;
           document.getElementById('scA').textContent = sc.away;
-          document.getElementById('qTag').textContent = 'Q' + State.match.quarter;
+          document.getElementById('qTag').textContent = State.match.quarter > 4 ? ('OT' + (State.match.quarter - 4)) : ('Q' + State.match.quarter);
           const m = Math.floor(State.match.time / 60),
             s = State.match.time % 60;
           const btn = document.getElementById('timerBtn');
           btn.textContent = `${m}:${s < 10 ? '0' + s : s}`;
           btn.classList.toggle('running', State.match.running);
+          this.updateQuarterScores();
+          LineupTracker.render();
+        },
+        updateQuarterScores() {
+          const band = document.getElementById('qscoreBand');
+          if (!band) return;
+          const maxQ = Math.max(4, State.match.quarter);
+          const qLabels = [];
+          for (let q = 1; q <= maxQ; q++) qLabels.push(q <= 4 ? 'Q' + q : 'OT' + (q - 4));
+          const qPts = {};
+          qLabels.forEach((_, i) => { qPts[i + 1] = { home: 0, away: 0 }; });
+          State.actions.forEach(function(a) {
+            const p = State.players[a.pid];
+            if (!p) return;
+            const q = a.q || 1;
+            if (!qPts[q]) qPts[q] = { home: 0, away: 0 };
+            if (a.type === 'SHOT' && a.made) qPts[q][p.team] += a.val;
+            if (a.type === 'FT' && (a.ftMade || 0) > 0) qPts[q][p.team] += a.ftMade;
+          });
+          band.innerHTML = qLabels.map(function(lbl, i) {
+            const q = i + 1;
+            const d = qPts[q] || { home: 0, away: 0 };
+            const isActive = q === State.match.quarter;
+            return `<div class="qscore-col${isActive ? ' active-q' : ''}">` +
+              `<div class="qscore-label">${lbl}</div>` +
+              `<div class="qscore-home">${d.home}</div>` +
+              `<div class="qscore-away">${d.away}</div>` +
+              `</div>`;
+          }).join('');
         },
         updateFoulsDisplay() {
           const q = State.match.quarter,
@@ -3609,10 +3776,18 @@
             if (m >= 8 && State.onCourt[p.team].includes(p.id)) return 'fatigue-high';
             return '';
           };
+          const getFoulClass = (p) => {
+            const f = p.stats.fouls;
+            const q = State.match.quarter;
+            if (f >= 4) return 'foul-danger';
+            if (f >= 3 && q <= 2) return 'foul-warn';
+            return '';
+          };
           const renderCard = (p) => {
             const sel = State.ui.sel === p.id ? 'active' : '',
               on = State.onCourt[p.team].includes(p.id) ? 'oncourt' : '',
               fat = getFatigue(p),
+              foulCls = getFoulClass(p),
               mins = Math.round(p.stats.min / 60);
             // B3 : badge statut blessure
             let statusBadge = '';
@@ -3626,7 +3801,7 @@
               statusBadge =
                 '<span style="position:absolute;top:3px;left:3px;width:8px;height:8px;border-radius:50%;background:#94a3b8;" title="Repos"></span>';
             }
-            return `<div class="p-card ${sel} ${on} ${fat}" data-pid="${p.id}" onpointerdown="SwipeManager.start(${p.id},event)" onpointermove="SwipeManager.move(${p.id},event)" onpointerup="SwipeManager.end(${p.id},event)">${statusBadge}<span class="p-num">${p.number}</span><span class="p-name">${p.name}</span><div class="p-stats"><span class="p-pts">${p.stats.pts}p</span><span class="p-time">${mins}'</span></div><div class="p-fls">${Array(Math.min(5, p.stats.fouls)).fill('<div class="f-dot"></div>').join('')}</div></div>`;
+            return `<div class="p-card ${sel} ${on} ${fat} ${foulCls}" data-pid="${p.id}" onpointerdown="SwipeManager.start(${p.id},event)" onpointermove="SwipeManager.move(${p.id},event)" onpointerup="SwipeManager.end(${p.id},event)">${statusBadge}<span class="p-num">${p.number}</span><span class="p-name">${p.name}</span><div class="p-stats"><span class="p-pts">${p.stats.pts}p</span><span class="p-time">${mins}'</span></div><div class="p-fls">${Array(Math.min(5, p.stats.fouls)).fill('<div class="f-dot"></div>').join('')}</div></div>`;
           };
           const sortRoster = (team) =>
             Object.values(State.players)
@@ -3963,6 +4138,180 @@
         },
         hideMsg() {
           document.getElementById('overlayMsg').classList.remove('show');
+        },
+      };
+
+      // ===== LINEUP +/- TRACKER =====
+      const LineupTracker = {
+        render() {
+          const el = document.getElementById('lineupPM');
+          if (!el) return;
+          // Trouver le dernier SUB ou le début du quart courant
+          let startIdx = 0;
+          const currentQ = State.match.quarter;
+          for (let i = State.actions.length - 1; i >= 0; i--) {
+            const a = State.actions[i];
+            if (a.type === 'SUB' && (a.q || 1) === currentQ) { startIdx = i + 1; break; }
+            if ((a.q || 1) < currentQ) { startIdx = i + 1; break; }
+          }
+          // Calculer le +/- home depuis startIdx
+          let pm = 0;
+          for (let i = startIdx; i < State.actions.length; i++) {
+            const a = State.actions[i];
+            const p = State.players[a.pid];
+            if (!p) continue;
+            if (a.type === 'SHOT' && a.made) pm += p.team === 'home' ? a.val : -a.val;
+            if (a.type === 'FT' && (a.ftMade||0) > 0) pm += p.team === 'home' ? a.ftMade : -a.ftMade;
+          }
+          if (State.actions.length === 0) { el.style.display = 'none'; return; }
+          el.style.display = 'inline-block';
+          if (pm > 0) {
+            el.textContent = '+' + pm;
+            el.style.background = 'rgba(34,197,94,0.2)';
+            el.style.color = '#4ade80';
+          } else if (pm < 0) {
+            el.textContent = '' + pm;
+            el.style.background = 'rgba(239,68,68,0.2)';
+            el.style.color = '#f87171';
+          } else {
+            el.textContent = '0';
+            el.style.background = 'rgba(100,116,139,0.2)';
+            el.style.color = '#94a3b8';
+          }
+        },
+      };
+
+      // ===== MATCH REPORT =====
+      const MatchReport = {
+        show() {
+          UI.closeModal();
+          const sc = GameEngine.getScore();
+          const homePlayers = Object.values(State.players).filter(function(p){ return p.team === 'home'; });
+          const awayPlayers = Object.values(State.players).filter(function(p){ return p.team === 'away'; });
+
+          // EFF = pts + reb + ast + stl + blk - tov - (fga - fgm) - (fta - ftm)
+          const eff = function(s) {
+            return s.pts + (s.oreb + s.dreb) + s.ast + s.stl + s.blk - s.tov
+              - ((s.fga + s.fg3a) - (s.fgm + s.fg3m)) - (s.fta - s.ftm);
+          };
+
+          // MVP
+          const mvp = homePlayers.slice().sort(function(a,b){ return eff(b.stats) - eff(a.stats); })[0];
+
+          // Top scorer adverse
+          const topAdv = awayPlayers.slice().sort(function(a,b){ return b.stats.pts - a.stats.pts; })[0];
+
+          // Runs résumé
+          const runs = [];
+          const recent = State.scoreHistory;
+          for (let i = 1; i < recent.length; i++) {
+            const prev = recent[i-1], cur = recent[i];
+            const hg = cur.home - prev.home, ag = cur.away - prev.away;
+            if (ag === 0 && hg >= 8) runs.push('Nous ' + hg + '-0');
+            if (hg === 0 && ag >= 8) runs.push('Eux ' + ag + '-0');
+          }
+
+          // Scores par QT
+          const maxQ = Math.max(4, State.match.quarter);
+          const qPts = {};
+          for (let q = 1; q <= maxQ; q++) qPts[q] = { home: 0, away: 0 };
+          State.actions.forEach(function(a) {
+            const p = State.players[a.pid]; if (!p) return;
+            const q = a.q || 1;
+            if (!qPts[q]) qPts[q] = { home: 0, away: 0 };
+            if (a.type === 'SHOT' && a.made) qPts[q][p.team] += a.val;
+            if (a.type === 'FT' && (a.ftMade||0) > 0) qPts[q][p.team] += a.ftMade;
+          });
+
+          const qLabels = [];
+          for (let q = 1; q <= maxQ; q++) qLabels.push(q <= 4 ? 'Q' + q : 'OT' + (q-4));
+
+          const fmtPct = function(m,a){ return a > 0 ? Math.round(m/a*100) + '%' : '--'; };
+
+          let html = '';
+
+          // Score final + QT
+          html += '<div class="report-section">';
+          html += '<div class="report-title">Score final — ' + State.match.date + ' vs ' + State.match.opponent + '</div>';
+          html += '<div style="display:flex;gap:6px;margin-bottom:10px;">';
+          qLabels.forEach(function(lbl, i) {
+            const q = i + 1, d = qPts[q] || {home:0,away:0};
+            html += '<div style="flex:1;text-align:center;background:var(--bg-4);border-radius:6px;padding:6px 4px;">' +
+              '<div style="font-size:0.55rem;color:var(--text-muted);font-weight:700;">' + lbl + '</div>' +
+              '<div style="font-size:0.9rem;font-weight:900;color:var(--home-color);">' + d.home + '</div>' +
+              '<div style="font-size:0.9rem;font-weight:900;color:var(--away-color);">' + d.away + '</div></div>';
+          });
+          html += '<div style="flex:1;text-align:center;background:var(--bg-3);border:1px solid var(--accent);border-radius:6px;padding:6px 4px;">' +
+            '<div style="font-size:0.55rem;color:var(--accent);font-weight:700;">TOTAL</div>' +
+            '<div style="font-size:0.9rem;font-weight:900;color:var(--home-color);">' + sc.home + '</div>' +
+            '<div style="font-size:0.9rem;font-weight:900;color:var(--away-color);">' + sc.away + '</div></div>';
+          html += '</div>';
+          html += (sc.home > sc.away
+            ? '<div style="text-align:center;font-size:0.75rem;color:#4ade80;font-weight:800;">VICTOIRE +' + (sc.home - sc.away) + '</div>'
+            : sc.away > sc.home
+              ? '<div style="text-align:center;font-size:0.75rem;color:#f87171;font-weight:800;">DEFAITE -' + (sc.away - sc.home) + '</div>'
+              : '<div style="text-align:center;font-size:0.75rem;color:var(--warning);font-weight:800;">EGALITE</div>');
+          html += '</div>';
+
+          // MVP
+          if (mvp) {
+            const s = mvp.stats, e = eff(s), fgm = s.fgm + s.fg3m, fga = s.fga + s.fg3a;
+            html += '<div class="report-section">';
+            html += '<div class="report-title">MVP du match</div>';
+            html += '<div style="display:flex;align-items:center;gap:12px;">';
+            html += '<div style="font-size:2rem;font-weight:900;color:var(--accent);">#' + mvp.number + '</div>';
+            html += '<div><div style="font-size:1rem;font-weight:800;">' + mvp.name + '</div>';
+            html += '<div style="font-size:0.7rem;color:var(--text-muted);">' + s.pts + ' pts — ' + (s.oreb+s.dreb) + ' reb — ' + s.ast + ' pd — ' + fmtPct(fgm, fga) + ' FG — EFF ' + (e>0?'+':'') + e + '</div></div>';
+            html += '</div></div>';
+          }
+
+          // Box score Nous
+          html += '<div class="report-section">';
+          html += '<div class="report-title">Box Score — Nous</div>';
+          html += '<table style="width:100%;border-collapse:collapse;font-size:0.65rem;">';
+          html += '<thead><tr style="color:var(--text-muted);border-bottom:1px solid var(--border);">' +
+            '<th style="text-align:left;padding:3px 4px;">Joueur</th><th>MIN</th><th>PTS</th><th>FG</th><th>3P</th><th>LF</th><th>REB</th><th>PD</th><th>BP</th><th>INT</th><th>+/-</th>' +
+            '</tr></thead><tbody>';
+          homePlayers.slice().sort(function(a,b){ return b.stats.pts - a.stats.pts; }).forEach(function(p) {
+            const s = p.stats, fgm = s.fgm+s.fg3m, fga = s.fga+s.fg3a;
+            const pm = s.plusMinus;
+            html += '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">' +
+              '<td style="padding:3px 4px;font-weight:700;">#' + p.number + ' ' + p.name.substring(0,8) + '</td>' +
+              '<td style="text-align:center;">' + Math.round(s.min/60) + '</td>' +
+              '<td style="text-align:center;font-weight:800;color:var(--text-1);">' + s.pts + '</td>' +
+              '<td style="text-align:center;">' + fmtPct(fgm,fga) + '</td>' +
+              '<td style="text-align:center;">' + fmtPct(s.fg3m,s.fg3a) + '</td>' +
+              '<td style="text-align:center;">' + fmtPct(s.ftm,s.fta) + '</td>' +
+              '<td style="text-align:center;">' + (s.oreb+s.dreb) + '</td>' +
+              '<td style="text-align:center;">' + s.ast + '</td>' +
+              '<td style="text-align:center;color:#f87171;">' + s.tov + '</td>' +
+              '<td style="text-align:center;">' + s.stl + '</td>' +
+              '<td style="text-align:center;color:' + (pm>0?'#4ade80':pm<0?'#f87171':'var(--text-muted)') + ';font-weight:800;">' + (pm>0?'+':'') + pm + '</td>' +
+              '</tr>';
+          });
+          html += '</tbody></table></div>';
+
+          // Runs
+          if (runs.length) {
+            html += '<div class="report-section"><div class="report-title">Runs du match (8-0 et +)</div>';
+            html += '<div style="display:flex;flex-wrap:wrap;gap:6px;">';
+            runs.forEach(function(r){ html += '<span style="background:var(--bg-4);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:0.7rem;font-weight:700;">' + r + '</span>'; });
+            html += '</div></div>';
+          }
+
+          // Top adverse
+          if (topAdv) {
+            const s = topAdv.stats, fgm = s.fgm+s.fg3m, fga = s.fga+s.fg3a;
+            html += '<div class="report-section"><div class="report-title">Meilleur marqueur adverse</div>';
+            html += '<div style="font-size:0.75rem;">#' + topAdv.number + ' ' + topAdv.name + ' — ' + s.pts + ' pts — ' + fmtPct(fgm,fga) + ' FG — ' + s.ast + ' pd</div>';
+            html += '</div>';
+          }
+
+          document.getElementById('matchReportBody').innerHTML = html;
+          document.getElementById('matchReport').classList.add('show');
+        },
+        hide() {
+          document.getElementById('matchReport').classList.remove('show');
         },
       };
 
