@@ -6,7 +6,7 @@
   'use strict';
 
   function getWk() {
-    return sessionStorage.getItem('statchamp_wk') || '';
+    return sessionStorage.getItem('statchamp_wk') || localStorage.getItem('statchamp_wk') || '';
   }
 
   function getDb() {

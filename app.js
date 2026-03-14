@@ -687,8 +687,8 @@ const calculateSpacingImpact = (games, playerId) => {
       }
     });
   });
-  const onEFG = onFGA >= 10 ? ((onFGM + 0.5 * on3PM) / onFGA) * 100 : 0;
-  const offEFG = offFGA >= 10 ? ((offFGM + 0.5 * off3PM) / offFGA) * 100 : 0;
+  const onEFG = onFGA >= 10 ? window.StatsEngine.eFG(onFGM, on3PM, onFGA) : 0;
+  const offEFG = offFGA >= 10 ? window.StatsEngine.eFG(offFGM, off3PM, offFGA) : 0;
   if (onFGA < 10 || offFGA < 10) return 0;
   return onEFG - offEFG;
 };
@@ -951,8 +951,8 @@ const calcOnOffImpact = (actions, playerId, homePlayers) => {
       if (a.astId === playerId && a.type === 'SHOT' && a.made) playerAst++;
     });
 
-    const poss = Math.max(fga + 0.44 * fta + tov - orb, 1);
-    const oppPoss = Math.max(oppFga + 0.44 * oppFta + oppTov - oppOrb, 1);
+    const poss = Math.max(window.StatsEngine.possSimple(fga, fta, tov, orb), 1);
+    const oppPoss = Math.max(window.StatsEngine.possSimple(oppFga, oppFta, oppTov, oppOrb), 1);
     const avgPoss = (poss + oppPoss) / 2 || 1;
 
     const ortg = Math.round((pts / avgPoss) * 100);
@@ -1586,7 +1586,8 @@ function MomentumChart({ scoreHistory, actions, players: matchPlayers }) {
   return (
     <div>
       <h4 className="text-sm text-blue-400 uppercase font-bold mb-2 flex items-center gap-2">
-        <span>&#128200;</span> Momentum
+        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+        Momentum
       </h4>
       {chartData.runs.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-2">
@@ -1662,8 +1663,14 @@ function MomentumChart({ scoreHistory, actions, players: matchPlayers }) {
         </ResponsiveContainer>
       </div>
       <div className="flex justify-between text-[10px] text-slate-500 mt-1 px-2">
-        <span className="text-blue-400">&#9650; Home mene</span>
-        <span className="text-red-400">&#9660; Adversaire mene</span>
+        <span className="text-blue-400 flex items-center gap-1">
+          <svg xmlns="http://www.w3.org/2000/svg" className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4l8 16H4L12 4z"/></svg>
+          Home mene
+        </span>
+        <span className="text-red-400 flex items-center gap-1">
+          Adversaire mene
+          <svg xmlns="http://www.w3.org/2000/svg" className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 20L4 4h16L12 20z"/></svg>
+        </span>
       </div>
     </div>
   );
@@ -1922,7 +1929,8 @@ function VideoPlayByPlay({ game, players }) {
     <div className="mt-4">
       <div className="flex items-center justify-between mb-3">
         <h4 className="text-sm text-purple-400 uppercase font-bold flex items-center gap-2">
-          <span>&#127909;</span> Play-by-Play {game.videoUrl ? '& Video' : ''}
+          <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          Play-by-Play {game.videoUrl ? '& Video' : ''}
         </h4>
         <div className="flex gap-2 items-center">
           <button
@@ -1981,7 +1989,7 @@ function VideoPlayByPlay({ game, players }) {
           </div>
           <button
             onClick={() => setActiveVideo(null)}
-            className="absolute top-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded hover:bg-black/90"
+            className="absolute top-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded hover:bg-black/90 cursor-pointer transition-colors duration-200"
           >
             Fermer
           </button>
@@ -1998,7 +2006,7 @@ function VideoPlayByPlay({ game, players }) {
             </span>
             <button
               onClick={() => setExportResult(null)}
-              className="text-[10px] text-slate-400 hover:text-white"
+              className="text-[10px] text-slate-400 hover:text-white cursor-pointer transition-colors duration-200"
             >
               Fermer
             </button>
@@ -2146,9 +2154,10 @@ function VideoPlayByPlay({ game, players }) {
               {link && !selectMode && (
                 <button
                   onClick={() => setActiveVideo({ seconds: tSec, actionId: a.id })}
-                  className="px-2 py-0.5 bg-purple-600/30 text-purple-300 rounded text-[10px] font-bold hover:bg-purple-600/50 transition-colors shrink-0"
+                  className="px-2 py-0.5 bg-purple-600/30 text-purple-300 rounded text-[10px] font-bold hover:bg-purple-600/50 transition-colors duration-200 shrink-0 flex items-center gap-1 cursor-pointer"
                 >
-                  &#9654; Video
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7L8 5z"/></svg>
+                  Video
                 </button>
               )}
             </div>
@@ -2212,7 +2221,8 @@ function VideoSettingsPanel({ game }) {
     <div className="mt-4">
       <Card className="p-4 border-l-4 border-purple-500">
         <h4 className="text-sm text-purple-400 uppercase font-bold mb-3 flex items-center gap-2">
-          <span>&#9881;</span> Config Video
+          <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          Config Video
         </h4>
         <div className="space-y-3">
           <div>
@@ -2412,11 +2422,8 @@ function GameDetailsModal({ game, isOpen, onClose, players, isAdmin }) {
         const MP = subMinutes && subMinutes[pid] !== undefined ? subMinutes[pid] : s.minutes || 0;
         const FGM = (s.fgm || 0) + (s.threePM || 0);
         const FGA = (s.fga || 0) + (s.threePA || 0);
-        const eFG = FGA > 0 ? ((FGM + 0.5 * (s.threePM || 0)) / FGA) * 100 : 0;
-        const TS =
-          FGA + 0.44 * (s.fta || 0) > 0
-            ? ((s.pts || 0) / (2 * (FGA + 0.44 * (s.fta || 0)))) * 100
-            : 0;
+        const eFG = window.StatsEngine.eFG(FGM, s.threePM || 0, FGA);
+        const TS = window.StatsEngine.TS(s.pts || 0, FGA, s.fta || 0);
 
         const gamePIEDenom =
           T_PTS +
@@ -2606,6 +2613,16 @@ function GameDetailsModal({ game, isOpen, onClose, players, isAdmin }) {
       }
       if (a.type === 'BLK' && a.victim && pStatsMap[String(a.victim)]) {
         pStatsMap[String(a.victim)].blkAgainst++;
+      }
+      if (pStatsMap[pid]) {
+        if (a.type === 'PAINT_TOUCH') pStatsMap[pid].paintTouch = (pStatsMap[pid].paintTouch || 0) + 1;
+        if (a.type === 'DEFLECTION') pStatsMap[pid].deflections = (pStatsMap[pid].deflections || 0) + 1;
+        if (a.type === 'BOXOUT') pStatsMap[pid].boxOuts = (pStatsMap[pid].boxOuts || 0) + 1;
+        if (a.type === 'BLOWBY') pStatsMap[pid].blowBys = (pStatsMap[pid].blowBys || 0) + 1;
+        if (a.type === 'TOV' && a.unforced) pStatsMap[pid].unforcedTov = (pStatsMap[pid].unforcedTov || 0) + 1;
+      }
+      if (a.type === 'SHOT' && a.made && a.hockeyAssistId && pStatsMap[String(a.hockeyAssistId)]) {
+        pStatsMap[String(a.hockeyAssistId)].hockeyAst = (pStatsMap[String(a.hockeyAssistId)].hockeyAst || 0) + 1;
       }
       if ((a.type === 'SHOT' && a.made) || (a.type === 'FT' && (a.ftMade || 0) > 0)) {
         const pts = a.type === 'SHOT' ? a.val : a.ftMade;
@@ -4689,14 +4706,21 @@ function App() {
     setPlayers(newPlayers);
     if (window.db && !isPlayerMode) window.DB.saveRoster(newPlayers);
   };
-  const performLogin = (token) => {
+  const performLogin = async (token) => {
+    const msgBuffer = new TextEncoder().encode(token.trim());
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
     setIsAdmin(true);
-    sessionStorage.setItem('statchamp_wk', token);
+    sessionStorage.setItem('statchamp_wk', hashHex);
+    localStorage.setItem('statchamp_wk', hashHex);
     localStorage.setItem('statchamp_admin', 'true');
     setView('live');
   };
   const performLogout = () => {
     setIsAdmin(false);
+    sessionStorage.removeItem('statchamp_wk');
+    localStorage.removeItem('statchamp_wk');
     localStorage.removeItem('statchamp_admin');
     setView('global_stats');
   };
@@ -4808,7 +4832,7 @@ function App() {
           className="fixed inset-0 bg-black/80 flex items-center justify-center p-4"
           style={{ zIndex: 10000 }}
         >
-          <div className="bg-slate-800 w-full max-w-2xl rounded-xl border border-slate-600 p-6">
+          <div className="w-full max-w-2xl rounded-[14px] p-6" style={{ background: 'var(--bg-3)', border: '1px solid var(--border-strong)', boxShadow: 'var(--shadow-modal)' }}>
             <h2 className="text-2xl font-bold text-white mb-4">Import</h2>
             <ImportReviewModal
               importData={importData}
@@ -4825,7 +4849,7 @@ function App() {
           className="fixed inset-0 bg-black/80 flex items-center justify-center p-4"
           style={{ zIndex: 10000 }}
         >
-          <div className="bg-slate-800 w-full max-w-2xl rounded-xl border border-slate-600 p-6">
+          <div className="w-full max-w-2xl rounded-[14px] p-6" style={{ background: 'var(--bg-3)', border: '1px solid var(--border-strong)', boxShadow: 'var(--shadow-modal)' }}>
             <h2 className="text-2xl font-bold text-white mb-2">
               Multi-Import ({multiImportQueue.length} restant
               {multiImportQueue.length > 1 ? 's' : ''})
@@ -4842,128 +4866,105 @@ function App() {
       )}
       <LoginModal isOpen={showLogin} onLogin={performLogin} onClose={() => setShowLogin(false)} />
       <nav
-        className="bg-slate-900 border-r border-slate-800 w-full md:w-20 flex md:flex-col items-center justify-between md:pt-6 p-2 shrink-0"
-        style={{ zIndex: 40 }}
+        style={{ background: 'var(--bg-1)', borderRight: '1px solid var(--border)', zIndex: 40 }}
+        className="w-full md:w-[68px] flex md:flex-col items-center justify-between md:py-5 px-2 md:px-0 shrink-0"
       >
-        <div className="flex md:flex-col items-center gap-2 md:gap-4 w-full justify-evenly md:justify-start">
-          <div className="mb-0 md:mb-4 p-2 bg-orange-600 rounded-xl text-white font-black text-xl cursor-default">
+        {/* Logo */}
+        <div className="flex md:flex-col items-center gap-1 md:gap-3 w-full justify-evenly md:justify-start md:px-3">
+          <div className="mb-0 md:mb-3 flex items-center justify-center w-9 h-9 rounded-[10px] text-white font-black text-sm tracking-tight cursor-default shrink-0" style={{ background: 'var(--accent)', boxShadow: 'var(--shadow-accent)' }}>
             BP
           </div>
-          <button
-            onClick={() => setView('global_stats')}
-            className={`p-3 rounded-xl transition-all ${view === 'global_stats' ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`}
-            title="Stats"
-          >
+
+          {/* Stats */}
+          <button onClick={() => setView('global_stats')} className={`sc-nav-item w-full ${view === 'global_stats' ? 'active' : ''}`} title="Stats">
             <Icon path={Icons.Chart} />
+            <span className="sc-nav-item__label hidden md:block">Stats</span>
           </button>
+
+          {/* Live */}
           {isAdmin && (
-            <button
-              onClick={() => (window.location.href = 'live.html')}
-              className="p-3 rounded-xl transition-all text-slate-500 hover:text-orange-500 hover:bg-slate-800 relative"
-              title="Live Tracker"
-            >
+            <button onClick={() => (window.location.href = 'live.html')} className="sc-nav-item w-full relative" title="Live Tracker">
               <Icon path={Icons.Play} />
+              <span className="sc-nav-item__label hidden md:block">Live</span>
               {(() => {
                 const ts = parseInt(localStorage.getItem('liveMatchActive') || '0');
                 const isActive = ts > 0 && Date.now() - ts < 7200000;
                 return isActive ? (
-                  <span
-                    style={{
-                      position: 'absolute',
-                      top: '6px',
-                      right: '6px',
-                      width: '8px',
-                      height: '8px',
-                      borderRadius: '50%',
-                      background: '#ef4444',
-                      animation: 'livePulse 1.5s ease-in-out infinite',
-                    }}
-                  />
+                  <span style={{ position: 'absolute', top: '8px', right: '10px', width: '7px', height: '7px', borderRadius: '50%', background: 'var(--miss)', animation: 'livePulse 1.5s ease-in-out infinite' }} />
                 ) : null;
               })()}
             </button>
           )}
-          <button
-            onClick={() => setView('history')}
-            className={`p-3 rounded-xl transition-all ${view === 'history' ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`}
-            title="Historique"
-          >
+
+          {/* Historique */}
+          <button onClick={() => setView('history')} className={`sc-nav-item w-full ${view === 'history' ? 'active' : ''}`} title="Historique">
             <Icon path={Icons.Clipboard} />
+            <span className="sc-nav-item__label hidden md:block">Matchs</span>
           </button>
+
+          {/* Scouting Report */}
           {isAdmin && (
             <button
               onClick={() => {
                 if (window.PlayerReportModule) {
                   setShowReport(true);
                 } else {
-                  alert(
-                    "ERREUR : Le fichier reportPlayer.js n'est pas chargé.\nVérifiez qu'il est bien présent dans le dossier et déclaré dans index.html AVANT app.js."
-                  );
+                  alert("ERREUR : Le fichier reportPlayer.js n'est pas chargé.");
                   console.error('window.PlayerReportModule is undefined');
                 }
               }}
-              className={`p-3 rounded-xl transition-all ${showReport ? 'bg-orange-500 text-white shadow-lg' : 'text-indigo-400 hover:bg-slate-800'}`}
+              className={`sc-nav-item w-full ${showReport ? 'active' : ''}`}
               title="Scouting Report"
             >
               <Icon path={Icons.Target} />
+              <span className="sc-nav-item__label hidden md:block">Scout</span>
             </button>
-          )}{' '}
-          <button
-            onClick={() => {
-              setView('season');
-              setPrepOpponent(null);
-            }}
-            className={`p-3 rounded-xl transition-all ${view === 'season' ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`}
-            title="Saison"
-          >
+          )}
+
+          {/* Saison */}
+          <button onClick={() => { setView('season'); setPrepOpponent(null); }} className={`sc-nav-item w-full ${view === 'season' ? 'active' : ''}`} title="Saison">
             <Icon path={Icons.TrendingUp} />
+            <span className="sc-nav-item__label hidden md:block">Saison</span>
           </button>
-          <button
-            onClick={() => {
-              setView('scouting');
-              setPrepOpponent(null);
-            }}
-            className={`p-3 rounded-xl transition-all ${view === 'scouting' ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`}
-            title="Scouting"
-          >
+
+          {/* Scouting adversaire */}
+          <button onClick={() => { setView('scouting'); setPrepOpponent(null); }} className={`sc-nav-item w-full ${view === 'scouting' ? 'active' : ''}`} title="Scouting">
             <Icon path={Icons.Target} />
+            <span className="sc-nav-item__label hidden md:block">Adv.</span>
           </button>
+
+          {/* Settings */}
           {isAdmin && (
-            <button
-              onClick={() => setView('settings')}
-              className={`p-3 rounded-xl transition-all ${view === 'settings' ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`}
-              title="Config"
-            >
+            <button onClick={() => setView('settings')} className={`sc-nav-item w-full ${view === 'settings' ? 'active' : ''}`} title="Config">
               <Icon path={Icons.Settings} />
-            </button>
-          )}{' '}
-        </div>
-        <div className="mt-auto hidden md:block pb-4">
-          {isAdmin ? (
-            <button
-              onClick={performLogout}
-              className="p-3 text-red-500 hover:bg-slate-800 rounded-xl"
-              title="Deconnexion"
-            >
-              <Icon path={Icons.Users} />
-            </button>
-          ) : (
-            <button
-              onClick={() => setShowLogin(true)}
-              className="p-3 text-slate-600 hover:text-white hover:bg-slate-800 rounded-xl"
-              title="Connexion"
-            >
-              <Icon path={Icons.Users} />
+              <span className="sc-nav-item__label hidden md:block">Config</span>
             </button>
           )}
         </div>
+
+        {/* Auth — desktop */}
+        <div className="mt-auto hidden md:flex flex-col items-center pb-3 px-3 w-full">
+          {isAdmin ? (
+            <button onClick={performLogout} className="sc-nav-item w-full" style={{ color: 'var(--miss)' }} title="Déconnexion">
+              <Icon path={Icons.Users} />
+              <span className="sc-nav-item__label hidden md:block">Quit</span>
+            </button>
+          ) : (
+            <button onClick={() => setShowLogin(true)} className="sc-nav-item w-full" title="Connexion">
+              <Icon path={Icons.Users} />
+              <span className="sc-nav-item__label hidden md:block">Login</span>
+            </button>
+          )}
+        </div>
+
+        {/* Auth — mobile */}
         <div className="md:hidden">
           {isAdmin ? (
-            <button onClick={performLogout} className="p-3 text-red-500">
+            <button onClick={performLogout} className="sc-nav-item" style={{ color: 'var(--miss)' }}>
               <Icon path={Icons.Users} />
             </button>
           ) : (
-            <button onClick={() => setShowLogin(true)} className="p-3 text-slate-600">
+            <button onClick={() => setShowLogin(true)} className="sc-nav-item">
               <Icon path={Icons.Users} />
             </button>
           )}
@@ -4971,8 +4972,8 @@ function App() {
       </nav>
       <main className="flex-1 flex flex-col h-full overflow-hidden relative">
         <header
-          className="h-16 bg-slate-900 border-b border-slate-800 flex items-center px-6 shrink-0"
-          style={{ zIndex: 30 }}
+          className="h-14 flex items-center px-6 shrink-0"
+          style={{ background: 'var(--bg-1)', borderBottom: '1px solid var(--border)', zIndex: 30 }}
         >
           <h1 className="font-bold text-lg text-white">
             {view === 'live' && 'Live'}

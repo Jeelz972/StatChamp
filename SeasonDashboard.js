@@ -66,7 +66,7 @@
           });
         });
         const n = fg.length;
-        const eFG = fga > 0 ? ((fgm + 0.5 * tpm) / fga) * 100 : 0;
+        const eFG = window.StatsEngine.eFG(fgm, tpm, fga);
         return {
           gp: n,
           wins,
@@ -232,9 +232,8 @@
           tov += s.tov || 0;
           fta += s.fta || 0;
         });
-        const eFG = fga > 0 ? ((fgm + 0.5 * threePM) / fga) * 100 : 0;
-        const poss = fga + 0.44 * fta + tov;
-        const tovPct = poss > 0 ? (tov / poss) * 100 : 0;
+        const eFG = window.StatsEngine.eFG(fgm, threePM, fga);
+        const tovPct = window.StatsEngine.tovPct(tov, fga, fta);
         return {
           label: g.opponent ? `vs ${g.opponent}` : `M${i + 1}`,
           date: g.date,

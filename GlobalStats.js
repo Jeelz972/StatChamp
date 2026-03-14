@@ -83,7 +83,8 @@ function VolumeEfficiencyMatrix({ players }) {
   return (
     <div className="space-y-3">
       <h4 className="text-xs text-slate-400 uppercase font-bold flex items-center gap-2">
-        <span className="text-orange-500">🎯</span> Volume vs Efficacité (TS%)
+        <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+        Volume vs Efficacité (TS%)
       </h4>
       <div className="flex flex-wrap gap-3 mb-2">
         {positions.map((pos) => (
@@ -1152,10 +1153,7 @@ function GlobalStats({ players, games, phases, isAdmin }) {
             TS: parseFloat(window.StatsEngine.TS(s.pts || 0, playerFGA, s.fta || 0).toFixed(1)),
             PIE: parseFloat(playerPIE.toFixed(1)),
             ORtg: parseFloat(
-              (playerFGA + 0.44 * (s.fta || 0) + (s.tov || 0) > 0
-                ? ((s.pts || 0) / (playerFGA + 0.44 * (s.fta || 0) + (s.tov || 0))) * 100
-                : 0
-              ).toFixed(1)
+              window.StatsEngine.safe(s.pts || 0, window.StatsEngine.possSimple(playerFGA, s.fta || 0, s.tov || 0, 0), 100).toFixed(1)
             ),
             DRtg: parseFloat(teamDRtg_Game.toFixed(1)),
           });
@@ -1250,6 +1248,37 @@ function GlobalStats({ players, games, phases, isAdmin }) {
       };
     });
   }, [players, filteredGames]);
+
+  // F4 + F1 + F2 : enrichissement post-agrégation (streak, WOBA, APM)
+  const aggregatedEnriched = useMemo(() => {
+    if (!aggregated || aggregated.length === 0) return aggregated;
+    const teamAvgPM    = aggregated.reduce((s, p) => s + parseFloat(p.avg.plusMinus || 0), 0) / aggregated.length;
+    const teamMinTotal = aggregated.reduce((s, p) => s + parseFloat(p.avg.min || 0) * (p.gamesPlayed || 1), 0);
+    return aggregated.map((p) => {
+      const t          = p.total;
+      const totalFGA   = t.fga + t.threePA;
+      const totalFGM   = t.fgm + t.threePM;
+      const woba       = window.StatsEngine.woba(t.pts, t.ast, t.oreb, t.tov, totalFGA, totalFGM, t.fta, t.ftm);
+      const adjPM      = window.StatsEngine.adjustedPlusMinus(
+        parseFloat(p.avg.plusMinus || 0),
+        parseFloat(p.avg.min || 0) * (p.gamesPlayed || 1),
+        teamAvgPM,
+        teamMinTotal
+      );
+      const streak     = window.StatsEngine.hotColdStreak(
+        (p.logs || []).slice().sort((a, b) => window.parseDate(b.date) - window.parseDate(a.date))
+      );
+      return {
+        ...p,
+        streak,
+        avg: {
+          ...p.avg,
+          woba:  parseFloat(woba.toFixed(3)),
+          adjPM: parseFloat(adjPM.toFixed(1)),
+        },
+      };
+    });
+  }, [aggregated]);
 
   const combosData = useMemo(() => {
     const MIN_POSS = 10;
@@ -1421,7 +1450,7 @@ function GlobalStats({ players, games, phases, isAdmin }) {
 
         {activeTab === 'players' &&
           (() => {
-            const filtered = aggregated.filter((p) => {
+            const filtered = aggregatedEnriched.filter((p) => {
               const matchName = p.info.name.toLowerCase().includes(searchFilter.toLowerCase());
               const matchPos = posFilter === 'all' || p.info.pos === posFilter;
               return matchName && matchPos;
@@ -1467,6 +1496,8 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                 'BP',
                 '+/-',
                 'EVAL',
+                'WOBA',
+                'APM',
               ];
               const rows = sorted.map((p) => [
                 p.info.name,
@@ -1483,6 +1514,8 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                 p.avg.tov,
                 p.avg.plusMinus,
                 p.avg.eff,
+                p.avg.woba != null ? p.avg.woba.toFixed(3) : '',
+                p.avg.adjPM != null ? p.avg.adjPM.toFixed(1) : '',
               ]);
               const csv = [headers, ...rows].map((r) => r.join(';')).join('\n');
               const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
@@ -1627,6 +1660,20 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                           +/-{arrow('plusMinus')}
                         </th>
                         <th
+                          className={`p-3 text-center text-violet-400 font-bold ${thStyle}`}
+                          onClick={() => handleSort('adjPM')}
+                          title="Adjusted Plus/Minus — +/- ajusté par volume de minutes (régression bayésienne)"
+                        >
+                          APM{arrow('adjPM')}
+                        </th>
+                        <th
+                          className={`p-3 text-center text-cyan-400 font-bold ${thStyle}`}
+                          onClick={() => handleSort('woba')}
+                          title="WOBA Basketball — valeur offensive nette par possession. Repères : >0.45 élite · 0.30-0.40 correct · <0.25 faible"
+                        >
+                          WOBA{arrow('woba')}
+                        </th>
+                        <th
                           className="p-3 text-center text-slate-500 text-[10px]"
                           style={{ minWidth: '70px' }}
                         >
@@ -1697,8 +1744,21 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                             {parseFloat(p.avg.plusMinus) > 0 ? '+' : ''}
                             {p.avg.plusMinus}
                           </td>
+                          <td className={`p-3 text-center font-bold text-xs ${parseFloat(p.avg.adjPM) > 1 ? 'text-violet-400' : parseFloat(p.avg.adjPM) < -1 ? 'text-red-400' : 'text-slate-400'}`}>
+                            {parseFloat(p.avg.adjPM) > 0 ? '+' : ''}{p.avg.adjPM}
+                          </td>
+                          <td className={`p-3 text-center font-bold text-xs ${parseFloat(p.avg.woba) >= 0.45 ? 'text-cyan-400' : parseFloat(p.avg.woba) >= 0.30 ? 'text-white' : 'text-slate-500'}`}>
+                            {parseFloat(p.avg.woba).toFixed(3)}
+                          </td>
                           <td className="p-3 text-center">
-                            <Sparkline logs={p.logs} />
+                            <div className="flex flex-col items-center gap-0.5">
+                              <Sparkline logs={p.logs} />
+                              {p.streak && p.streak.status !== 'steady' && (
+                                <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${p.streak.status === 'hot' ? 'bg-orange-900/50 text-orange-400 border border-orange-700/50' : 'bg-blue-900/50 text-blue-400 border border-blue-700/50'}`}>
+                                  {p.streak.status === 'hot' ? 'EN FORME' : 'CREUX'}
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="p-3 text-center font-bold text-green-400">{p.avg.eff}</td>
                         </tr>
@@ -1940,33 +2000,19 @@ function GlobalStats({ players, games, phases, isAdmin }) {
 
             <div className="space-y-3">
               <h4 className="text-sm text-slate-400 uppercase font-bold flex items-center gap-2">
-                <span className="text-yellow-400">🏆</span> Records de la Saison
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/></svg>
+                Records de la Saison
               </h4>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {[
-                  { key: 'pir', label: 'PIR', icon: '💎', color: 'from-orange-500 to-red-600' },
-                  { key: 'pts', label: 'Points', icon: '🔥', color: 'from-orange-500 to-red-600' },
-                  { key: 'reb', label: 'Rebonds', icon: '💪', color: 'from-blue-500 to-cyan-600' },
-                  { key: 'ast', label: 'Passes', icon: '🎯', color: 'from-purple-500 to-pink-600' },
-                  {
-                    key: 'stl',
-                    label: 'Interceptions',
-                    icon: '⚡',
-                    color: 'from-yellow-500 to-orange-600',
-                  },
-                  { key: 'blk', label: 'Contres', icon: '🛡️', color: 'from-red-500 to-rose-600' },
-                  {
-                    key: 'min',
-                    label: 'Minutes',
-                    icon: '⏱️',
-                    color: 'from-slate-500 to-slate-700',
-                  },
-                  {
-                    key: 'plusMinus',
-                    label: '+/-',
-                    icon: '📈',
-                    color: 'from-green-500 to-emerald-600',
-                  },
+                  { key: 'pir', label: 'PIR', icon: <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/></svg>, color: 'from-orange-500 to-red-600' },
+                  { key: 'pts', label: 'Points', icon: <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"/><path strokeLinecap="round" strokeLinejoin="round" d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z"/></svg>, color: 'from-orange-500 to-red-600' },
+                  { key: 'reb', label: 'Rebonds', icon: <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>, color: 'from-blue-500 to-cyan-600' },
+                  { key: 'ast', label: 'Passes', icon: <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>, color: 'from-purple-500 to-pink-600' },
+                  { key: 'stl', label: 'Interceptions', icon: <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>, color: 'from-yellow-500 to-orange-600' },
+                  { key: 'blk', label: 'Contres', icon: <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>, color: 'from-red-500 to-rose-600' },
+                  { key: 'min', label: 'Minutes', icon: <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>, color: 'from-slate-500 to-slate-700' },
+                  { key: 'plusMinus', label: '+/-', icon: <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>, color: 'from-green-500 to-emerald-600' },
                 ].map((item) => (
                   <div
                     key={item.key}
@@ -1974,7 +2020,7 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                   >
                     <div className="bg-slate-900 rounded-xl p-3 h-full">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-lg">{item.icon}</span>
+                        <span className="opacity-80">{item.icon}</span>
                         <span className="text-[10px] text-slate-400 uppercase tracking-wider">
                           {item.label}
                         </span>

@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Fira+Code:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
 
@@ -35,37 +35,45 @@
           extend: {
             fontFamily: {
               sans: ['Inter', 'sans-serif'],
+              mono: ['Fira Code', 'monospace'],
             },
             colors: {
               slate: {
-                50: '#F4F4F5',
-                100: '#E4E4E7',
-                200: '#D4D4D8',
-                300: '#A1A1AA',
-                400: '#71717A',
-                500: '#52525B',
-                600: '#3F3F46',
-                700: '#252530',
-                800: '#1C1C28',
-                900: '#161620',
-                950: '#0C0C12',
+                50:  '#F4F4F6',
+                100: '#E2E2EA',
+                200: '#C4C4D4',
+                300: '#94A3B8',
+                400: '#6B7280',
+                500: '#475569',
+                600: '#334155',
+                700: '#222234',
+                800: '#1A1A2A',
+                900: '#0D0D18',
+                950: '#060609',
               },
               orange: {
-                50: '#FFF7ED',
+                50:  '#FFF7ED',
                 100: '#FFEDD5',
                 200: '#FED7AA',
                 300: '#FDBA74',
-                400: '#FF8C5A',
-                500: '#FF6B35',
-                600: '#E05520',
+                400: '#FB923C',
+                500: '#F97316',
+                600: '#EA580C',
                 700: '#C2410C',
                 800: '#9A3412',
                 900: '#7C2D12',
                 950: '#431407',
               },
-              'court-orange': '#FF6B35',
-              'coach-dark': '#161620',
-              'coach-accent': '#FF6B35',
+              indigo: {
+                300: '#A5B4FC',
+                400: '#818CF8',
+                500: '#6366F1',
+                600: '#4F46E5',
+                700: '#4338CA',
+              },
+              'court-orange': '#F97316',
+              'coach-dark':   '#0D0D18',
+              'coach-accent': '#F97316',
             },
           },
         },
@@ -87,17 +95,17 @@
           document.body.appendChild(s);
         };
         try {
-          await loadJS('stats-engine.js', false);
+          await loadJS('stat-engine.js', false);
           await loadJS('PlayByPlayEditor.js', true);
           await loadJS('ShotChart.js', true);
           await loadJS('AssistNetwork.js', true);
+          await loadJS('nba-profiles.js', true);
           await loadJS('ReportPlayer.js', true);
           await loadJS('RotationChart.js', true);
           await loadJS('GlobalStats.js', true);
           await loadJS('SeasonDashboard.js', true);
           await loadJS('OpponentScouting.js', true);
           await loadJS('GamePrep.js', true);
-          await loadJS('nba-profiles.js', true);
           await loadJS('db-layer.js', false);
           await loadJS('app.js', true);
         } catch (err) {

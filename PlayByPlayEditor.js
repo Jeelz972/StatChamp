@@ -27,6 +27,10 @@
     { value: 'SUB', label: 'Changement' },
     { value: 'TIMEOUT', label: 'Timeout' },
     { value: 'STOPPAGE', label: 'Arrêt Chrono' },
+    { value: 'PAINT_TOUCH', label: 'Paint Touch' },
+    { value: 'DEFLECTION', label: 'Déviation' },
+    { value: 'BOXOUT', label: 'Box-out' },
+    { value: 'BLOWBY', label: 'Battu 1c1' },
   ];
 
   const FOUL_TYPES = [
@@ -149,6 +153,12 @@
       foulDrawn: 0,
       blkAgainst: 0,
       foulDetails: { PERSONAL: 0, OFFENSIVE: 0, TECHNICAL: 0, UNSPORTSMANLIKE: 0 },
+      hockeyAst: 0,
+      paintTouch: 0,
+      deflections: 0,
+      boxOuts: 0,
+      blowBys: 0,
+      unforcedTov: 0,
     };
   }
 
@@ -468,6 +478,19 @@
           ptsConceded = val;
         }
       }
+      // Nouvelles stats (home et opp)
+      if (ps) {
+        if (type === 'PAINT_TOUCH') ps.paintTouch = (ps.paintTouch || 0) + 1;
+        if (type === 'DEFLECTION') ps.deflections = (ps.deflections || 0) + 1;
+        if (type === 'BOXOUT') ps.boxOuts = (ps.boxOuts || 0) + 1;
+        if (type === 'BLOWBY') ps.blowBys = (ps.blowBys || 0) + 1;
+        if (type === 'TOV' && act.unforced) ps.unforcedTov = (ps.unforcedTov || 0) + 1;
+      }
+      if (type === 'SHOT' && act.made && act.hockeyAssistId) {
+        const hPid = isOpponent(act.hockeyAssistId) ? act.hockeyAssistId : parseInt(act.hockeyAssistId);
+        if (pStats[hPid]) pStats[hPid].hockeyAst = (pStats[hPid].hockeyAst || 0) + 1;
+      }
+
       const delta = ptsScored - ptsConceded;
       if (delta !== 0 && act.onCourt?.length) {
         act.onCourt.forEach((id) => {
@@ -604,6 +627,15 @@
   }
 
   // ========================================================
+  // UTILS
+  // ========================================================
+  function formatTime(time) {
+    var m = Math.floor((time || 0) / 60);
+    var s = (time || 0) % 60;
+    return m + ':' + s.toString().padStart(2, '0');
+  }
+
+  // ========================================================
   // UI COMPONENTS
   // ========================================================
   function ZoneSelector({ onSelect, onCancel }) {
@@ -714,8 +746,8 @@
               >
                 Export
               </button>
-              <button className="text-slate-400 hover:text-white" onClick={onClose}>
-                X
+              <button className="text-slate-400 hover:text-white cursor-pointer transition-colors duration-200 p-1 rounded" onClick={onClose}>
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
               </button>
             </div>
           </div>
@@ -823,8 +855,8 @@
         <div className="bg-slate-800 rounded-xl p-5 border border-slate-600 max-w-2xl w-full mx-4 flex flex-col max-h-[90vh]">
           <div className="flex justify-between items-center mb-4 border-b border-slate-700 pb-2">
             <h3 className="text-white font-bold text-lg">Modifier les 5 de Depart</h3>
-            <button className="text-slate-400 hover:text-white text-xl" onClick={onClose}>
-              X
+            <button className="text-slate-400 hover:text-white cursor-pointer transition-colors duration-200 p-1 rounded" onClick={onClose}>
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
             </button>
           </div>
           <div className="flex gap-2 mb-4 bg-slate-900 p-1 rounded">
@@ -1249,6 +1281,474 @@
   }
 
   // ========================================================
+  // ACTION CARD
+  // ========================================================
+  function ActionCard({ action, playerMap, onEdit, onDelete }) {
+    var pid = action.pid != null ? action.pid : action.playerId;
+    var isOpp = isOpponent(pid);
+    var p = playerMap[pid];
+    var icon = '•', label = action.type, bgClass = 'bg-slate-900/50', borderClass = 'border-l-slate-500';
+    if (action.type === 'SHOT') {
+      icon = action.made ? '✓' : '✗';
+      label = action.val + 'pts ' + (action.made ? 'Réussi' : 'Raté');
+      bgClass = action.made ? 'bg-green-950/30' : 'bg-red-950/20';
+      borderClass = action.made ? 'border-l-green-500' : 'border-l-red-500';
+    }
+    if (action.type === 'FT') { icon = '🎯'; label = 'LF ' + (action.ftMade || 0) + '/' + (action.ftAtt || 0); }
+    if (action.type === 'SUB') {
+      icon = '🔁';
+      var outP = playerMap[action.subOut];
+      label = 'IN ← OUT ' + (outP ? '#' + outP.number : '?');
+      bgClass = 'bg-cyan-950/20'; borderClass = 'border-l-cyan-500';
+    }
+    if (action.type === 'FOUL') {
+      icon = action.foulType === 'TECHNICAL' ? '🟡' : action.foulType === 'UNSPORTSMANLIKE' ? '🟥' : '🚨';
+      label = (action.foulType || 'PERSONAL').toLowerCase();
+      bgClass = 'bg-orange-950/20'; borderClass = 'border-l-orange-500';
+    }
+    if (action.type === 'TOV') { icon = '💨'; label = action.unforced ? 'Perte NF' : 'Perte'; }
+    if (action.type === 'OREB') { icon = '🔄'; label = 'Reb Off'; }
+    if (action.type === 'DREB') { icon = '🛡️'; label = 'Reb Def'; }
+    if (action.type === 'STL') { icon = '⚡'; label = 'Interception' + (action.victim && playerMap[action.victim] ? ' / perte #' + playerMap[action.victim].number : ''); }
+    if (action.type === 'BLK') { icon = '✋'; label = 'Contre'; }
+    if (action.type === 'TIMEOUT') {
+      icon = '⏸'; label = 'Timeout ' + (action.team === 'home' ? 'Nous' : 'Eux');
+      bgClass = 'bg-indigo-950/30'; borderClass = 'border-l-indigo-500';
+    }
+    if (action.type === 'STOPPAGE') {
+      icon = '⏱'; label = 'Arrêt ' + (action.duration || 0) + 's';
+      bgClass = 'bg-slate-800/50'; borderClass = 'border-l-slate-400';
+    }
+    if (action.type === 'PAINT_TOUCH') { icon = '🎨'; label = 'Paint Touch'; }
+    if (action.type === 'DEFLECTION') { icon = '👋'; label = 'Déviation'; }
+    if (action.type === 'BOXOUT') { icon = '🧱'; label = 'Box-out'; }
+    if (action.type === 'BLOWBY') { icon = '💨'; label = 'Battu 1c1'; bgClass = 'bg-red-950/20'; }
+    return (
+      <div className={'flex items-center gap-2 px-3 py-2 rounded border-l-2 mb-0.5 group cursor-pointer hover:bg-slate-800 transition-colors ' + bgClass + ' ' + borderClass}
+        onClick={() => onEdit(action)}>
+        <span className="text-slate-500 font-mono text-[10px] w-14 shrink-0">
+          {'Q' + (action.q || 1) + ' ' + formatTime(action.time)}
+        </span>
+        <span className="text-sm w-5 text-center">{icon}</span>
+        <span className={'font-bold text-xs shrink-0 w-16 truncate ' + (isOpp ? 'text-red-400' : 'text-blue-400')}>
+          {p ? '#' + p.number : ''}
+        </span>
+        <span className="text-slate-300 text-xs flex-1 truncate">
+          {label}
+          {action.type === 'SHOT' && action.shotQuality && (
+            <span className={'ml-1 text-[9px] font-bold px-1 rounded border ' +
+              (action.shotQuality === 'open' ? 'text-green-400 border-green-700' :
+               action.shotQuality === 'forced' ? 'text-red-400 border-red-700' :
+               'text-yellow-400 border-yellow-700')}>
+              {action.shotQuality === 'open' ? 'O' : action.shotQuality === 'forced' ? 'F' : 'C'}
+            </span>
+          )}
+          {action.type === 'SHOT' && action.made && action.astId && playerMap[action.astId] && (
+            <span className="text-purple-400 text-[9px] ml-1">ast #{playerMap[action.astId].number}</span>
+          )}
+          {action.type === 'SHOT' && action.hockeyAssistId && playerMap[action.hockeyAssistId] && (
+            <span className="text-teal-400 text-[9px] ml-1">🏒#{playerMap[action.hockeyAssistId].number}</span>
+          )}
+          {action.type === 'FOUL' && action.foulType === 'TECHNICAL' && action.ftShooterId && playerMap[action.ftShooterId] && (
+            <span className="text-yellow-400 text-[9px] ml-1">LF:#{playerMap[action.ftShooterId].number}</span>
+          )}
+          {action.play && (
+            <span className="text-slate-600 text-[9px] ml-1">📋{action.play}</span>
+          )}
+        </span>
+        <button className="opacity-0 group-hover:opacity-100 text-red-400 text-xs px-1 transition-opacity"
+          onClick={(e) => { e.stopPropagation(); onDelete(action.id); }}>
+          ✕
+        </button>
+      </div>
+    );
+  }
+
+  // ========================================================
+  // QUARTER SEPARATOR
+  // ========================================================
+  function QuarterSeparator({ quarter, homeScore, awayScore }) {
+    return (
+      <div className="flex items-center gap-3 py-2 px-3 my-1">
+        <div className="flex-1 h-px bg-slate-700"></div>
+        <span className="text-orange-400 font-bold text-xs uppercase tracking-wider">
+          {quarter <= 4 ? 'Q' + quarter : 'OT' + (quarter - 4)}
+        </span>
+        <span className="text-slate-400 text-[10px] font-mono">
+          {homeScore + ' - ' + awayScore}
+        </span>
+        <div className="flex-1 h-px bg-slate-700"></div>
+      </div>
+    );
+  }
+
+  // ========================================================
+  // FILTER BAR
+  // ========================================================
+  function FilterBar({ quarters, players, filterQ, filterPid, filterType, filterPlay, playOptions, onFilterQ, onFilterPid, onFilterType, onFilterPlay, onReset, onAdd }) {
+    var hasFilter = filterQ > 0 || filterPid !== 'all' || filterType !== 'all' || filterPlay !== 'all';
+    return (
+      <div className="bg-slate-900 border-b border-slate-700 px-3 py-2 flex items-center gap-2 overflow-x-auto shrink-0"
+        style={{ WebkitOverflowScrolling: 'touch' }}>
+        <button onClick={() => onFilterQ(0)}
+          className={'px-2 py-1 rounded text-[10px] font-bold border shrink-0 ' + (filterQ === 0 ? 'bg-orange-500 border-orange-500 text-white' : 'border-slate-600 text-slate-400')}>
+          All
+        </button>
+        {quarters.map(q => (
+          <button key={q} onClick={() => onFilterQ(q)}
+            className={'px-2 py-1 rounded text-[10px] font-bold border shrink-0 ' + (filterQ === q ? 'bg-orange-500 border-orange-500 text-white' : 'border-slate-600 text-slate-400')}>
+            {q <= 4 ? 'Q' + q : 'OT' + (q - 4)}
+          </button>
+        ))}
+        <div className="w-px h-4 bg-slate-700 mx-1 shrink-0"></div>
+        <select value={filterPid} onChange={e => onFilterPid(e.target.value)}
+          className="bg-slate-800 border border-slate-600 text-white text-[10px] rounded px-2 py-1 font-bold max-w-[100px] shrink-0">
+          <option value="all">Joueurs</option>
+          {players.map(p => <option key={p.id} value={p.id}>{'#' + p.number}</option>)}
+          <option value="OPP">Adversaire</option>
+        </select>
+        <select value={filterType} onChange={e => onFilterType(e.target.value)}
+          className="bg-slate-800 border border-slate-600 text-white text-[10px] rounded px-2 py-1 font-bold max-w-[100px] shrink-0">
+          <option value="all">Types</option>
+          {ACTION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+        </select>
+        {playOptions.length > 0 && (
+          <select value={filterPlay} onChange={e => onFilterPlay(e.target.value)}
+            className="bg-slate-800 border border-slate-600 text-white text-[10px] rounded px-2 py-1 font-bold max-w-[100px] shrink-0">
+            <option value="all">Plays</option>
+            {playOptions.map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+        )}
+        {hasFilter && (
+          <button onClick={onReset}
+            className="px-2 py-1 rounded text-[10px] font-bold bg-red-900 border border-red-700 text-red-300 whitespace-nowrap shrink-0">
+            ✕ Reset
+          </button>
+        )}
+        <button onClick={onAdd}
+          className="ml-auto px-3 py-1 rounded text-[10px] font-bold bg-orange-500 hover:bg-orange-600 text-white whitespace-nowrap shrink-0">
+          + Action
+        </button>
+      </div>
+    );
+  }
+
+  // ========================================================
+  // EDIT PANEL (bottom sheet — édition et ajout)
+  // ========================================================
+  function EditPanel({ action, players, oppPlayers, quarters, onSave, onDelete, onCancel }) {
+    var isNew = !!(action && action._new);
+    const defaultPlayTypes = ['Transition', 'Pick & Roll', 'Jeu posté', 'Isolation', 'Motion', 'Sortie de temps mort'];
+    const playTypes = useMemo(() => {
+      try { return JSON.parse(localStorage.getItem('basket_play_types')) || defaultPlayTypes; }
+      catch (e) { return defaultPlayTypes; }
+    }, []);
+    const [data, setData] = useState({
+      type: action.type || 'SHOT',
+      pid: action.pid != null ? action.pid : (action.playerId != null ? action.playerId : ''),
+      q: action.q || 1,
+      timeMin: Math.floor((action.time || 0) / 60),
+      timeSec: (action.time || 0) % 60,
+      val: action.val || 2,
+      made: action.made !== undefined ? action.made : true,
+      ftMade: action.ftMade || 0,
+      ftAtt: action.ftAtt || 2,
+      foulType: action.foulType || 'PERSONAL',
+      victim: action.victim || null,
+      subOut: action.subOut || null,
+      play: action.play || '',
+      duration: action.duration || 30,
+      team: action.team || 'home',
+      astId: action.astId || null,
+      ftShooterId: action.ftShooterId || null,
+      shotQuality: action.shotQuality || null,
+      unforced: action.unforced || false,
+      hockeyAssistId: action.hockeyAssistId || null,
+      zoneX: action.x,
+      zoneY: action.y,
+    });
+    const [showZone, setShowZone] = useState(false);
+    return (
+      <div>
+        {showZone && (
+          <ZoneSelector
+            onSelect={(z) => { setData(d => ({ ...d, val: z.val, zoneX: z.x, zoneY: z.y })); setShowZone(false); }}
+            onCancel={() => setShowZone(false)}
+          />
+        )}
+        <div className="fixed inset-x-0 bottom-0 z-50 bg-slate-800 border-t-2 border-orange-500 rounded-t-xl shadow-2xl max-h-[70vh] overflow-y-auto p-4"
+          style={{ animation: 'slideUp 0.2s ease-out' }}>
+          <style>{`@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }`}</style>
+          <div className="flex justify-between items-center mb-3">
+            <span className="text-orange-400 font-bold text-sm">
+              {isNew ? 'Ajouter action' : 'Modifier action'}
+            </span>
+            <button onClick={onCancel} className="text-slate-400 text-lg leading-none">✕</button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div>
+              <div className={LBL}>Type</div>
+              <select className={SEL + ' w-full'} value={data.type}
+                onChange={e => setData(d => ({ ...d, type: e.target.value, victim: null, subOut: null }))}>
+                {ACTION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <div className={LBL}>{data.type === 'SUB' ? 'Joueur ENTRANT' : 'Joueur'}</div>
+              <CombinedPlayerSelect
+                value={data.pid === '' ? null : (data.pid === 'OPP' ? 'OPP' : (typeof data.pid === 'number' ? data.pid : parseInt(data.pid) || null))}
+                onChange={v => setData(d => ({ ...d, pid: v != null ? v : '' }))}
+                homePlayers={players}
+                oppPlayers={oppPlayers}
+                allowNone={true}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div>
+              <div className={LBL}>Quart-temps</div>
+              <select className={SEL + ' w-full'} value={data.q}
+                onChange={e => setData(d => ({ ...d, q: parseInt(e.target.value) }))}>
+                {quarters.map(q => <option key={q} value={q}>{q <= 4 ? 'Q' + q : 'OT' + (q - 4)}</option>)}
+              </select>
+            </div>
+            <div>
+              <div className={LBL}>Chrono</div>
+              <div className="flex gap-1 items-center">
+                <input type="number" min="0" max="10" className={SEL + ' w-12 text-center'}
+                  value={data.timeMin}
+                  onChange={e => setData(d => ({ ...d, timeMin: parseInt(e.target.value) || 0 }))} />
+                <span className="text-slate-400 font-bold">:</span>
+                <input type="number" min="0" max="59" className={SEL + ' w-12 text-center'}
+                  value={data.timeSec}
+                  onChange={e => setData(d => ({ ...d, timeSec: parseInt(e.target.value) || 0 }))} />
+              </div>
+            </div>
+          </div>
+
+          <div className="mb-3">
+            <div className={LBL}>Système</div>
+            <select className={SEL + ' w-full'} value={data.play}
+              onChange={e => setData(d => ({ ...d, play: e.target.value }))}>
+              <option value="">Aucun</option>
+              {playTypes.map(pt => <option key={pt} value={pt}>{pt}</option>)}
+            </select>
+          </div>
+
+          {data.type === 'SHOT' && (
+            <div className="flex gap-3 mb-3 items-end flex-wrap">
+              <div>
+                <div className={LBL}>Valeur</div>
+                <div className="flex gap-1">
+                  {[2, 3].map(v => (
+                    <button key={v}
+                      className={'px-3 py-1.5 rounded text-xs font-bold cursor-pointer ' + (data.val === v ? 'bg-orange-500 text-white' : 'bg-slate-700 text-slate-300')}
+                      onClick={() => setData(d => ({ ...d, val: v }))}>
+                      {v + 'pts'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className={LBL}>Résultat</div>
+                <div className="flex gap-1">
+                  <button
+                    className={'px-3 py-1.5 rounded text-xs font-bold cursor-pointer ' + (data.made ? 'bg-green-600 text-white' : 'bg-slate-700 text-slate-300')}
+                    onClick={() => setData(d => ({ ...d, made: true }))}>Marqué</button>
+                  <button
+                    className={'px-3 py-1.5 rounded text-xs font-bold cursor-pointer ' + (!data.made ? 'bg-red-600 text-white' : 'bg-slate-700 text-slate-300')}
+                    onClick={() => setData(d => ({ ...d, made: false }))}>Raté</button>
+                </div>
+              </div>
+              <div>
+                <div className={LBL}>Qualité</div>
+                <select className={SEL} value={data.shotQuality || ''}
+                  onChange={e => setData(d => ({ ...d, shotQuality: e.target.value || null }))}>
+                  <option value="">— Aucune</option>
+                  <option value="open">Ouvert</option>
+                  <option value="contested">Contesté</option>
+                  <option value="forced">Forcé</option>
+                </select>
+              </div>
+              <button className="px-3 py-1.5 rounded text-xs font-bold cursor-pointer bg-slate-700 text-slate-300 hover:bg-slate-600 self-end"
+                onClick={() => setShowZone(true)}>
+                {data.zoneX !== undefined ? '📍 Zone' : 'Zone'}
+              </button>
+            </div>
+          )}
+          {data.type === 'SHOT' && data.made && (
+            <div className="mb-3">
+              <div className={LBL}>Passe décisive</div>
+              <CombinedPlayerSelect
+                value={data.astId}
+                onChange={v => setData(d => ({ ...d, astId: v, hockeyAssistId: v ? d.hockeyAssistId : null }))}
+                homePlayers={players}
+                oppPlayers={oppPlayers}
+                allowNone={true}
+              />
+            </div>
+          )}
+          {data.type === 'SHOT' && data.made && data.astId && (
+            <div className="mb-3">
+              <div className={LBL}>🏒 Hockey assist (passe avant)</div>
+              <CombinedPlayerSelect
+                value={data.hockeyAssistId}
+                onChange={v => setData(d => ({ ...d, hockeyAssistId: v }))}
+                homePlayers={players}
+                oppPlayers={oppPlayers}
+                allowNone={true}
+              />
+            </div>
+          )}
+
+          {data.type === 'FT' && (
+            <div className="flex gap-3 mb-3 items-end">
+              <div>
+                <div className={LBL}>Tentés</div>
+                <input type="number" min="0" max="3" className={SEL + ' w-14 text-center'}
+                  value={data.ftAtt}
+                  onChange={e => setData(d => ({ ...d, ftAtt: parseInt(e.target.value) || 0 }))} />
+              </div>
+              <div>
+                <div className={LBL}>Réussis</div>
+                <input type="number" min="0" max="3" className={SEL + ' w-14 text-center'}
+                  value={data.ftMade}
+                  onChange={e => setData(d => ({ ...d, ftMade: parseInt(e.target.value) || 0 }))} />
+              </div>
+            </div>
+          )}
+
+          {data.type === 'FOUL' && (
+            <div className="mb-3 space-y-3">
+              <div>
+                <div className={LBL}>Type de faute</div>
+                <div className="flex gap-1 flex-wrap">
+                  {FOUL_TYPES.map(ft => (
+                    <button key={ft.value}
+                      className={'px-3 py-1.5 rounded text-xs font-bold cursor-pointer border transition-all ' + (data.foulType === ft.value ? ft.color + ' border-white text-white' : 'bg-slate-800 border-slate-600 text-slate-400')}
+                      onClick={() => setData(d => ({ ...d, foulType: ft.value, victim: ft.value === 'TECHNICAL' ? null : d.victim, ftShooterId: ft.value !== 'TECHNICAL' ? null : d.ftShooterId }))}>
+                      {ft.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {data.foulType === 'TECHNICAL' ? (
+                <div>
+                  <div className={LBL}>Tireur des LF</div>
+                  <CombinedPlayerSelect
+                    value={data.ftShooterId}
+                    onChange={v => setData(d => ({ ...d, ftShooterId: v }))}
+                    homePlayers={players}
+                    oppPlayers={oppPlayers}
+                    allowNone={true}
+                  />
+                </div>
+              ) : (
+                <div>
+                  <div className={LBL}>Provoquée par</div>
+                  <CombinedPlayerSelect
+                    value={data.victim}
+                    onChange={v => setData(d => ({ ...d, victim: v }))}
+                    homePlayers={players}
+                    oppPlayers={oppPlayers}
+                    allowNone={true}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {data.type === 'TOV' && (
+            <div className="flex items-center gap-2 mb-3">
+              <input type="checkbox" checked={data.unforced || false}
+                onChange={e => setData(d => ({ ...d, unforced: e.target.checked }))}
+                style={{accentColor: '#ef4444'}} />
+              <span className="text-xs text-slate-400">Perte non-forcée (erreur de concentration)</span>
+            </div>
+          )}
+          {data.type === 'STL' && (
+            <div className="mb-3">
+              <div className={LBL}>Perte par (qui a perdu la balle)</div>
+              <CombinedPlayerSelect
+                value={data.victim}
+                onChange={v => setData(d => ({ ...d, victim: v }))}
+                homePlayers={players}
+                oppPlayers={oppPlayers}
+                allowNone={true}
+              />
+            </div>
+          )}
+
+          {data.type === 'BLK' && (
+            <div className="mb-3">
+              <div className={LBL}>Victime du contre</div>
+              <CombinedPlayerSelect
+                value={data.victim}
+                onChange={v => setData(d => ({ ...d, victim: v }))}
+                homePlayers={players}
+                oppPlayers={oppPlayers}
+                allowNone={true}
+              />
+            </div>
+          )}
+
+          {data.type === 'SUB' && (
+            <div className="mb-3">
+              <div className={LBL}>SORTANT</div>
+              <CombinedPlayerSelect
+                value={data.subOut}
+                onChange={v => setData(d => ({ ...d, subOut: v }))}
+                homePlayers={players}
+                oppPlayers={oppPlayers}
+                allowNone={true}
+              />
+            </div>
+          )}
+
+          {data.type === 'STOPPAGE' && (
+            <div className="mb-3">
+              <div className={LBL}>Durée (secondes)</div>
+              <input type="number" min="1" max="600" className={SEL + ' w-full'}
+                value={data.duration}
+                onChange={e => setData(d => ({ ...d, duration: parseInt(e.target.value) || 30 }))} />
+            </div>
+          )}
+
+          {data.type === 'TIMEOUT' && (
+            <div className="mb-3">
+              <div className={LBL}>Équipe</div>
+              <select className={SEL + ' w-full'} value={data.team}
+                onChange={e => setData(d => ({ ...d, team: e.target.value }))}>
+                <option value="home">Nous</option>
+                <option value="away">Adversaire</option>
+              </select>
+            </div>
+          )}
+
+          <div className="flex gap-2 justify-end mt-4 pt-3 border-t border-slate-700">
+            {!isNew && (
+              <button onClick={() => { if (confirm('Supprimer ?')) onDelete(action.id); }}
+                className="px-3 py-2 rounded bg-red-900 text-red-300 text-xs font-bold">
+                Supprimer
+              </button>
+            )}
+            <button onClick={onCancel}
+              className="px-3 py-2 rounded bg-slate-700 text-slate-300 text-xs font-bold">
+              Annuler
+            </button>
+            <button onClick={() => onSave(data)}
+              className="px-4 py-2 rounded bg-green-600 text-white text-xs font-bold">
+              OK
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ========================================================
   // COMPOSANT PRINCIPAL
   // ========================================================
   function PlayByPlayEditor({ game, players, onSave, onClose }) {
@@ -1259,11 +1759,8 @@
     const [filterQ, setFilterQ] = useState(0);
     const [filterPid, setFilterPid] = useState('all');
     const [filterType, setFilterType] = useState('all');
-    const [editingId, setEditingId] = useState(null);
-    const [editData, setEditData] = useState({});
+    const [editingAction, setEditingAction] = useState(null);
     const [editDate, setEditDate] = useState('');
-    const [showAddForm, setShowAddForm] = useState(false);
-    const [showZoneFor, setShowZoneFor] = useState(null);
     const [dirty, setDirty] = useState(false);
     const [saving, setSaving] = useState(false);
     const [toast, setToast] = useState(null);
@@ -1626,6 +2123,33 @@
 
     const hasSubs = useMemo(() => actions.some((a) => a.type === 'SUB'), [actions]);
 
+    const scoreByQ = useMemo(() => {
+      const scores = {};
+      let h = 0, a = 0;
+      const sorted = [...actions].sort((x, y) => {
+        if ((x.q || 1) !== (y.q || 1)) return (x.q || 1) - (y.q || 1);
+        return (y.time ?? 0) - (x.time ?? 0);
+      });
+      let currentQ = 0;
+      sorted.forEach(act => {
+        if ((act.q || 1) !== currentQ) {
+          currentQ = act.q || 1;
+          scores[currentQ] = { home: h, away: a };
+        }
+        const actPid = act.pid ?? act.playerId;
+        const isHome = !isOpponent(actPid);
+        if (act.type === 'SHOT' && act.made) { if (isHome) h += act.val; else a += act.val; }
+        if (act.type === 'FT') { var fm = act.ftMade || 0; if (isHome) h += fm; else a += fm; }
+      });
+      return scores;
+    }, [actions]);
+
+    const playOptions = useMemo(() => {
+      const plays = new Set();
+      actions.forEach(a => { if (a.play) plays.add(a.play); });
+      return Array.from(plays);
+    }, [actions]);
+
     const showToast = (msg, isError) => {
       setToast({ msg, isError });
       setTimeout(() => setToast(null), 2500);
@@ -1635,96 +2159,95 @@
       setActions((prev) => prev.filter((a) => a.id !== actionId));
       setDirty(true);
     };
-    const handleAdd = (newAction) => {
-      setActions((prev) => [...prev, newAction]);
-      setShowAddForm(false);
-      setDirty(true);
-      showToast('Action ajoutee');
-    };
-
-    const startEdit = (action) => {
-      const pid = action.pid ?? action.playerId;
-      setEditingId(action.id);
-      setEditData({
-        type: action.type,
-        pid,
-        q: action.q || 1,
-        timeMin: Math.floor((action.time || 0) / 60),
-        timeSec: (action.time || 0) % 60,
-        val: action.val || 2,
-        made: action.made !== undefined ? action.made : true,
-        ftMade: action.ftMade || 0,
-        ftAtt: action.ftAtt || 0,
-        foulType: action.foulType || 'PERSONAL',
-        victim: action.victim || null,
-        subOut: action.subOut || null,
-        play: action.play || '',
-        duration: action.duration || 0,
-        team: action.team || 'home',
-      });
-    };
-
-    const saveEdit = (actionId) => {
-      setActions((prev) =>
-        prev.map((a) => {
+    const handlePanelSave = (data) => {
+      if (editingAction._new) {
+        const pId = data.pid === 'OPP' ? 'OPP' : (data.pid === '' ? null : (typeof data.pid === 'number' ? data.pid : parseInt(data.pid)));
+        if (pId == null && data.type !== 'STOPPAGE' && data.type !== 'TIMEOUT') return;
+        const time = data.timeMin * 60 + data.timeSec;
+        const newAction = {
+          id: Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+          type: data.type,
+          pid: (data.type === 'STOPPAGE' || data.type === 'TIMEOUT') ? 0 : pId,
+          q: data.q,
+          time,
+          onCourt: [],
+        };
+        if (data.type === 'SHOT') {
+          newAction.val = data.val; newAction.made = data.made;
+          if (data.shotQuality) newAction.shotQuality = data.shotQuality;
+          if (data.made && data.astId) {
+            newAction.astId = data.astId === 'OPP' ? 'OPP' : parseInt(data.astId);
+            if (data.hockeyAssistId) newAction.hockeyAssistId = data.hockeyAssistId === 'OPP' ? 'OPP' : parseInt(data.hockeyAssistId);
+          }
+          if (data.zoneX !== undefined) { newAction.x = data.zoneX; newAction.y = data.zoneY; }
+        }
+        if (data.type === 'FT') { newAction.ftMade = data.ftMade; newAction.ftAtt = data.ftAtt; }
+        if (data.type === 'FOUL') {
+          newAction.foulType = data.foulType;
+          if (data.foulType === 'TECHNICAL') {
+            if (data.ftShooterId) newAction.ftShooterId = data.ftShooterId === 'OPP' ? 'OPP' : parseInt(data.ftShooterId);
+          } else {
+            if (data.victim) newAction.victim = data.victim;
+          }
+        }
+        if (data.type === 'TOV') newAction.unforced = data.unforced || false;
+        if (data.type === 'STL' && data.victim) newAction.victim = data.victim;
+        if (data.type === 'BLK' && data.victim) newAction.victim = data.victim;
+        if (data.type === 'SUB') newAction.subOut = data.subOut;
+        if (data.type === 'STOPPAGE') { newAction.duration = data.duration || 30; newAction.pid = 0; }
+        if (data.type === 'TIMEOUT') { newAction.team = data.team; newAction.pid = 0; }
+        if (data.play) newAction.play = data.play;
+        setActions(prev => [...prev, newAction]);
+        showToast('Action ajoutée');
+      } else {
+        const actionId = editingAction.id;
+        setActions(prev => prev.map(a => {
           if (a.id !== actionId) return a;
           const u = { ...a };
-          u.type = editData.type;
-          u.pid = editData.pid === 'OPP' ? 'OPP' : parseInt(editData.pid);
+          u.type = data.type;
+          u.pid = data.pid === 'OPP' ? 'OPP' : (typeof data.pid === 'number' ? data.pid : parseInt(data.pid));
           u.playerId = u.pid;
-          u.q = editData.q;
-          u.time = editData.timeMin * 60 + editData.timeSec;
-          delete u.val;
-          delete u.made;
-          delete u.x;
-          delete u.y;
-          delete u.ftMade;
-          delete u.ftAtt;
-          delete u.foulType;
-          delete u.victim;
-          delete u.subOut;
-          if (editData.type === 'SHOT') {
-            u.val = editData.val;
-            u.made = editData.made;
-            if (a.x !== undefined) {
-              u.x = a.x;
-              u.y = a.y;
-            } else setShowZoneFor(actionId);
+          u.q = data.q;
+          u.time = data.timeMin * 60 + data.timeSec;
+          delete u.val; delete u.made; delete u.x; delete u.y;
+          delete u.ftMade; delete u.ftAtt; delete u.foulType; delete u.victim; delete u.subOut;
+          delete u.astId; delete u.hockeyAssistId; delete u.ftShooterId;
+          if (data.type === 'SHOT') {
+            u.val = data.val; u.made = data.made;
+            if (data.shotQuality) u.shotQuality = data.shotQuality; else delete u.shotQuality;
+            if (data.made && data.astId) {
+              u.astId = data.astId === 'OPP' ? 'OPP' : parseInt(data.astId);
+              if (data.hockeyAssistId) u.hockeyAssistId = data.hockeyAssistId === 'OPP' ? 'OPP' : parseInt(data.hockeyAssistId);
+            }
+            if (data.zoneX !== undefined) { u.x = data.zoneX; u.y = data.zoneY; }
+            else if (a.x !== undefined) { u.x = a.x; u.y = a.y; }
           }
-          if (editData.type === 'FT') {
-            u.ftMade = editData.ftMade;
-            u.ftAtt = editData.ftAtt;
+          if (data.type === 'FT') { u.ftMade = data.ftMade; u.ftAtt = data.ftAtt; }
+          if (data.type === 'FOUL') {
+            u.foulType = data.foulType;
+            if (data.foulType === 'TECHNICAL') {
+              if (data.ftShooterId) u.ftShooterId = data.ftShooterId === 'OPP' ? 'OPP' : parseInt(data.ftShooterId);
+            } else {
+              if (data.victim) u.victim = data.victim;
+            }
           }
-          if (editData.type === 'FOUL') {
-            u.foulType = editData.foulType;
-            if (editData.victim) u.victim = editData.victim;
-          }
-          if (editData.type === 'BLK' && editData.victim) u.victim = editData.victim;
-          if (editData.type === 'SUB') {
-            u.subOut = editData.subOut;
-          }
-          if (editData.type === 'STOPPAGE') {
-            u.duration = editData.duration || 0;
-            u.pid = 0;
-          }
-          if (editData.type === 'TIMEOUT') {
-            u.team = editData.team || 'home';
-            u.pid = 0;
-          }
-          if (editData.play) u.play = editData.play;
-          else delete u.play;
+          if (data.type === 'TOV') u.unforced = data.unforced || false;
+          if (data.type === 'STL' && data.victim) u.victim = data.victim;
+          if (data.type === 'BLK' && data.victim) u.victim = data.victim;
+          if (data.type === 'SUB') u.subOut = data.subOut;
+          if (data.type === 'STOPPAGE') { u.duration = data.duration || 0; u.pid = 0; }
+          if (data.type === 'TIMEOUT') { u.team = data.team || 'home'; u.pid = 0; }
+          if (data.play) u.play = data.play; else delete u.play;
           return u;
-        })
-      );
-      setEditingId(null);
+        }));
+      }
+      setEditingAction(null);
       setDirty(true);
     };
 
-    const handleZoneSelect = (zone) => {
-      setActions((prev) =>
-        prev.map((a) => (a.id !== showZoneFor ? a : { ...a, x: zone.x, y: zone.y, val: zone.val }))
-      );
-      setShowZoneFor(null);
+    const handlePanelDelete = (actionId) => {
+      setActions(prev => prev.filter(a => a.id !== actionId));
+      setEditingAction(null);
       setDirty(true);
     };
 
@@ -1807,63 +2330,12 @@
       setSaving(false);
     };
 
-    const getPlayerLabel = (pid) => {
-      if (pid === 'OPP') return 'ADV';
-      const p = playerMap[pid];
-      return p ? `#${p.number}` : `#${pid}`;
-    };
-    const getPlayerName = (pid) => {
-      if (pid === 'OPP') return 'Adversaire';
-      const p = playerMap[pid];
-      return p ? p.name : `Joueur ${pid}`;
-    };
-    const getActionLabel = (act) => {
-      const n = normalizeAction(act);
-      const t = n.type;
-      if (t === 'SHOT') return `Tir ${n.val || 2}pts ${n.made ? 'OK' : 'X'}`;
-      if (t === 'FT') return `LF ${n.ftMade || 0}/${n.ftAtt || 0}`;
-      if (t === 'FOUL')
-        return `Faute ${FOUL_TYPES.find((f) => f.value === (n.foulType || 'PERSONAL'))?.label || 'P'}${n.victim ? ' -> #' + n.victim : ''}`;
-      if (t === 'SUB')
-        return `SUB ${getPlayerLabel(n._pid || n.pid)} <-> ${n.subOut ? getPlayerLabel(n.subOut) : '?'}`;
-      if (t === 'STOPPAGE') return `Arrêt ${n.duration || 0}s`;
-      if (t === 'TIMEOUT') return `Timeout ${n.team === 'home' ? 'Nous' : 'Eux'}`;
-      const found = ACTION_TYPES.find((at) => at.value === t);
-      return found ? found.label : t;
-    };
-    const getActionColor = (act) => {
-      const n = normalizeAction(act);
-      if (n.type === 'SHOT') return n.made ? 'text-green-400' : 'text-red-400';
-      if (n.type === 'SUB') return 'text-cyan-400';
-      if (n.type === 'FOUL') return 'text-red-500';
-      if (n.type === 'STOPPAGE') return 'text-yellow-400';
-      if (n.type === 'TIMEOUT') return 'text-indigo-400';
-      return 'text-slate-300';
-    };
-    const formatTime = (time) => {
-      const m = Math.floor((time || 0) / 60);
-      const s = (time || 0) % 60;
-      return `${m}:${s.toString().padStart(2, '0')}`;
-    };
-
     // ---- RENDER ----
     return (
       <div
         className="flex flex-col"
         style={{ position: 'fixed', inset: 0, zIndex: 99999, background: '#0a0f1a' }}
       >
-        {showZoneFor && (
-          <ZoneSelector onSelect={handleZoneSelect} onCancel={() => setShowZoneFor(null)} />
-        )}
-        {showAddForm && (
-          <AddActionForm
-            homePlayers={players}
-            oppPlayers={oppPlayers}
-            onAdd={handleAdd}
-            onCancel={() => setShowAddForm(false)}
-            quarters={quarterOptions}
-          />
-        )}
         {toast && (
           <div
             style={{
@@ -1961,89 +2433,30 @@
           </div>
         </div>
 
-        {/* FILTERS & STATS SUMMARY */}
-        <div className="px-4 py-2 bg-slate-900 border-b border-slate-800 flex items-center gap-6 text-xs shrink-0 overflow-x-auto">
-          <div className="flex items-center gap-2">
-            <span className="text-slate-500">Score:</span>
-            <span className="text-blue-400 font-bold text-sm">{stats.homeScore}</span>
-            <span className="text-slate-600">-</span>
-            <span className="text-red-400 font-bold text-sm">{stats.awayScore}</span>
-          </div>
-          <div className="text-slate-500">{`${actions.length} actions`}</div>
-          {hasSubs && (
-            <div className="text-cyan-500 text-[10px]">{`${actions.filter((a) => a.type === 'SUB').length} changements`}</div>
-          )}
-          <div className="flex items-center gap-3 ml-auto">
-            <select
-              className={SEL}
-              value={filterQ}
-              onChange={(e) => setFilterQ(parseInt(e.target.value))}
-            >
-              <option value={0}>Tous QT</option>
-              {quarterOptions.map((q) => (
-                <option key={q} value={q}>
-                  {q <= 4 ? `Q${q}` : `OT${q - 4}`}
-                </option>
-              ))}
-            </select>
-            <select
-              className={SEL}
-              value={filterPid}
-              onChange={(e) => setFilterPid(e.target.value)}
-            >
-              <option value="all">Tous joueurs</option>
-              <option value="OPP">Tous adversaires</option>
-              <optgroup label="Domicile">
-                {players.map((p) => (
-                  <option key={p.id} value={p.id}>{`#${p.number} ${p.name}`}</option>
-                ))}
-              </optgroup>
-              {oppPlayers.length > 0 && (
-                <optgroup label="Adversaire">
-                  {oppPlayers.map((p) => (
-                    <option key={p.id} value={p.id}>{`#${p.number} ${p.name}`}</option>
-                  ))}
-                </optgroup>
-              )}
-            </select>
-            <select
-              className={SEL}
-              value={filterType}
-              onChange={(e) => setFilterType(e.target.value)}
-            >
-              <option value="all">Tous types</option>
-              {ACTION_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-            <select
-              className={SEL}
-              value={filterPlay}
-              onChange={(e) => setFilterPlay(e.target.value)}
-            >
-              <option value="all">Tous plays</option>
-              {(() => {
-                const plays = new Set();
-                actions.forEach((a) => {
-                  if (a.play) plays.add(a.play);
-                });
-                return Array.from(plays);
-              })().map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
-            <button
-              className="px-3 py-1.5 rounded bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold cursor-pointer"
-              onClick={() => setShowAddForm(true)}
-            >
-              + Action
-            </button>
-          </div>
+        {/* SCORE BANDEAU */}
+        <div className="bg-slate-800 border-b border-slate-700 px-4 py-1.5 flex items-center justify-between text-xs shrink-0">
+          <span className="text-blue-400 font-bold">NOUS {stats.homeScore}</span>
+          <span className="text-slate-500">—</span>
+          <span className="text-red-400 font-bold">{stats.awayScore} ADV</span>
+          <span className="text-slate-600 font-mono text-[10px]">{filteredActions.length} actions</span>
         </div>
+
+        {/* FILTER BAR */}
+        <FilterBar
+          quarters={quarterOptions}
+          players={players}
+          filterQ={filterQ}
+          filterPid={filterPid}
+          filterType={filterType}
+          filterPlay={filterPlay}
+          playOptions={playOptions}
+          onFilterQ={setFilterQ}
+          onFilterPid={setFilterPid}
+          onFilterType={setFilterType}
+          onFilterPlay={setFilterPlay}
+          onReset={() => { setFilterQ(0); setFilterPid('all'); setFilterType('all'); setFilterPlay('all'); }}
+          onAdd={() => setEditingAction({ _new: true, type: 'SHOT', pid: '', q: quarterOptions[0] || 1, time: 600 })}
+        />
 
         <MiniBoxscore
           stats={stats}
@@ -2058,322 +2471,56 @@
         <div className="flex-1 overflow-y-auto px-2 py-1">
           {filteredActions.length === 0 ? (
             <div className="text-center text-slate-500 py-10 text-sm">Aucune action</div>
-          ) : (
-            filteredActions.map((act) => {
-              const aid = act.id;
-              const pid = act.pid ?? act.playerId;
-              const isHome = !isOpponent(pid) && !!playerMap[pid];
-
-              if (editingId === aid) {
+          ) : (() => {
+            const items = [];
+            let lastQ = null;
+            filteredActions.forEach(act => {
+              const q = act.q || 1;
+              if (q !== lastQ) {
+                if (filterQ === 0) {
+                  const qScore = scoreByQ[q] || { home: 0, away: 0 };
+                  items.push({ _sep: true, quarter: q, homeScore: qScore.home, awayScore: qScore.away });
+                }
+                lastQ = q;
+              }
+              items.push(act);
+            });
+            return items.map(item => {
+              if (item._sep) {
                 return (
-                  <div
-                    key={aid}
-                    className="bg-slate-800 border border-orange-500 rounded-lg p-3 mb-1 space-y-2"
-                  >
-                    <div className="grid grid-cols-4 gap-2 items-end">
-                      <div>
-                        <div className="text-[9px] text-slate-500 mb-0.5">QT</div>
-                        <select
-                          className={SEL + ' w-full'}
-                          value={editData.q}
-                          onChange={(e) =>
-                            setEditData((d) => ({ ...d, q: parseInt(e.target.value) }))
-                          }
-                        >
-                          {quarterOptions.map((q) => (
-                            <option key={q} value={q}>
-                              {q <= 4 ? `Q${q}` : `OT${q - 4}`}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <div className="text-[9px] text-slate-500 mb-0.5">Chrono</div>
-                        <div className="flex gap-0.5 items-center">
-                          <input
-                            type="number"
-                            min="0"
-                            max="10"
-                            className={SEL + ' w-8 text-center px-0'}
-                            value={editData.timeMin}
-                            onChange={(e) =>
-                              setEditData((d) => ({ ...d, timeMin: parseInt(e.target.value) || 0 }))
-                            }
-                          />
-                          <span className="text-slate-500 text-xs">:</span>
-                          <input
-                            type="number"
-                            min="0"
-                            max="59"
-                            className={SEL + ' w-8 text-center px-0'}
-                            value={editData.timeSec}
-                            onChange={(e) =>
-                              setEditData((d) => ({ ...d, timeSec: parseInt(e.target.value) || 0 }))
-                            }
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-[9px] text-slate-500 mb-0.5">Type</div>
-                        <select
-                          className={SEL + ' w-full'}
-                          value={editData.type}
-                          onChange={(e) =>
-                            setEditData((d) => ({
-                              ...d,
-                              type: e.target.value,
-                              victim: null,
-                              subOut: null,
-                            }))
-                          }
-                        >
-                          {ACTION_TYPES.map((t) => (
-                            <option key={t.value} value={t.value}>
-                              {t.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <div className="text-[9px] text-slate-500 mb-0.5">
-                          {editData.type === 'SUB' ? 'Entrant' : 'Joueur'}
-                        </div>
-                        <CombinedPlayerSelect
-                          value={editData.pid}
-                          onChange={(v) => setEditData((d) => ({ ...d, pid: v }))}
-                          homePlayers={players}
-                          oppPlayers={oppPlayers}
-                          allowNone={false}
-                          className={SEL}
-                        />
-                      </div>
-                    </div>
-                    {editData.type === 'SHOT' && (
-                      <div className="flex gap-2 items-center flex-wrap">
-                        {[2, 3].map((v) => (
-                          <button
-                            key={v}
-                            className={`px-2 py-1 rounded text-[10px] font-bold cursor-pointer ${editData.val === v ? 'bg-orange-500 text-white' : 'bg-slate-700 text-slate-400'}`}
-                            onClick={() => setEditData((d) => ({ ...d, val: v }))}
-                          >{`${v}pts`}</button>
-                        ))}
-                        <button
-                          className={`px-2 py-1 rounded text-[10px] font-bold cursor-pointer ${editData.made ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}
-                          onClick={() => setEditData((d) => ({ ...d, made: !d.made }))}
-                        >
-                          {editData.made ? 'OK Marque' : 'X Rate'}
-                        </button>
-                      </div>
-                    )}
-                    {editData.type === 'FT' && (
-                      <div className="flex gap-2 items-center">
-                        <span className="text-[10px] text-slate-400">LF:</span>
-                        <input
-                          type="number"
-                          min="0"
-                          max="3"
-                          className={SEL + ' w-10 text-center px-0'}
-                          value={editData.ftMade}
-                          onChange={(e) =>
-                            setEditData((d) => ({ ...d, ftMade: parseInt(e.target.value) || 0 }))
-                          }
-                        />
-                        <span className="text-slate-500 text-[10px]">/</span>
-                        <input
-                          type="number"
-                          min="0"
-                          max="3"
-                          className={SEL + ' w-10 text-center px-0'}
-                          value={editData.ftAtt}
-                          onChange={(e) =>
-                            setEditData((d) => ({ ...d, ftAtt: parseInt(e.target.value) || 0 }))
-                          }
-                        />
-                      </div>
-                    )}
-                    {editData.type === 'FOUL' && (
-                      <div className="flex gap-2 items-center flex-wrap">
-                        {FOUL_TYPES.map((ft) => (
-                          <button
-                            key={ft.value}
-                            className={`px-2 py-1 rounded text-[10px] font-bold cursor-pointer border ${editData.foulType === ft.value ? ft.color + ' border-white text-white' : 'bg-slate-800 border-slate-600 text-slate-400'}`}
-                            onClick={() => setEditData((d) => ({ ...d, foulType: ft.value }))}
-                          >
-                            {ft.short}
-                          </button>
-                        ))}
-                        <span className="text-[10px] text-slate-500 ml-1">sur:</span>
-                        <CombinedPlayerSelect
-                          value={editData.victim}
-                          onChange={(v) => setEditData((d) => ({ ...d, victim: v }))}
-                          homePlayers={players}
-                          oppPlayers={oppPlayers}
-                          allowNone={true}
-                          className={SEL + ' w-28'}
-                        />
-                      </div>
-                    )}
-                    {editData.type === 'BLK' && (
-                      <div className="flex gap-2 items-center">
-                        <span className="text-[10px] text-slate-500">Contre:</span>
-                        <CombinedPlayerSelect
-                          value={editData.victim}
-                          onChange={(v) => setEditData((d) => ({ ...d, victim: v }))}
-                          homePlayers={players}
-                          oppPlayers={oppPlayers}
-                          allowNone={true}
-                          className={SEL + ' w-28'}
-                        />
-                      </div>
-                    )}
-                    {editData.type === 'SUB' && (
-                      <div>
-                        <div className="text-[9px] text-slate-500 mb-0.5">Sortant</div>
-                        <CombinedPlayerSelect
-                          value={editData.subOut}
-                          onChange={(v) => setEditData((d) => ({ ...d, subOut: v }))}
-                          homePlayers={players}
-                          oppPlayers={oppPlayers}
-                          allowNone={true}
-                          className={SEL}
-                        />
-                      </div>
-                    )}
-                    {editData.type === 'STOPPAGE' && (
-                      <div>
-                        <div className="text-[9px] text-slate-500 mb-0.5">Durée (s)</div>
-                        <input
-                          type="number"
-                          min="0"
-                          max="600"
-                          className={SEL + ' w-16 text-center'}
-                          value={editData.duration || 0}
-                          onChange={(e) =>
-                            setEditData((d) => ({ ...d, duration: parseInt(e.target.value) || 0 }))
-                          }
-                        />
-                      </div>
-                    )}
-                    {editData.type === 'TIMEOUT' && (
-                      <div>
-                        <div className="text-[9px] text-slate-500 mb-0.5">Équipe</div>
-                        <select
-                          className={SEL}
-                          value={editData.team || 'home'}
-                          onChange={(e) => setEditData((d) => ({ ...d, team: e.target.value }))}
-                        >
-                          <option value="home">Nous</option>
-                          <option value="away">Eux</option>
-                        </select>
-                      </div>
-                    )}
-                    <div className="flex gap-2 items-center">
-                      <span className="text-[10px] text-teal-400 font-bold">Play:</span>
-                      <select
-                        className={SEL + ' w-32'}
-                        value={editData.play || ''}
-                        onChange={(e) => setEditData((d) => ({ ...d, play: e.target.value }))}
-                      >
-                        <option value="">Aucun</option>
-                        {(() => {
-                          try {
-                            return (
-                              JSON.parse(localStorage.getItem('basket_play_types')) || [
-                                'Transition',
-                                'Pick & Roll',
-                                'Jeu posté',
-                                'Isolation',
-                                'Motion',
-                                'Sortie de temps mort',
-                              ]
-                            );
-                          } catch {
-                            return [
-                              'Transition',
-                              'Pick & Roll',
-                              'Jeu posté',
-                              'Isolation',
-                              'Motion',
-                              'Sortie de temps mort',
-                            ];
-                          }
-                        })().map((pt) => (
-                          <option key={pt} value={pt}>
-                            {pt}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="flex gap-1 justify-end pt-1">
-                      <button
-                        className="px-3 py-1 rounded bg-green-600 text-white text-[10px] font-bold cursor-pointer"
-                        onClick={() => saveEdit(aid)}
-                      >
-                        OK
-                      </button>
-                      <button
-                        className="px-3 py-1 rounded bg-slate-700 text-slate-300 text-[10px] font-bold cursor-pointer"
-                        onClick={() => setEditingId(null)}
-                      >
-                        Annuler
-                      </button>
-                    </div>
-                  </div>
+                  <QuarterSeparator
+                    key={'sep_' + item.quarter}
+                    quarter={item.quarter}
+                    homeScore={item.homeScore}
+                    awayScore={item.awayScore}
+                  />
                 );
               }
-
               return (
-                <div
-                  key={aid}
-                  className={`flex items-center gap-2 px-3 py-2 mb-0.5 rounded hover:bg-slate-800 transition-colors group ${act.type === 'SUB' ? 'border-l-2 border-l-cyan-500 bg-cyan-950/20' : isHome ? 'border-l-2 border-l-blue-500 bg-slate-900/50' : 'border-l-2 border-l-red-500 bg-slate-900/50'}`}
-                >
-                  <span className="text-slate-500 font-mono text-[10px] w-16 shrink-0">{`Q${act.q || 1} ${formatTime(act.time)}`}</span>
-                  <span
-                    className={`font-bold text-xs shrink-0 w-10 ${act.type === 'SUB' ? 'text-cyan-400' : isHome ? 'text-blue-400' : 'text-red-400'}`}
-                  >
-                    {getPlayerLabel(pid)}
-                  </span>
-                  <span className="text-slate-500 text-[10px] w-24 shrink-0 truncate">
-                    {getPlayerName(pid)}
-                  </span>
-                  <span className={`flex-1 text-xs font-semibold ${getActionColor(act)}`}>
-                    {getActionLabel(act)}
-                  </span>
-                  {act.play && (
-                    <span
-                      style={{
-                        fontSize: '0.55rem',
-                        padding: '1px 4px',
-                        marginLeft: '4px',
-                        background: 'rgba(13,148,136,0.2)',
-                        border: '1px solid #0d9488',
-                        borderRadius: '3px',
-                        color: '#5eead4',
-                        fontWeight: 600,
-                      }}
-                    >
-                      {act.play}
-                    </span>
-                  )}
-                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                    <button
-                      className="px-2 py-1 rounded bg-slate-700 text-slate-300 text-[10px] cursor-pointer hover:bg-slate-600"
-                      onClick={() => startEdit(act)}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className="px-2 py-1 rounded bg-red-900 text-red-300 text-[10px] cursor-pointer hover:bg-red-700"
-                      onClick={() => handleDelete(aid)}
-                    >
-                      Del
-                    </button>
-                  </div>
-                </div>
+                <ActionCard
+                  key={item.id}
+                  action={item}
+                  playerMap={playerMap}
+                  onEdit={act => setEditingAction(act)}
+                  onDelete={handleDelete}
+                />
               );
-            })
-          )}
+            });
+          })()}
         </div>
+
+        {/* EDIT PANEL */}
+        {editingAction && (
+          <EditPanel
+            action={editingAction}
+            players={players}
+            oppPlayers={oppPlayers}
+            quarters={quarterOptions}
+            onSave={handlePanelSave}
+            onDelete={handlePanelDelete}
+            onCancel={() => setEditingAction(null)}
+          />
+        )}
       </div>
     );
   }
@@ -2390,6 +2537,14 @@
         .map(([k, v]) => `${v}${k[0]}`)
         .join(' ');
     };
+
+    const allPStats = Object.values(stats.playerStats);
+    const hasHockeyAst = allPStats.some((s) => (s.hockeyAst || 0) > 0);
+    const hasPaintTouch = allPStats.some((s) => (s.paintTouch || 0) > 0);
+    const hasDeflections = allPStats.some((s) => (s.deflections || 0) > 0);
+    const hasBoxOuts = allPStats.some((s) => (s.boxOuts || 0) > 0);
+    const hasBlowBys = allPStats.some((s) => (s.blowBys || 0) > 0);
+
     const headers = [
       '',
       'MIN',
@@ -2408,6 +2563,11 @@
       'FT',
       '+/-',
       'EVAL',
+      ...(hasHockeyAst ? ['HA'] : []),
+      ...(hasPaintTouch ? ['PT'] : []),
+      ...(hasDeflections ? ['DEV'] : []),
+      ...(hasBoxOuts ? ['BOX'] : []),
+      ...(hasBlowBys ? ['BB'] : []),
     ];
 
     const renderRow = (p, s, isOppRow) => {
@@ -2446,6 +2606,11 @@
           <td className={`text-center font-bold ${ev >= 0 ? 'text-green-400' : 'text-red-400'}`}>
             {ev}
           </td>
+          {hasHockeyAst && <td className="text-center text-purple-400">{s.hockeyAst || 0}</td>}
+          {hasPaintTouch && <td className="text-center text-yellow-400">{s.paintTouch || 0}</td>}
+          {hasDeflections && <td className="text-center text-blue-400">{s.deflections || 0}</td>}
+          {hasBoxOuts && <td className="text-center text-teal-400">{s.boxOuts || 0}</td>}
+          {hasBlowBys && <td className="text-center text-red-400">{s.blowBys || 0}</td>}
         </tr>
       );
     };

@@ -1,38 +1,63 @@
 /* design-tokens.css — Source unique de vérité pour toutes les couleurs et tokens du projet */
 
 :root {
-    /* === BACKGROUNDS === */
-    --bg-0: #0C0C12;       /* Page background */
-    --bg-1: #161620;       /* Sidebar, header, secondary surfaces */
-    --bg-2: #1C1C28;       /* Cards, panels */
-    --bg-3: #252530;       /* Elevated surfaces (modals, popovers, dropdowns) */
+    /* === BACKGROUNDS — OLED scale === */
+    --bg-0: #060609;       /* Page background — OLED near-black */
+    --bg-1: #0D0D18;       /* Sidebar, nav — dark navy */
+    --bg-2: #13131F;       /* Cards, panels */
+    --bg-3: #1A1A2A;       /* Elevated surfaces (modals, popovers) */
+    --bg-4: #222234;       /* Hover states, very elevated */
 
-    /* === ACCENT — Orange Basket === */
-    --accent: #FF6B35;
-    --accent-light: #FF8C5A;
-    --accent-dark: #E05520;
-    --accent-ghost: rgba(255, 107, 53, 0.12);
-    --accent-glow: rgba(255, 107, 53, 0.4);
+    /* === ACCENT — Orange basket === */
+    --accent: #F97316;
+    --accent-light: #FB923C;
+    --accent-dark: #EA580C;
+    --accent-ghost: rgba(249, 115, 22, 0.10);
+    --accent-glow: rgba(249, 115, 22, 0.30);
+
+    /* === DATA — Indigo analytics === */
+    --data: #818CF8;
+    --data-light: #A5B4FC;
+    --data-ghost: rgba(129, 140, 248, 0.08);
 
     /* === BASKET SEMANTICS (métier) === */
     --made: #34D399;        /* Tir réussi, stat positive */
     --miss: #F87171;        /* Tir raté, stat négative */
 
     /* === SYSTEM SEMANTICS (technique) === */
-    --sys-ok: #22C55E;     /* Firebase OK, sync OK */
-    --sys-err: #DC2626;    /* Erreurs système */
-    --sys-warn: #F59E0B;   /* Avertissements */
-    --sys-info: #3B82F6;   /* Informations, liens */
+    --sys-ok: #22C55E;
+    --sys-err: #DC2626;
+    --sys-warn: #F59E0B;
+    --sys-info: #3B82F6;
 
     /* === TEXT === */
-    --text-1: #FFFFFF;
-    --text-2: #A1A1AA;
-    --text-3: #52525B;
+    --text-1: #F1F5F9;      /* Primary — off-white, moins agressif */
+    --text-2: #94A3B8;      /* Secondary — slate-400 */
+    --text-3: #475569;      /* Muted — slate-600 */
 
     /* === BORDERS === */
-    --border: rgba(255, 255, 255, 0.08);
-    --border-accent: rgba(255, 107, 53, 0.2);
-    --border-accent-strong: rgba(255, 107, 53, 0.4);
+    --border: rgba(255, 255, 255, 0.05);
+    --border-subtle: rgba(255, 255, 255, 0.03);
+    --border-strong: rgba(255, 255, 255, 0.12);
+    --border-accent: rgba(249, 115, 22, 0.20);
+    --border-accent-strong: rgba(249, 115, 22, 0.40);
+
+    /* === RADIUS === */
+    --r-sm: 6px;
+    --r-md: 10px;
+    --r-lg: 14px;
+    --r-xl: 22px;
+
+    /* === SHADOWS === */
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.7);
+    --shadow-elevated: 0 4px 20px rgba(0, 0, 0, 0.6);
+    --shadow-modal: 0 24px 64px rgba(0, 0, 0, 0.85);
+    --shadow-accent: 0 4px 20px rgba(249, 115, 22, 0.20);
+
+    /* === TRANSITIONS === */
+    --t-fast: 150ms ease;
+    --t-base: 200ms ease;
+    --t-slow: 300ms ease;
 
     /* === TEAMS === */
     --home: #3B82F6;
@@ -54,13 +79,13 @@
     --error: var(--sys-err);
     --info: var(--sys-info);
     --border-gold: var(--border-accent);
-    --border-gold-light: rgba(255, 107, 53, 0.1);
+    --border-gold-light: rgba(249, 115, 22, 0.10);
 
     /* LIVE.HTML LEGACY ALIASES */
     --bg-primary: var(--bg-0);
     --bg-secondary: var(--bg-1);
-    --bg-card: rgba(28, 28, 40, 0.7);
-    --bg-elevated: rgba(37, 37, 48, 0.8);
+    --bg-card: rgba(19, 19, 31, 0.80);
+    --bg-elevated: rgba(26, 26, 42, 0.90);
     --bg-gradient: radial-gradient(circle at top center, var(--bg-1) 0%, var(--bg-0) 100%);
     --danger: var(--miss);
     --text-muted: var(--text-3);

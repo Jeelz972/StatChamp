@@ -309,8 +309,8 @@
             'button',
             {
               className:
-                'px-3 py-1 text-xs rounded font-bold ' +
-                (mode === 'scatter' ? 'bg-orange-500 text-white' : 'text-slate-400'),
+                'px-3 py-1 text-xs rounded font-bold cursor-pointer transition-colors duration-200 ' +
+                (mode === 'scatter' ? 'bg-orange-500 text-white' : 'text-slate-400 hover:text-slate-200'),
               onClick: function () {
                 setMode('scatter');
               },
@@ -321,8 +321,8 @@
             'button',
             {
               className:
-                'px-3 py-1 text-xs rounded font-bold ' +
-                (mode === 'heatmap' ? 'bg-orange-500 text-white' : 'text-slate-400'),
+                'px-3 py-1 text-xs rounded font-bold cursor-pointer transition-colors duration-200 ' +
+                (mode === 'heatmap' ? 'bg-orange-500 text-white' : 'text-slate-400 hover:text-slate-200'),
               onClick: function () {
                 setMode('heatmap');
               },

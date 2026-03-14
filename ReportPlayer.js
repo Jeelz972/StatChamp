@@ -218,6 +218,104 @@ const AnalysisEngine = {
   _estimatePoss: (teamTotals, oppTotals) => {
     return window.StatsEngine.possAdvanced(teamTotals, oppTotals);
   },
+
+  // F5 — Calcul des stats par quart-temps pour un joueur (parsing play-by-play)
+  computeQuarterStats: function(playerId, games) {
+    var qMap = {};
+    if (!games || !Array.isArray(games)) return null;
+    games.forEach(function(g) {
+      if (!g.actions || !g.actions.length) return;
+      g.actions.forEach(function(a) {
+        var pid = a.pid;
+        if (Number(pid) !== Number(playerId) && String(pid) !== String(playerId)) return;
+        var q = a.q || a.quarter || 0;
+        if (!q || q > 4) return; // ignore OT pour la fatigue
+        if (!qMap[q]) qMap[q] = { q: q, pts: 0, fgm: 0, fga: 0, fta: 0, ftm: 0, tov: 0, reb: 0, stl: 0, blk: 0, min: 0 };
+        var m = qMap[q];
+        if (a.type === 'SHOT') {
+          m.fga++;
+          if (a.made) { m.fgm++; m.pts += a.val || 2; }
+        }
+        if (a.type === 'FT') {
+          m.fta += a.ftAtt || 1;
+          m.ftm += a.ftMade || 0;
+          m.pts += a.ftMade || 0;
+        }
+        if (a.type === 'TOV') m.tov++;
+        if (a.type === 'REB' || a.type === 'OREB' || a.type === 'DREB') m.reb++;
+        if (a.type === 'STL') m.stl++;
+        if (a.type === 'BLK') m.blk++;
+        if (a.type === 'MIN' && a.val) m.min += a.val;
+      });
+    });
+    var qStats = Object.values(qMap);
+    if (qStats.length < 3) return null;
+    // Estimer les minutes si non tracées : on divise les minutes totales du joueur par matchs × quarts
+    var totalMinutes = 0;
+    if (games) {
+      games.forEach(function(g) {
+        var raw = g.players || g.playerStats;
+        if (!raw) return;
+        var list = Array.isArray(raw) ? raw : Object.values(raw);
+        list.forEach(function(s) {
+          if (Number(s.id) === Number(playerId) || String(s.id) === String(playerId)) {
+            totalMinutes += parseFloat(s.min || s.minutes || 0);
+          }
+        });
+      });
+    }
+    var minPerQ = totalMinutes > 0 ? totalMinutes / (qStats.length * (games.length || 1)) : 2.5;
+    qStats.forEach(function(q) { if (q.min === 0) q.min = minPerQ; });
+    // Calculer EFF par quart
+    qStats.forEach(function(q) {
+      q.eff = window.StatsEngine.EFF(q.pts, q.reb, 0, q.stl, q.blk, q.fga, q.fgm, q.fta, q.ftm, q.tov);
+    });
+    return window.StatsEngine.fatigueProfile(qStats);
+  },
+
+  // F3 — Clustering dynamique des rôles dans l'équipe (k-means sur fingerprint 6D)
+  computeSquadClusters: function(player, allPlayers, games) {
+    var eligible = (allPlayers || []).filter(function(p) {
+      return p && p.logs && p.logs.length >= 3 && p.avg && (p.avg.min || 0) >= 10;
+    });
+    if (eligible.length < 4) return null;
+    var fps = eligible.map(function(p) {
+      return AnalysisEngine.computeFingerprint(p, eligible, games);
+    });
+    var vectors = fps.map(function(fp) {
+      if (!fp) return null;
+      return [fp.volume || 0, fp.efficiency || 0, fp.shooting || 0, fp.creation || 0, fp.rebounding || 0, fp.defense || 0];
+    }).filter(Boolean);
+    if (vectors.length < 4) return null;
+    var k = Math.min(4, Math.floor(vectors.length / 2));
+    var eligibleFp = eligible.filter(function(_, i) { return fps[i] !== null; });
+    var assignments = window.StatsEngine.kMeansCluster(vectors, k);
+    var playerIdx = eligibleFp.findIndex(function(p) { return Number(p.id) === Number(player.id) || String(p.id) === String(player.id); });
+    if (playerIdx === -1) return null;
+    var playerCluster = assignments[playerIdx];
+    var clusterMembers = eligibleFp.filter(function(_, i) { return assignments[i] === playerCluster; });
+    var clusterVecs = vectors.filter(function(_, i) { return assignments[i] === playerCluster; });
+    var dims = ['volume', 'efficiency', 'shooting', 'creation', 'rebounding', 'defense'];
+    var centroid = dims.map(function(_, di) {
+      return clusterVecs.reduce(function(s, v) { return s + v[di]; }, 0) / clusterVecs.length;
+    });
+    var sortedDims = dims.slice().sort(function(a, b) { return centroid[dims.indexOf(b)] - centroid[dims.indexOf(a)]; });
+    var LABELS = {
+      'volume+efficiency': 'Scoreur Dominant', 'volume+creation': 'Moteur Offensif',
+      'volume+shooting': 'Scoreur Extérieur', 'volume+interior': 'Force Intérieure',
+      'rebounding+defense': 'Ancre Défensive', 'defense+rebounding': 'Ancre Défensive',
+      'shooting+efficiency': 'Spacer Élite', 'creation+efficiency': 'Maestro',
+      'efficiency+shooting': 'Tireur Clinique', 'creation+volume': 'Moteur Offensif',
+    };
+    var key = sortedDims[0] + '+' + sortedDims[1];
+    var label = LABELS[key] || ('Profil ' + sortedDims[0].charAt(0).toUpperCase() + sortedDims[0].slice(1));
+    return {
+      label: label,
+      topDim: sortedDims[0],
+      members: clusterMembers.map(function(p) { return { id: p.id, name: p.name, number: p.number }; }),
+      size: clusterMembers.length,
+    };
+  },
   _impact: (playerStats) => {
     const Ois =
       playerStats.avg.pts +
@@ -232,7 +330,7 @@ const AnalysisEngine = {
       playerStats.avg.dreb -
       playerStats.avg.fouls * 0.7 +
       playerStats.avg.plusMinus * 0.3;
-    const Impact = ((Ois + Dis) / playerStats.avg.min) * 40;
+    const Impact = playerStats.avg.min > 0 ? ((Ois + Dis) / playerStats.avg.min) * 40 : 0;
     return Impact;
   },
   _calcPlayerNetRtg: (playerStat, teamTotals, oppTotals, teamMin) => {
@@ -424,7 +522,7 @@ const AnalysisEngine = {
         avg.ftPct = window.StatsEngine.safe(avg.ftm, avg.fta, 100);
         avg.threePAr = window.StatsEngine.threePAr(avg.threea, avg.fga);
         avg.FTr = window.StatsEngine.FTr(avg.fta, avg.fga);
-        avg.TS = window.StatsEngine.TS(sum('pts'), avg.fga, avg.fta);
+        avg.TS = window.StatsEngine.TS(sum('pts'), avg.fga + avg.threea, avg.fta);
         avg.eFG = window.StatsEngine.eFG(avg.fgm, avg.threem, avg.fga);
         avg.astTov = window.StatsEngine.astTovRatio(avg.ast, avg.tov);
         avg.pf36 = window.StatsEngine.per36(avg.fouls, avg.min);
@@ -444,10 +542,12 @@ const AnalysisEngine = {
         avg.fte = totalFte / gp;
         // Impact Total
         const dreb_pg = avg.reb - avg.oreb;
-        const DIS =
-          avg.stl * 2.5 + avg.blk * 2 + dreb_pg * 1.2 - avg.fouls * 0.8 + avg.plusMinus * 0.5;
-        const OIS = avg.pts + 2 * avg.ast + 1.5 * avg.oreb + 1.2 * avg.fte - 2 * avg.tov;
-        avg.impactTotal = avg.min > 0 ? ((OIS + DIS) / avg.min) * 100 : 0;
+        const OIS = window.StatsEngine.OIS(avg.pts, avg.ast, avg.oreb, avg.fte, avg.tov);
+        const DIS = window.StatsEngine.DIS(avg.stl, avg.blk, dreb_pg, avg.fouls, avg.plusMinus);
+        avg.impactTotal = window.StatsEngine.impactTotal(OIS, DIS, avg.min);
+        if ((avg.netRtg || 0) < 0 && (avg.plusMinus || 0) < 0) {
+          avg.impactTotal = Math.min(avg.impactTotal, 95);
+        }
 
         // --- SHOT PROFILE (zones de tir) ---
         var shotProfile = { paint: 0, mid: 0, three_corner: 0, three_ab: 0, total: 0 };
@@ -479,7 +579,9 @@ const AnalysisEngine = {
               : 0,
           totalShots: shotProfile.total,
         };
-
+        window.console.log(
+          `Player ${p.name} tir toala= ${avg.fga} ts=${avg.TS} calcul TS% ${window.StatsEngine.TS(avg.pts, avg.fga, avg.fta)} efg=${avg.eFG} 3PAr=${avg.threePAr} FTr=${avg.FTr} astTov=${avg.astTov}`
+        );
         return { ...p, avg, shotProfile: sp };
       })
       .sort((a, b) => b.avg.eff - a.avg.eff);
@@ -1053,7 +1155,7 @@ const AnalysisEngine = {
 
     // 1. GÉNÉRATION DES TAGS (Propre, sans cascade de if)
     var tags = [
-      fp.shooting >= 55 && threeaPerGame >= 2 ? 'Tire' : null,
+      fp.shooting >= 55 && threeaPerGame >= 2 && (avg.threePct || 0) >= 30 ? 'Tire' : null,
       fp.creation >= 55 && (avg.ast || 0) >= 2 ? 'Crée' : null,
       fp.defense >= 55 ? 'Défend' : null,
       fp.rebounding >= 55 ? 'Rebond' : null,
@@ -1158,12 +1260,12 @@ const AnalysisEngine = {
         desc: 'Convertit tout près du cercle.',
       },
       'efficiency+defense': {
-        name: '3-and-D Premium',
+        name: 'Two-Way Efficient',
         tier: 2,
         color: 'text-teal-400',
         border: 'border-teal-500',
         bg: 'bg-teal-900/20',
-        desc: 'Efficace en attaque, solide en défense.',
+        desc: 'Rendement offensif élevé, présence défensive.',
       },
       'efficiency+rebounding': {
         name: 'Paint Beast',
@@ -1372,6 +1474,20 @@ const AnalysisEngine = {
       primaryTraits: ['shooting'],
     });
 
+    candidates.push({
+      name: '3-and-D',
+      tier: 2,
+      color: 'text-teal-400',
+      border: 'border-teal-500',
+      bg: 'bg-teal-900/20',
+      desc: 'Tireur fiable et défenseur solide.',
+      score:
+        fp.shooting >= 50 && fp.defense >= 50 && (avg.threePct || 0) >= 33 && threeaPerGame >= 1.5
+          ? fp.shooting + fp.defense + 30
+          : 0,
+      primaryTraits: ['shooting', 'defense'],
+    });
+
     // 3. SÉLECTION DU VAINQUEUR
     candidates.sort(function (a, b) {
       return b.score - a.score;
@@ -1437,6 +1553,7 @@ const AnalysisEngine = {
       bg: match.bg,
       tier: match.tier,
       fingerprint: fp,
+      nbaComp: nbaComp,
     };
   },
 
@@ -1615,6 +1732,13 @@ const ScoutingRadar = ({ avg }) => {
         />
       ))}
       <polygon
+        points={poly(stats, () => r * 0.5)}
+        fill="none"
+        stroke="rgba(100,116,139,0.3)"
+        strokeWidth="1"
+        strokeDasharray="3,3"
+      />
+      <polygon
         points={poly(stats, (v) => r * v)}
         fill="rgba(212,165,116,0.4)"
         stroke="#d4a574"
@@ -1699,8 +1823,8 @@ function calcFiveManLineups(playerId, games, roster) {
   });
   const results = Object.values(lineupMap)
     .map((m) => {
-      const poss = Math.max(1, m.fga + 0.44 * m.fta + m.tov - m.orb);
-      const oppPoss = Math.max(1, m.oppFga + 0.44 * m.oppFta + m.oppTov - m.oppOrb);
+      const poss = Math.max(1, window.StatsEngine.possSimple(m.fga, m.fta, m.tov, m.orb));
+      const oppPoss = Math.max(1, window.StatsEngine.possSimple(m.oppFga, m.oppFta, m.oppTov, m.oppOrb));
       const avgPoss = (poss + oppPoss) / 2;
       if (avgPoss < MIN_POSS) return null;
       const ortg = Math.round((m.pts / avgPoss) * 100);
@@ -1748,7 +1872,7 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
         return;
       }
       const canvas = await window.html2canvas(container, {
-        backgroundColor: '#0a0a1a',
+        backgroundColor: '#0C0C12',
         scale: 2,
         useCORS: true,
         logging: false,
@@ -1820,82 +1944,105 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
   // --- LISTE DES JOUEURS ---
   if (!selectedId) {
     return (
-      <div className="fixed inset-0 z-[60] bg-slate-950 flex flex-col font-sans text-slate-200">
-        <div className="p-4 border-b border-slate-800 bg-slate-900 flex justify-between items-center shadow-lg z-10">
-          <div>
-            <h1 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-orange-300 uppercase tracking-tighter">
-              Scouting<span className="text-white">Pro</span>
-            </h1>
-            <p className="text-slate-400 text-xs mt-1">{players.length} Profils</p>
+      <div className="fixed inset-0 z-[60] flex flex-col font-sans" style={{ background: 'var(--bg-0)', color: 'var(--text-1)' }}>
+        {/* Header */}
+        <div className="px-6 py-4 flex justify-between items-center z-10 shrink-0" style={{ background: 'var(--bg-1)', borderBottom: '1px solid var(--border)' }}>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center justify-center w-9 h-9 rounded-[10px] text-white shrink-0" style={{ background: 'var(--accent)' }}>
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+            </div>
+            <div>
+              <h1 className="text-base font-black uppercase tracking-tight" style={{ color: 'var(--text-1)' }}>
+                Scouting <span style={{ color: 'var(--accent)' }}>Pro</span>
+              </h1>
+              <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-3)' }}>{players.length} profils analysés</p>
+            </div>
           </div>
-          <button
-            onClick={onClose}
-            className="bg-slate-800 text-slate-300 px-4 py-2 rounded-lg hover:text-white border border-slate-700"
-          >
+          <button onClick={onClose} className="sc-btn-ghost">
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
             Fermer
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto p-6 bg-slate-950">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+
+        {/* Grille joueurs */}
+        <div className="flex-1 overflow-y-auto p-5 custom-scrollbar">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
             {players.map((p) => {
               const arch = AnalysisEngine.getArchetype(p, players, propGames);
               return (
                 <button
                   key={p.id}
                   onClick={() => setSelectedId(p.id)}
-                  className="bg-slate-900/50 border border-slate-800 p-5 rounded-xl text-left hover:border-indigo-500 hover:bg-slate-800/80 transition-all relative overflow-hidden group shadow-lg flex flex-col h-full"
+                  className="text-left relative overflow-hidden group flex flex-col cursor-pointer"
+                  style={{
+                    background: 'var(--bg-2)',
+                    border: '1px solid var(--border)',
+                    borderLeft: '3px solid var(--accent-ghost)',
+                    borderRadius: 'var(--r-lg)',
+                    padding: '16px 16px 14px',
+                    boxShadow: 'var(--shadow-card)',
+                    transition: 'border-color var(--t-base), box-shadow var(--t-base), transform var(--t-base)',
+                  }}
+                  onMouseEnter={function(e) {
+                    e.currentTarget.style.borderLeftColor = 'var(--accent)';
+                    e.currentTarget.style.boxShadow = 'var(--shadow-accent)';
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                  }}
+                  onMouseLeave={function(e) {
+                    e.currentTarget.style.borderLeftColor = 'var(--accent-ghost)';
+                    e.currentTarget.style.boxShadow = 'var(--shadow-card)';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                  }}
                 >
                   {p.photo && (
-                    <div
-                      className="absolute inset-0 opacity-10 group-hover:opacity-20 transition-opacity bg-cover bg-center grayscale"
-                      style={{ backgroundImage: `url(${p.photo})` }}
-                    ></div>
+                    <div className="absolute inset-0 opacity-[0.07] group-hover:opacity-[0.13] transition-opacity bg-cover bg-center" style={{ backgroundImage: 'url(' + p.photo + ')', filter: 'grayscale(100%)' }}></div>
                   )}
-                  <div className="relative z-10">
-                    <div
-                      className={`absolute -right-3 -top-3 text-6xl font-black opacity-[0.05] group-hover:opacity-[0.1] ${arch.color}`}
-                    >
-                      #{p.number}
+                  <div className="absolute right-2 bottom-1 font-black pointer-events-none select-none" style={{ fontSize: '4.5rem', lineHeight: 1, opacity: 0.04, color: 'var(--text-1)', fontFamily: 'Fira Code, monospace' }}>
+                    {p.number}
+                  </div>
+
+                  <div className="relative z-10 flex flex-col h-full">
+                    <div className="flex justify-between items-start mb-2">
+                      <span className="text-base font-bold truncate pr-2" style={{ color: 'var(--text-1)' }}>{p.name}</span>
+                      <span className="text-[10px] shrink-0 font-mono" style={{ color: 'var(--text-3)' }}>#{p.number}</span>
                     </div>
-                    <div className="flex justify-between items-end mb-2">
-                      <span className="text-xl font-bold text-white truncate pr-2">{p.name}</span>
-                      <span className="text-slate-500 font-mono text-sm">#{p.number}</span>
+
+                    <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+                      <div className={`sc-badge ${arch.border} ${arch.color} ${arch.bg}`} style={{ alignSelf: 'flex-start' }}>
+                        {arch.name}
+                      </div>
+                      {(function() {
+                        var streak = window.StatsEngine.hotColdStreak(p.logs);
+                        if (!streak || streak.status === 'steady') return null;
+                        var isHot = streak.status === 'hot';
+                        return (
+                          <span className={'text-[9px] font-black px-1.5 py-0.5 rounded-full ' + (isHot ? 'bg-orange-500/20 text-orange-400' : 'bg-blue-500/20 text-blue-400')}>
+                            {isHot ? 'EN FORME' : 'CREUX'}
+                          </span>
+                        );
+                      })()}
                     </div>
-                    <div
-                      className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide mb-1 border ${arch.border} ${arch.color} ${arch.bg}`}
-                    >
-                      {arch.name}
-                    </div>
-                    {arch.nbaComp && arch.nbaComp.best && arch.nbaComp.best.name && (
-                      <div className="text-[9px] text-slate-500 mb-3">
-                        <span className="text-slate-600">Comparable :</span>{' '}
-                        <span className="text-orange-300/80 font-medium">
-                          {arch.nbaComp.best.name}
-                        </span>
-                        <span className="text-slate-600 ml-1">
-                          ({arch.nbaComp.best.similarity}%)
-                        </span>
+
+                    {arch.nbaComp && arch.nbaComp.best && arch.nbaComp.best.name ? (
+                      <div className="text-[9px] mb-3 flex items-center gap-1" style={{ color: 'var(--text-3)' }}>
+                        <span>~</span>
+                        <span style={{ color: 'var(--accent-light)' }} className="font-medium">{arch.nbaComp.best.name}</span>
+                        <span>({arch.nbaComp.best.similarity}%)</span>
                       </div>
-                    )}
-                    {!(arch.nbaComp && arch.nbaComp.best && arch.nbaComp.best.name) && (
-                      <div className="mb-3"></div>
-                    )}
-                    <div className="flex items-end gap-4 mt-auto pt-4 border-t border-slate-800/50">
-                      <div>
-                        <div className="text-[10px] text-slate-500 uppercase">PTS</div>
-                        <div className="text-lg font-bold text-white">{p.avg.pts.toFixed(1)}</div>
+                    ) : <div className="mb-3"></div>}
+
+                    <div className="flex items-end mt-auto pt-3" style={{ borderTop: '1px solid var(--border)' }}>
+                      <div className="flex-1 text-center">
+                        <div className="sc-section-label mb-0.5">PTS</div>
+                        <div className="sc-stat-value text-[15px]" style={{ color: 'var(--text-1)' }}>{p.avg.pts.toFixed(1)}</div>
                       </div>
-                      <div>
-                        <div className="text-[10px] text-slate-500 uppercase">USG%</div>
-                        <div className="text-lg font-bold text-slate-300">
-                          {p.avg.usage.toFixed(0)}%
-                        </div>
+                      <div className="flex-1 text-center">
+                        <div className="sc-section-label mb-0.5">EFF</div>
+                        <div className="sc-stat-value text-[15px]" style={{ color: 'var(--sys-warn)' }}>{p.avg.eff.toFixed(1)}</div>
                       </div>
-                      <div className="ml-auto">
-                        <div className="text-[10px] text-slate-500 uppercase text-right">EVAL</div>
-                        <div className="text-lg font-bold text-yellow-500 text-right">
-                          {p.avg.eff.toFixed(1)}
-                        </div>
+                      <div className="flex-1 text-center">
+                        <div className="sc-section-label mb-0.5">USG</div>
+                        <div className="sc-stat-value text-[15px]" style={{ color: 'var(--text-2)' }}>{p.avg.usage.toFixed(0)}%</div>
                       </div>
                     </div>
                   </div>
@@ -1912,107 +2059,111 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
   const p = players.find((x) => x.id === selectedId);
   if (!p) return null;
   const arch = AnalysisEngine.getArchetype(p, players, propGames);
-  const swot = AnalysisEngine.getSWOT(p);
   const narrativeText = aiNarrative || AnalysisEngine.getFallbackNarrative(p);
   const last5 = p.logs.slice(0, 5);
 
   return (
-    <div className="fixed inset-0 z-[60] bg-slate-950 overflow-y-auto font-sans text-slate-200">
+    <div className="fixed inset-0 z-[60] overflow-y-auto font-sans custom-scrollbar" style={{ background: 'var(--bg-0)', color: 'var(--text-1)' }}>
       {/* STICKY HEADER */}
-      <div className="sticky top-0 bg-slate-950/95 backdrop-blur border-b border-slate-800 p-3 flex justify-between items-center z-50 print:hidden shadow-md">
+      <div className="sticky top-0 backdrop-blur p-3 flex justify-between items-center z-50 print:hidden" style={{ background: 'rgba(6,6,9,0.92)', borderBottom: '1px solid var(--border)', backdropFilter: 'blur(16px)' }}>
         <button
           onClick={() => setSelectedId(null)}
-          className="flex items-center gap-2 text-slate-400 hover:text-white font-bold uppercase text-sm"
+          className="flex items-center gap-2 font-bold uppercase text-xs cursor-pointer transition-colors duration-200"
+          style={{ color: 'var(--text-3)' }}
+          onMouseEnter={function(e){ e.currentTarget.style.color = 'var(--text-1)'; }}
+          onMouseLeave={function(e){ e.currentTarget.style.color = 'var(--text-3)'; }}
         >
-          <span>← Retour</span>
+          <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7"/></svg>
+          Retour
         </button>
         <div className="flex gap-2">
-          <button
-            onClick={() => window.print()}
-            className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-1.5 rounded text-xs font-bold uppercase flex items-center gap-2"
-          >
-            <span>🖨️</span> Imprimer
+          <button onClick={() => window.print()} className="sc-btn-ghost">
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+            Imprimer
           </button>
-          <button
-            onClick={() => exportPlayerPDF(p)}
-            disabled={isExportingPDF}
-            className="bg-indigo-700 hover:bg-indigo-600 disabled:opacity-50 text-white px-4 py-1.5 rounded text-xs font-bold uppercase flex items-center gap-2"
-          >
-            <span>📄</span> {isExportingPDF ? 'Export...' : 'Export PDF'}
+          <button onClick={() => exportPlayerPDF(p)} disabled={isExportingPDF} className="sc-btn-accent" style={{ opacity: isExportingPDF ? 0.5 : 1 }}>
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+            {isExportingPDF ? 'Export...' : 'PDF'}
           </button>
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto p-4 md:p-8 space-y-6 pb-24 print:p-0">
+      <div className="max-w-6xl mx-auto p-4 md:p-6 space-y-5 pb-24 print:p-0">
         {/* HERO HEADER */}
-        <section
-          className={`rounded-2xl p-8 border-l-8 ${arch.border} bg-slate-900 relative overflow-hidden shadow-2xl`}
-        >
+        <section className="rounded-[var(--r-xl)] overflow-hidden relative" style={{ background: 'var(--bg-2)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-elevated)' }}>
           {p.photo && (
-            <div
-              className="absolute inset-0 z-0 opacity-40 bg-cover bg-center"
-              style={{ backgroundImage: `url(${p.photo})`, backgroundBlendMode: 'overlay' }}
-            ></div>
+            <div className="absolute inset-0 z-0 opacity-30 bg-cover bg-top" style={{ backgroundImage: 'url(' + p.photo + ')', filter: 'grayscale(40%)' }}></div>
           )}
-          <div className="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/80 to-transparent z-0"></div>
-          <div className="relative z-10 flex flex-col md:flex-row justify-between items-end gap-6">
+          <div className="absolute inset-0 z-0" style={{ background: 'linear-gradient(90deg, var(--bg-0) 45%, transparent 100%)' }}></div>
+          {/* Border-left accent archétype */}
+          <div className="absolute left-0 top-0 bottom-0 w-1 z-10" style={{ background: 'var(--accent)' }}></div>
+
+          <div className="relative z-10 flex flex-col md:flex-row justify-between items-end gap-6 p-7 pl-8">
             <div>
-              <div className="flex items-center gap-3 mb-2">
-                <h1 className="text-5xl font-black text-white uppercase tracking-tighter">
-                  {p.name}
-                </h1>
-                <span className="text-3xl text-slate-500 font-mono">#{p.number}</span>
+              <div className="flex items-baseline gap-3 mb-2">
+                <h1 className="text-4xl font-black uppercase tracking-tight" style={{ color: 'var(--text-1)' }}>{p.name}</h1>
+                <span className="text-xl font-mono" style={{ color: 'var(--text-3)' }}>#{p.number}</span>
               </div>
-              <div className="flex items-center gap-3">
-                <span className={`text-2xl font-bold uppercase tracking-wide ${arch.color}`}>
-                  {arch.name}
-                </span>
-                <span className="text-slate-400 italic">"{arch.desc}"</span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`text-lg font-bold uppercase tracking-wide ${arch.color}`}>{arch.name}</span>
+                <span className="text-sm italic" style={{ color: 'var(--text-3)' }}>"{arch.desc}"</span>
               </div>
               {arch.secondary && (
-                <div className="text-xs text-slate-500 mt-1">
-                  Dimension secondaire : <span className="text-slate-300">{arch.secondary}</span>
+                <div className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>
+                  Secondaire : <span style={{ color: 'var(--text-2)' }}>{arch.secondary}</span>
                 </div>
               )}
               {arch.tags && arch.tags.length > 0 && (
-                <div className="flex gap-1.5 mt-1.5">
+                <div className="flex gap-1.5 mt-2">
                   {arch.tags.map(function (t, i) {
                     return (
-                      <span
-                        key={i}
-                        className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700"
-                      >
-                        {t}
-                      </span>
+                      <span key={i} className="text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wide" style={{ background: 'rgba(255,255,255,0.06)', color: 'var(--text-2)', border: '1px solid var(--border-strong)' }}>{t}</span>
                     );
                   })}
                 </div>
               )}
+              {(function() {
+                var streak = window.StatsEngine.hotColdStreak(p.logs);
+                if (streak.status === 'steady') return null;
+                var isHot = streak.status === 'hot';
+                return (
+                  <div className="flex items-center gap-2 mt-3">
+                    <span className={`text-[10px] px-2.5 py-1 rounded-full font-black uppercase tracking-widest ${isHot ? 'bg-orange-900/60 text-orange-300 border border-orange-600/60' : 'bg-blue-900/60 text-blue-300 border border-blue-600/60'}`}>
+                      {isHot ? 'EN FORME' : 'PASSAGE A VIDE'}
+                    </span>
+                    <span className="text-[9px]" style={{ color: 'var(--text-3)' }}>
+                      {isHot ? '+' : ''}{streak.delta} EFF sur 3 derniers matchs
+                    </span>
+                    <span className="text-[9px]" style={{ color: 'var(--text-4, var(--text-3))' }}>
+                      ({streak.recentAvg} récent · {streak.seasonAvg} moy. saison)
+                    </span>
+                  </div>
+                );
+              })()}
             </div>
-            <div className="flex gap-6 bg-slate-950/50 p-4 rounded-xl backdrop-blur-sm border border-slate-800/50">
-              <div>
-                <div className="text-3xl font-black text-white">{p.avg.pts.toFixed(1)}</div>
-                <div className="text-[10px] font-bold text-slate-500">PTS</div>
-              </div>
-              <div>
-                <div className="text-3xl font-black text-white">{p.avg.reb.toFixed(1)}</div>
-                <div className="text-[10px] font-bold text-slate-500">REB</div>
-              </div>
-              <div>
-                <div className="text-3xl font-black text-white">{p.avg.ast.toFixed(1)}</div>
-                <div className="text-[10px] font-bold text-slate-500">AST</div>
-              </div>
-              <div>
-                <div className="text-3xl font-black text-yellow-400">{p.avg.eff.toFixed(1)}</div>
-                <div className="text-[10px] font-bold text-yellow-600">EVAL</div>
-              </div>
+
+            {/* Stats hero block */}
+            <div className="flex gap-5 p-4 rounded-[var(--r-lg)]" style={{ background: 'rgba(6,6,9,0.65)', border: '1px solid var(--border)', backdropFilter: 'blur(8px)' }}>
+              {[
+                { val: p.avg.pts.toFixed(1), label: 'PTS', color: 'var(--text-1)' },
+                { val: p.avg.reb.toFixed(1), label: 'REB', color: 'var(--data-light)' },
+                { val: p.avg.ast.toFixed(1), label: 'AST', color: 'var(--data)' },
+                { val: p.avg.eff.toFixed(1), label: 'EFF', color: 'var(--sys-warn)' },
+              ].map(function(s) {
+                return (
+                  <div key={s.label} className="text-center">
+                    <div className="sc-stat-value text-3xl" style={{ color: s.color }}>{s.val}</div>
+                    <div className="sc-section-label mt-1">{s.label}</div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </section>
 
         {/* Comparaison NBA — Double Axe */}
         {arch.nbaComp && arch.nbaComp.best && arch.nbaComp.best.name && (
-          <div className="bg-slate-950/40 border border-slate-800/50 rounded-lg p-3">
+          <div className="sc-card p-4">
             <div className="flex items-center justify-between mb-2">
               <div className="text-[10px] text-slate-500 uppercase font-bold">Comparaison NBA</div>
               {arch.nbaComp.isAnomaly && (
@@ -2096,49 +2247,71 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
 
         {/* ADN du Joueur (fingerprint radar) */}
         {arch.fingerprint && (
-          <div className="bg-slate-950/40 border border-slate-800/50 rounded-lg p-3">
-            <div className="text-[10px] text-slate-500 uppercase font-bold mb-2">ADN du Joueur</div>
+          <div className="sc-card p-4">
+            <div className="text-[10px] text-slate-500 uppercase font-bold mb-2">
+              ADN du Joueur{' '}
+              <span className="text-[8px] text-slate-600 font-normal normal-case ml-1">
+                (mix percentile rotation + normes {getBenchmarks().label})
+              </span>
+            </div>
             <div className="grid grid-cols-4 gap-2">
-              {[
-                { key: 'volume', label: 'VOL' },
-                { key: 'efficiency', label: 'EFF' },
-                { key: 'shooting', label: 'SHOOT' },
-                { key: 'creation', label: 'CREA' },
-                { key: 'rebounding', label: 'REB' },
-                { key: 'interior', label: 'PAINT' },
-                { key: 'defense', label: 'DEF' },
-                { key: 'impact', label: 'IMP' },
-              ].map(function (d) {
-                var score = arch.fingerprint[d.key] || 0;
-                var barColor =
-                  score >= 70
-                    ? 'bg-green-500'
-                    : score >= 45
-                      ? 'bg-orange-500'
-                      : score >= 25
-                        ? 'bg-yellow-500'
-                        : 'bg-slate-600';
-                return (
-                  <div key={d.key} className="text-center">
-                    <div className="text-[9px] text-slate-500">{d.label}</div>
-                    <div className="text-sm font-bold text-white">{score}</div>
-                    <div className="w-full h-1.5 bg-slate-800 rounded-full mt-0.5 overflow-hidden">
-                      <div
-                        className={barColor + ' h-full rounded-full'}
-                        style={{ width: score + '%' }}
-                      ></div>
+              {(function () {
+                var DIMENSION_TOOLTIPS = {
+                  volume: 'Volume offensif — Quantité de tirs et responsabilité offensive',
+                  efficiency: 'Efficacité — Rendement par rapport aux tirs pris (TS% + eFG%)',
+                  shooting: 'Tir extérieur — Volume, pourcentage et fréquence à 3 points',
+                  creation: 'Création — Passes décisives et ratio AST/TOV',
+                  rebounding: 'Rebond — Total + bonus rebond offensif',
+                  interior: 'Jeu intérieur — FTr, rebond offensif, proportion tirs à 2pts',
+                  defense: 'Défense — Interceptions + contres, pénalité fautes',
+                  impact: 'Impact collectif — Net Rating, +/-, évaluation globale',
+                };
+                return [
+                  { key: 'volume', label: 'VOL' },
+                  { key: 'efficiency', label: 'EFF' },
+                  { key: 'shooting', label: 'SHOOT' },
+                  { key: 'creation', label: 'CREA' },
+                  { key: 'rebounding', label: 'REB' },
+                  { key: 'interior', label: 'PAINT' },
+                  { key: 'defense', label: 'DEF' },
+                  { key: 'impact', label: 'IMP' },
+                ].map(function (d) {
+                  var score = arch.fingerprint[d.key] || 0;
+                  var barColor =
+                    score >= 70
+                      ? 'bg-green-500'
+                      : score >= 45
+                        ? 'bg-orange-500'
+                        : score >= 25
+                          ? 'bg-yellow-500'
+                          : 'bg-slate-600';
+                  return (
+                    <div
+                      key={d.key}
+                      className="text-center"
+                      title={DIMENSION_TOOLTIPS[d.key] || ''}
+                    >
+                      <div className="text-[9px] text-slate-500">{d.label}</div>
+                      <div className="text-sm font-bold text-white">{score}</div>
+                      <div className="w-full h-1.5 bg-slate-800 rounded-full mt-0.5 overflow-hidden">
+                        <div
+                          className={barColor + ' h-full rounded-full'}
+                          style={{ width: score + '%' }}
+                        ></div>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                });
+              })()}
             </div>
           </div>
         )}
 
         {/* NARRATIVE */}
-        <div className="border p-6 rounded-xl relative overflow-hidden bg-slate-900 border-slate-800">
+        <div className="sc-card sc-card--accent p-5 relative overflow-hidden" style={{ borderLeft: '3px solid var(--accent)' }}>
           <h3 className="text-slate-400 font-bold uppercase text-xs mb-2 flex items-center gap-2">
-            <span className="text-lg">📝</span> Note Rapide
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+            Note Rapide
           </h3>
           <p className="text-slate-200 text-lg leading-relaxed font-medium">{narrativeText}</p>
         </div>
@@ -2166,94 +2339,96 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
           // Analyse Coach
           const strengths = [];
           const improvements = [];
+          const iconOk = <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 mt-0.5 shrink-0 text-green-400" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>;
+          const iconWarn = <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 mt-0.5 shrink-0 text-orange-400" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>;
           if (a.TS > B.ts_elite)
             strengths.push({
-              icon: '🟢',
+              icon: iconOk,
               text: `Efficacité au scoring élite (TS% ${a.TS.toFixed(1)}%). Excellent choix de tirs.`,
             });
           else if (a.TS > B.ts_good)
             strengths.push({
-              icon: '🟢',
+              icon: iconOk,
               text: `Bonne efficacité au scoring (TS% ${a.TS.toFixed(1)}%).`,
             });
           if (a.astTov > B.astTov_good && a.ast > 2)
             strengths.push({
-              icon: '🟢',
+              icon: iconOk,
               text: `Gestionnaire fiable — ratio AST/TOV de ${a.astTov.toFixed(1)} avec ${a.ast.toFixed(1)} passes décisives/match.`,
             });
           if (a.threePct > B.threePct_good && a.threea > 2)
             strengths.push({
-              icon: '🟢',
+              icon: iconOk,
               text: `Menace à 3 points : ${a.threePct.toFixed(1)}% sur ${a.threea.toFixed(1)} tentatives/match.`,
             });
           if (p30.reb > 8 && strengths.length < 3)
             strengths.push({
-              icon: '🟢',
+              icon: iconOk,
               text: `Présence au rebond : ${p30.reb.toFixed(1)} rebonds projetés sur 30 min.`,
             });
           if (a.stl + a.blk > B.def_active && strengths.length < 3)
             strengths.push({
-              icon: '🟢',
+              icon: iconOk,
               text: `Activité défensive notable : ${a.stl.toFixed(1)} INT + ${a.blk.toFixed(1)} CTR/match.`,
             });
           if (a.oreb > B.oreb_good && strengths.length < 3)
             strengths.push({
-              icon: '🟢',
+              icon: iconOk,
               text: `Guerrier au rebond offensif (${a.oreb.toFixed(1)}/match).`,
             });
           if (a.min < 20 && a.min > 5 && p30.pts > 15 && strengths.length < 3)
             strengths.push({
-              icon: '🟢',
+              icon: iconOk,
               text: `Impact fort rapporté au temps de jeu : ${p30.pts.toFixed(1)} PTS projetés sur 30 min (${a.min.toFixed(1)} min jouées).`,
             });
           if (a.plusMinus > 5 && strengths.length < 3)
             strengths.push({
-              icon: '🟢',
+              icon: iconOk,
               text: `Impact collectif positif : +${a.plusMinus.toFixed(1)} de +/- moyen.`,
             });
           if (a.FTr > 0.35 && strengths.length < 3)
             strengths.push({
-              icon: '🟢',
+              icon: iconOk,
               text: `Provoque des fautes régulièrement (FTr ${a.FTr.toFixed(2)}).`,
             });
           if (a.netRtg > 8 && strengths.length < 3)
             strengths.push({
-              icon: '🟢',
+              icon: iconOk,
               text: `L'équipe performe nettement mieux avec lui (NetRtg +${a.netRtg.toFixed(0)}).`,
             });
           if (p30.pf > 4.5)
             improvements.push({
-              icon: '🟠',
+              icon: iconWarn,
               text: `Gestion des fautes à travailler — ${p30.pf.toFixed(1)} fautes projetées sur 30 min. Risque de foul trouble si temps de jeu élargi.`,
             });
           else if (a.pf36 > B.pf36_warn)
             improvements.push({
-              icon: '🟠',
+              icon: iconWarn,
               text: `Discipline : ${a.pf36.toFixed(1)} fautes/36 min, au-dessus du seuil d'alerte (${B.pf36_warn}).`,
             });
           if (a.astTov < B.astTov_bad && a.tov > 1.5)
             improvements.push({
-              icon: '🟠',
+              icon: iconWarn,
               text: `Ratio AST/TOV faible (${a.astTov.toFixed(1)}). Réduire les pertes de balle (${a.tov.toFixed(1)}/match).`,
             });
           if (a.TS < B.ts_bad && a.usage > B.usage_low + 5 && improvements.length < 2)
             improvements.push({
-              icon: '🟠',
+              icon: iconWarn,
               text: `Efficacité offensive insuffisante (TS% ${a.TS.toFixed(1)}%) pour le volume de tirs.`,
             });
           if (a.ftPct < 60 && a.fta / Math.max(gp, 1) > 1.5 && improvements.length < 2)
             improvements.push({
-              icon: '🟠',
+              icon: iconWarn,
               text: `Lancer-franc à travailler : ${a.ftPct.toFixed(1)}%. Points gratuits perdus.`,
             });
           if (a.threePct < B.threePct_good - 5 && a.threea > 2 && improvements.length < 2)
             improvements.push({
-              icon: '🟠',
+              icon: iconWarn,
               text: `Adresse extérieure insuffisante (${a.threePct.toFixed(1)}% à 3pts sur ${a.threea.toFixed(1)} tent./match).`,
             });
           if (a.netRtg < -8 && improvements.length < 2)
             improvements.push({
-              icon: '🟠',
+              icon: iconWarn,
               text: `Impact collectif négatif (NetRtg ${a.netRtg.toFixed(0)}). Le groupe souffre sur ses minutes.`,
             });
           const topS = strengths.slice(0, 3),
@@ -2262,61 +2437,36 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
           return (
             <React.Fragment>
               {/* S1 : VUE D'ENSEMBLE */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-1 bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col items-center">
-                  <h3 className="text-xs font-bold text-slate-400 uppercase mb-4 w-full">
-                    Empreinte Statistique
-                  </h3>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div className="lg:col-span-1 sc-card p-5 flex flex-col items-center">
+                  <h3 className="sc-section-label mb-4 w-full">Empreinte</h3>
                   <ScoutingRadar avg={a} />
                 </div>
-                <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-xl p-6">
-                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">
-                    <span className="text-orange-400">1.</span> Vue d'ensemble{' '}
-                    <span className="text-xs font-mono text-slate-600 bg-slate-950 px-2 py-0.5 rounded ml-3">
-                      {gp} Matchs
-                    </span>
-                  </h3>
-                  <div className="grid grid-cols-3 gap-4 mb-4">
-                    <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-800/50 text-center">
-                      <div
-                        className={`text-3xl font-black ${a.eff > 12 ? 'text-yellow-400' : a.eff > 6 ? 'text-white' : 'text-slate-400'}`}
-                      >
-                        {a.eff.toFixed(1)}
-                      </div>
-                      <div className="text-[10px] text-slate-500 uppercase font-bold mt-1">
-                        Évaluation (PIR)
-                      </div>
-                    </div>
-                    <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-800/50 text-center">
-                      <div
-                        className={`text-3xl font-black ${a.plusMinus > 0 ? 'text-green-400' : a.plusMinus < 0 ? 'text-red-400' : 'text-slate-400'}`}
-                      >
-                        {a.plusMinus > 0 ? '+' : ''}
-                        {a.plusMinus.toFixed(1)}
-                      </div>
-                      <div className="text-[10px] text-slate-500 uppercase font-bold mt-1">
-                        Plus / Minus
-                      </div>
-                    </div>
-                    <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-800/50 text-center">
-                      <div className="text-3xl font-black text-cyan-400">{a.min.toFixed(1)}</div>
-                      <div className="text-[10px] text-slate-500 uppercase font-bold mt-1">
-                        Minutes
-                      </div>
-                    </div>
+                <div className="lg:col-span-2 sc-card p-5">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="sc-section-label">Vue d'ensemble</h3>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full" style={{ background: 'var(--bg-4)', color: 'var(--text-3)' }}>{gp} matchs</span>
                   </div>
-                  <div className="bg-gradient-to-r from-indigo-950/50 to-cyan-950/50 p-3 rounded-xl border border-indigo-500/30 flex items-center justify-between">
+                  <div className="grid grid-cols-3 gap-3 mb-4">
+                    {[
+                      { val: a.eff.toFixed(1), label: 'PIR', color: a.eff > 12 ? 'var(--sys-warn)' : a.eff > 6 ? 'var(--text-1)' : 'var(--text-3)' },
+                      { val: (a.plusMinus > 0 ? '+' : '') + a.plusMinus.toFixed(1), label: '+/-', color: a.plusMinus > 0 ? 'var(--made)' : a.plusMinus < 0 ? 'var(--miss)' : 'var(--text-3)' },
+                      { val: a.min.toFixed(1), label: 'MIN', color: 'var(--data-light)' },
+                    ].map(function(s) {
+                      return (
+                        <div key={s.label} className="sc-stat-block">
+                          <div className="sc-stat-value text-3xl" style={{ color: s.color }}>{s.val}</div>
+                          <div className="sc-section-label mt-1">{s.label}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="flex items-center justify-between p-3 rounded-[var(--r-md)]" style={{ background: 'var(--data-ghost)', border: '1px solid rgba(129,140,248,0.15)' }}>
                     <div>
-                      <div className="text-[11px] font-bold text-indigo-400 uppercase">
-                        Impact Total
-                      </div>
-                      <div className="text-[10px] text-slate-500">
-                        Elite ≥ 110 · Bon ≥ 85 · Correct ≥ 60
-                      </div>
+                      <div className="text-[11px] font-bold uppercase" style={{ color: 'var(--data)' }}>Impact Total</div>
+                      <div className="sc-section-label mt-0.5">Elite ≥ 110 · Bon ≥ 85 · Correct ≥ 60</div>
                     </div>
-                    <div
-                      className={`text-2xl font-black ${a.impactTotal > 110 ? 'text-blue-400' : a.impactTotal > 85 ? 'text-green-400' : a.impactTotal > 59 ? 'text-white' : 'text-red-400'}`}
-                    >
+                    <div className="sc-stat-value text-2xl" style={{ color: a.impactTotal > 110 ? 'var(--data-light)' : a.impactTotal > 85 ? 'var(--made)' : a.impactTotal > 59 ? 'var(--text-1)' : 'var(--miss)' }}>
                       {a.impactTotal.toFixed(1)}
                     </div>
                   </div>
@@ -2324,16 +2474,14 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
               </div>
 
               {/* S2 : EFFICACITE OFFENSIVE */}
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-5">
-                  <span className="text-orange-400">2.</span> Efficacité Offensive
-                </h3>
+              <div className="sc-card p-5">
+                <h3 className="sc-section-label mb-4" style={{ color: 'var(--accent)' }}>Efficacité Offensive</h3>
                 <div className="grid grid-cols-4 md:grid-cols-8 gap-3">
-                  <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 text-center">
+                  <div className="sc-stat-block">
                     <div className="text-2xl font-black text-orange-400">{a.pts.toFixed(1)}</div>
                     <div className="text-[10px] text-slate-500 uppercase font-bold">PTS</div>
                   </div>
-                  <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 text-center">
+                  <div className="sc-stat-block">
                     <div
                       className={`text-2xl font-black ${fgPctGlobal > 50 ? 'text-green-400' : fgPctGlobal > 40 ? 'text-white' : 'text-red-400'}`}
                     >
@@ -2344,7 +2492,7 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
                       {totalFGM}/{totalFGA > 0 ? totalFGA.toFixed(0) : 0}
                     </div>
                   </div>
-                  <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 text-center">
+                  <div className="sc-stat-block">
                     <div
                       className={`text-2xl font-black ${a.threePct > B.threePct_good ? 'text-green-400' : a.threePct > 30 ? 'text-white' : 'text-red-400'}`}
                     >
@@ -2355,7 +2503,7 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
                       {a.threem}/{a.threea}
                     </div>
                   </div>
-                  <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 text-center">
+                  <div className="sc-stat-block">
                     <div
                       className={`text-2xl font-black ${a.ftPct > 75 ? 'text-green-400' : a.ftPct > 60 ? 'text-white' : 'text-red-400'}`}
                     >
@@ -2366,7 +2514,7 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
                       {a.ftm}/{a.fta}
                     </div>
                   </div>
-                  <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 text-center">
+                  <div className="sc-stat-block">
                     <div
                       className={`text-2xl font-black ${a.TS > B.ts_elite ? 'text-blue-400' : a.TS > B.ts_good ? 'text-green-400' : a.TS > B.ts_bad ? 'text-white' : 'text-red-400'}`}
                     >
@@ -2374,21 +2522,32 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
                     </div>
                     <div className="text-[10px] text-slate-500 uppercase font-bold">TS%</div>
                   </div>
-                  <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 text-center">
+                  <div className="sc-stat-block">
                     <div className="text-2xl font-black text-white">{a.eFG.toFixed(1)}</div>
                     <div className="text-[10px] text-slate-500 uppercase font-bold">eFG%</div>
                   </div>
-                  <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 text-center">
+                  {(function() {
+                    var wobaVal = window.StatsEngine.woba(a.pts, a.ast, a.oreb, a.tov, a.fga + a.threea, a.fgm + a.threem, a.fta, a.ftm);
+                    var wobaColor = wobaVal >= 0.45 ? 'text-cyan-400' : wobaVal >= 0.30 ? 'text-white' : 'text-slate-400';
+                    return (
+                      <div className="sc-stat-block" title="WOBA — valeur offensive nette par possession. >0.45 élite · 0.30-0.40 correct · <0.25 faible">
+                        <div className={`text-2xl font-black ${wobaColor}`}>{wobaVal.toFixed(3)}</div>
+                        <div className="text-[10px] text-slate-500 uppercase font-bold">WOBA</div>
+                        <div className="text-[9px] text-slate-600">{wobaVal >= 0.45 ? 'Elite' : wobaVal >= 0.30 ? 'Correct' : 'Faible'}</div>
+                      </div>
+                    );
+                  })()}
+                  <div className="sc-stat-block">
                     <div
-                      className={`text-2xl font-black ${a.usage > B.usage_high ? 'text-orange-400' : 'text-white'}`}
+                      className={`text-2xl font-black ${a.usage > 30 ? 'text-red-400' : a.usage > 25 ? 'text-orange-400' : 'text-white'}`}
                     >
                       {a.usage.toFixed(0)}
                     </div>
                     <div className="text-[10px] text-slate-500 uppercase font-bold">USG%</div>
                   </div>
-                  <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 text-center">
+                  <div className="sc-stat-block">
                     <div
-                      className={`text-2xl font-black ${a.astTov > B.astTov_good ? 'text-green-400' : a.astTov > 1.0 ? 'text-white' : 'text-red-400'}`}
+                      className={`text-2xl font-black ${a.astTov > B.astTov_good ? 'text-green-400' : a.astTov >= 1.5 ? 'text-white' : a.astTov >= 1.0 ? 'text-orange-400' : 'text-red-400'}`}
                     >
                       {a.astTov.toFixed(1)}
                     </div>
@@ -2397,16 +2556,22 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
                       {a.ast.toFixed(1)} / {a.tov.toFixed(1)}
                     </div>
                   </div>
+                  <div className="sc-stat-block">
+                    <div
+                      className={`text-2xl font-black ${a.FTr > 0.35 ? 'text-green-400' : a.FTr > 0.2 ? 'text-white' : 'text-slate-400'}`}
+                    >
+                      {a.FTr.toFixed(2)}
+                    </div>
+                    <div className="text-[10px] text-slate-500 uppercase font-bold">FTr</div>
+                  </div>
                 </div>
               </div>
 
               {/* S3 : IMPACT DEFENSIF */}
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-5">
-                  <span className="text-orange-400">3.</span> Impact Défensif & Hustle
-                </h3>
+              <div className="sc-card p-5">
+                <h3 className="sc-section-label mb-4" style={{ color: 'var(--data)' }}>Impact Défensif & Hustle</h3>
                 <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-                  <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 text-center">
+                  <div className="sc-stat-block">
                     <div className="text-2xl font-black text-white">{a.reb.toFixed(1)}</div>
                     <div className="text-[10px] text-slate-500 uppercase font-bold">TRB</div>
                     <div className="text-[9px] text-slate-600 mt-0.5">
@@ -2415,7 +2580,7 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
                       <span className="text-blue-400">{dreb.toFixed(1)} DEF</span>
                     </div>
                   </div>
-                  <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 text-center">
+                  <div className="sc-stat-block">
                     <div
                       className={`text-2xl font-black ${a.stl > 1.5 ? 'text-green-400' : 'text-white'}`}
                     >
@@ -2423,7 +2588,7 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
                     </div>
                     <div className="text-[10px] text-slate-500 uppercase font-bold">STL</div>
                   </div>
-                  <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 text-center">
+                  <div className="sc-stat-block">
                     <div
                       className={`text-2xl font-black ${a.blk > 1.0 ? 'text-green-400' : 'text-white'}`}
                     >
@@ -2431,7 +2596,7 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
                     </div>
                     <div className="text-[10px] text-slate-500 uppercase font-bold">BLK</div>
                   </div>
-                  <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 text-center">
+                  <div className="sc-stat-block">
                     <div
                       className={`text-2xl font-black ${a.fouls > 3.5 ? 'text-red-400' : a.fouls > 2.5 ? 'text-yellow-400' : 'text-white'}`}
                     >
@@ -2440,7 +2605,7 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
                     <div className="text-[10px] text-slate-500 uppercase font-bold">PF</div>
                     <div className="text-[9px] text-slate-600">{a.pf36.toFixed(1)} /36m</div>
                   </div>
-                  <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 text-center">
+                  <div className="sc-stat-block">
                     <div
                       className={`text-2xl font-black ${a.netRtg > 0 ? 'text-green-400' : a.netRtg < 0 ? 'text-red-400' : 'text-slate-400'}`}
                     >
@@ -2449,7 +2614,7 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
                     </div>
                     <div className="text-[10px] text-slate-500 uppercase font-bold">Net Rtg</div>
                   </div>
-                  <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 text-center">
+                  <div className="sc-stat-block">
                     <div className="text-2xl font-black text-white">
                       {(a.stl + a.blk).toFixed(1)}
                     </div>
@@ -2458,41 +2623,110 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
                 </div>
               </div>
 
+              {/* F5 : PROFIL DE FATIGUE PAR QUART-TEMPS */}
+              {(function() {
+                var fatigue = AnalysisEngine.computeQuarterStats(p.id, propGames);
+                if (!fatigue || !fatigue.quarters || fatigue.quarters.length < 2) return null;
+                var trendLabel = fatigue.slope < -0.5 ? 'Déclin progressif' : fatigue.slope > 0.5 ? 'Montée en régime' : 'Profil stable';
+                var trendColor = fatigue.slope < -0.5 ? 'text-red-400' : fatigue.slope > 0.5 ? 'text-green-400' : 'text-slate-400';
+                var maxEff = Math.max.apply(null, fatigue.quarters.map(function(q) { return Math.abs(q.eff10); })) || 1;
+                var qLabels = ['Q1', 'Q2', 'Q3', 'Q4'];
+                return (
+                  <div className="sc-card p-5">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="sc-section-label" style={{ color: 'var(--warning)' }}>Profil de Fatigue</h3>
+                      <span className={'text-xs font-bold ' + trendColor}>{trendLabel}</span>
+                    </div>
+                    <div className="flex items-end gap-2 h-20 mb-3">
+                      {fatigue.quarters.map(function(q, i) {
+                        var pct = maxEff > 0 ? Math.max(4, Math.abs(q.eff10) / maxEff * 100) : 4;
+                        var barColor = q.eff10 >= 0 ? 'var(--made)' : 'var(--miss)';
+                        return (
+                          <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                            <span className="text-[9px] font-mono" style={{ color: 'var(--text-3)' }}>{q.eff10 >= 0 ? '+' : ''}{q.eff10.toFixed(1)}</span>
+                            <div className="w-full rounded-t-sm" style={{ height: pct + '%', background: barColor, minHeight: '4px' }}></div>
+                            <span className="text-[10px] text-slate-500 font-bold">{qLabels[i] || ('Q' + q.q)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {fatigue.breakpoint && (
+                      <p className="text-[10px] text-slate-500">
+                        Rupture détectée à <span className="text-amber-400 font-bold">{qLabels[(fatigue.breakpoint - 1)] || ('Q' + fatigue.breakpoint)}</span> — baisse d'efficacité après ce quart.
+                      </p>
+                    )}
+                    <p className="text-[10px] text-slate-600 mt-1">EFF/10 min par quart-temps — pente de régression : {fatigue.slope >= 0 ? '+' : ''}{fatigue.slope.toFixed(2)}</p>
+                  </div>
+                );
+              })()}
+
+              {/* F3 : PROFIL DE RÔLE (K-MEANS CLUSTERING) */}
+              {(function() {
+                var cluster = AnalysisEngine.computeSquadClusters(p, players, propGames);
+                if (!cluster) return null;
+                var dimColors = { volume: 'text-orange-400', efficiency: 'text-cyan-400', shooting: 'text-yellow-400', creation: 'text-purple-400', rebounding: 'text-blue-400', defense: 'text-green-400' };
+                var dimColor = dimColors[cluster.topDim] || 'text-white';
+                return (
+                  <div className="sc-card p-5">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="sc-section-label" style={{ color: 'var(--accent)' }}>Profil de Rôle — Clustering</h3>
+                      <span className={'text-xs font-black uppercase px-2 py-0.5 rounded-full ' + dimColor} style={{ background: 'var(--bg-4)' }}>{cluster.label}</span>
+                    </div>
+                    <p className="text-[11px] mb-3" style={{ color: 'var(--text-3)' }}>
+                      Dimension dominante : <span className={'font-bold ' + dimColor}>{cluster.topDim}</span> — groupe de {cluster.size} joueur{cluster.size > 1 ? 's' : ''} au profil similaire.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {cluster.members.map(function(m) {
+                        var isSelf = Number(m.id) === Number(p.id) || String(m.id) === String(p.id);
+                        return (
+                          <span
+                            key={m.id}
+                            className={'text-[10px] font-mono px-2 py-0.5 rounded-full ' + (isSelf ? 'text-black font-black' : 'text-slate-300')}
+                            style={{ background: isSelf ? 'var(--accent)' : 'var(--bg-4)' }}
+                          >
+                            #{m.number} {m.name}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* S4 : PER 30 */}
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
-                  <span className="text-orange-400">4.</span> Projection Titulaire FIBA
-                </h3>
-                <p className="text-[11px] text-slate-500 mb-5">
+              <div className="sc-card p-5">
+                <h3 className="sc-section-label mb-1" style={{ color: 'var(--made)' }}>Projection Titulaire FIBA</h3>
+                <p className="text-[11px] mb-4" style={{ color: 'var(--text-3)' }}>
                   Statistiques projetées sur 30 minutes — (Stat / MIN) × 30.
                   {a.min < 10 && (
-                    <span className="text-amber-400 ml-1">
-                      ⚠ Faible échantillon ({a.min.toFixed(1)} min/match).
+                    <span className="text-amber-400 ml-1 inline-flex items-center gap-1">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+                      Faible échantillon ({a.min.toFixed(1)} min/match).
                     </span>
                   )}
                 </p>
                 <div className="grid grid-cols-5 gap-3">
-                  <div className="bg-gradient-to-b from-slate-950 to-slate-950/50 p-4 rounded-lg border border-slate-800/50 text-center">
+                  <div className="sc-stat-block">
                     <div className="text-2xl font-black text-orange-400">{p30.pts.toFixed(1)}</div>
                     <div className="text-[10px] text-slate-500 uppercase font-bold">PTS</div>
                     <div className="text-[9px] text-slate-600">réel: {a.pts.toFixed(1)}</div>
                   </div>
-                  <div className="bg-gradient-to-b from-slate-950 to-slate-950/50 p-4 rounded-lg border border-slate-800/50 text-center">
+                  <div className="sc-stat-block">
                     <div className="text-2xl font-black text-blue-400">{p30.reb.toFixed(1)}</div>
                     <div className="text-[10px] text-slate-500 uppercase font-bold">REB</div>
                     <div className="text-[9px] text-slate-600">réel: {a.reb.toFixed(1)}</div>
                   </div>
-                  <div className="bg-gradient-to-b from-slate-950 to-slate-950/50 p-4 rounded-lg border border-slate-800/50 text-center">
+                  <div className="sc-stat-block">
                     <div className="text-2xl font-black text-purple-400">{p30.ast.toFixed(1)}</div>
                     <div className="text-[10px] text-slate-500 uppercase font-bold">AST</div>
                     <div className="text-[9px] text-slate-600">réel: {a.ast.toFixed(1)}</div>
                   </div>
-                  <div className="bg-gradient-to-b from-slate-950 to-slate-950/50 p-4 rounded-lg border border-slate-800/50 text-center">
+                  <div className="sc-stat-block">
                     <div className="text-2xl font-black text-green-400">{p30.stl.toFixed(1)}</div>
                     <div className="text-[10px] text-slate-500 uppercase font-bold">STL</div>
                     <div className="text-[9px] text-slate-600">réel: {a.stl.toFixed(1)}</div>
                   </div>
-                  <div className="bg-gradient-to-b from-slate-950 to-slate-950/50 p-4 rounded-lg border border-slate-800/50 text-center">
+                  <div className="sc-stat-block">
                     <div
                       className={`text-2xl font-black ${p30.pf > 4.5 ? 'text-red-400' : p30.pf > 3.5 ? 'text-yellow-400' : 'text-white'}`}
                     >
@@ -2505,14 +2739,13 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
               </div>
 
               {/* S5 : ANALYSE DU COACH */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-24 h-24 bg-green-500/5 rounded-bl-full pointer-events-none"></div>
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">
-                    <span className="text-orange-400">5.</span> Analyse du Coach
-                  </h4>
-                  <h4 className="text-green-400 font-black uppercase text-sm mb-4">
-                    ▲ Points Forts
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="sc-card p-5 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-20 h-20 rounded-bl-full pointer-events-none" style={{ background: 'rgba(52,211,153,0.04)' }}></div>
+                  <h4 className="sc-section-label mb-3">Analyse du Coach</h4>
+                  <h4 className="text-green-400 font-black uppercase text-sm mb-4 flex items-center gap-1.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7"/></svg>
+                    Points Forts
                   </h4>
                   {topS.length > 0 ? (
                     <div className="space-y-2">
@@ -2521,7 +2754,7 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
                           key={i}
                           className="flex gap-3 text-slate-300 text-sm p-3 bg-slate-950/50 rounded-lg border border-green-900/20"
                         >
-                          <span className="shrink-0">{s.icon}</span>
+                          {s.icon}
                           <span>{s.text}</span>
                         </div>
                       ))}
@@ -2532,13 +2765,12 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
                     </p>
                   )}
                 </div>
-                <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-24 h-24 bg-orange-500/5 rounded-bl-full pointer-events-none"></div>
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">
-                    &nbsp;
-                  </h4>
-                  <h4 className="text-orange-400 font-black uppercase text-sm mb-4">
-                    ▼ Axes de Progression
+                <div className="sc-card p-5 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-20 h-20 rounded-bl-full pointer-events-none" style={{ background: 'rgba(249,115,22,0.04)' }}></div>
+                  <h4 className="sc-section-label mb-3">&nbsp;</h4>
+                  <h4 className="text-orange-400 font-black uppercase text-sm mb-4 flex items-center gap-1.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                    Axes de Progression
                   </h4>
                   {topI.length > 0 ? (
                     <div className="space-y-2">
@@ -2547,7 +2779,7 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
                           key={i}
                           className="flex gap-3 text-slate-300 text-sm p-3 bg-slate-950/50 rounded-lg border border-orange-900/20"
                         >
-                          <span className="shrink-0">{s.icon}</span>
+                          {s.icon}
                           <span>{s.text}</span>
                         </div>
                       ))}
@@ -2564,38 +2796,30 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
         })()}
 
         {/* 5 DERNIERS MATCHS */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-          <div className="p-4 bg-slate-950 border-b border-slate-800">
-            <h3 className="text-xs font-bold text-slate-400 uppercase">5 Derniers Matchs</h3>
+        <div className="sc-card overflow-hidden">
+          <div className="px-5 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
+            <h3 className="sc-section-label">5 Derniers Matchs</h3>
           </div>
-          <table className="w-full text-sm text-left text-slate-400">
-            <thead className="text-[10px] text-slate-500 uppercase bg-slate-950">
+          <table className="w-full text-sm text-left" style={{ color: 'var(--text-2)' }}>
+            <thead style={{ background: 'var(--bg-0)' }}>
               <tr>
-                <th className="p-3">Date</th>
-                <th className="p-3">Adv</th>
-                <th className="p-3 text-center">MIN</th>
-                <th className="p-3 text-center">PTS</th>
-                <th className="p-3 text-center">REB</th>
-                <th className="p-3 text-center">AST</th>
-                <th className="p-3 text-center">EVAL</th>
-                <th className="p-3 text-center">+/-</th>
+                {['Date','Adv','MIN','PTS','REB','AST','EFF','+/-'].map(function(h, i) {
+                  return <th key={h} className={'p-3 sc-section-label ' + (i > 1 ? 'text-center' : '')}>{h}</th>;
+                })}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800">
+            <tbody>
               {last5.map((l, i) => (
-                <tr key={i} className="hover:bg-slate-800/30">
-                  <td className="p-3 text-xs font-mono">{l.rawDate.toLocaleDateString('fr-FR')}</td>
-                  <td className="p-3 text-white">{l.opponent}</td>
-                  <td className="p-3 text-center text-xs">{l.min}</td>
-                  <td className="p-3 text-center font-bold text-white">{l.pts}</td>
-                  <td className="p-3 text-center">{l.reb}</td>
-                  <td className="p-3 text-center">{l.ast}</td>
-                  <td className="p-3 text-center font-bold text-yellow-400">{l.eff.toFixed(0)}</td>
-                  <td
-                    className={`p-3 text-center font-bold ${l.plusMinus > 0 ? 'text-green-500' : l.plusMinus < 0 ? 'text-red-500' : 'text-slate-500'}`}
-                  >
-                    {l.plusMinus > 0 ? '+' : ''}
-                    {l.plusMinus}
+                <tr key={i} className="sc-table-row" style={{ borderTop: '1px solid var(--border-subtle)' }}>
+                  <td className="p-3 text-xs font-mono" style={{ color: 'var(--text-3)' }}>{l.rawDate.toLocaleDateString('fr-FR')}</td>
+                  <td className="p-3 font-medium" style={{ color: 'var(--text-1)' }}>{l.opponent}</td>
+                  <td className="p-3 text-center text-xs font-mono">{l.min}</td>
+                  <td className="p-3 text-center font-bold sc-stat-value" style={{ color: 'var(--text-1)' }}>{l.pts}</td>
+                  <td className="p-3 text-center sc-stat-value">{l.reb}</td>
+                  <td className="p-3 text-center sc-stat-value">{l.ast}</td>
+                  <td className="p-3 text-center font-bold sc-stat-value" style={{ color: 'var(--sys-warn)' }}>{l.eff.toFixed(0)}</td>
+                  <td className="p-3 text-center font-bold sc-stat-value" style={{ color: l.plusMinus > 0 ? 'var(--made)' : l.plusMinus < 0 ? 'var(--miss)' : 'var(--text-3)' }}>
+                    {l.plusMinus > 0 ? '+' : ''}{l.plusMinus}
                   </td>
                 </tr>
               ))}
@@ -2664,9 +2888,9 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
               </div>
             );
             return (
-              <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden mt-6">
-                <div className="p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
-                  <h3 className="text-xs font-bold text-slate-400 uppercase">Lineups 5-Man</h3>
+              <div className="sc-card overflow-hidden mt-5">
+                <div className="px-5 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
+                  <h3 className="sc-section-label">Lineups 5-Man</h3>
                   <span className="text-[10px] text-slate-600">
                     {lineups.total} combos analysés (matchs PBP uniquement)
                   </span>

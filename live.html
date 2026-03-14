@@ -993,13 +993,30 @@
             this.finalize();
           }
         },
+        showTech(foulerId, ftShooterId) {
+          var fouler = State.players[foulerId];
+          this.ctx = {
+            foulerId: foulerId,
+            victimId: null,
+            ftShooterId: ftShooterId,
+            foulType: 'technical',
+            ftResults: [],
+            ftCount: 1,
+            currentFt: 0,
+          };
+          document.getElementById('foulTitle').textContent = '🟡 Tech #' + fouler.number + ' — LF: #' + State.players[ftShooterId].number;
+          document.getElementById('foulTypes').style.display = 'none';
+          document.getElementById('ftSequence').innerHTML = '';
+          document.getElementById('foulPanel').classList.add('show');
+          this.showFtSequence();
+        },
         finalize() {
-          const { foulerId, victimId, foulType, ftResults, and1 } = this.ctx;
-          const fouler = State.players[foulerId],
-            victim = State.players[victimId];
+          const { foulerId, victimId, foulType, ftResults, and1, ftShooterId } = this.ctx;
+          const fouler = State.players[foulerId];
+          const victim = victimId ? State.players[victimId] : null;
 
           fouler.stats.fouls++;
-          victim.stats.foulDrawn++;
+          if (victim) victim.stats.foulDrawn++;
           State.teamFouls[fouler.team][State.match.quarter - 1]++;
 
           if (foulType === 'technical')
@@ -1022,12 +1039,12 @@
               time: State.match.time,
             });
 
-          GameEngine.log('FOUL', this.ctx.foulerId, {
-            victim: this.ctx.victimId,
-            foulType: this.ctx.foulType || 'personal',
-          });
+          var logData = { foulType: foulType || 'personal' };
+          if (victimId) logData.victim = victimId;
+          if (ftShooterId) logData.ftShooterId = ftShooterId;
+          GameEngine.log('FOUL', this.ctx.foulerId, logData);
 
-          if (and1) {
+          if (and1 && victim) {
             const x = victim.team === 'home' ? 26.425 : 1.575;
             victim.stats.fgm++;
             victim.stats.fga++;
@@ -1040,21 +1057,25 @@
           const ftMade = ftResults.filter((r) => r).length,
             ftAtt = ftResults.length;
           if (ftAtt > 0) {
-            victim.stats.ftm += ftMade;
-            victim.stats.fta += ftAtt;
-            victim.stats.pts += ftMade;
-            ftResults.forEach((made, i) => {
-              GameEngine.log('FT', victimId, {
-                ftMade: made ? 1 : 0,
-                ftAtt: 1,
-                ftNum: i + 1,
-                ftTotal: ftAtt,
+            // Pour tech : le tireur est ftShooterId, sinon la victime
+            var ftShooter = ftShooterId ? State.players[ftShooterId] : victim;
+            if (ftShooter) {
+              ftShooter.stats.ftm += ftMade;
+              ftShooter.stats.fta += ftAtt;
+              ftShooter.stats.pts += ftMade;
+              ftResults.forEach((made, i) => {
+                GameEngine.log('FT', ftShooter.id, {
+                  ftMade: made ? 1 : 0,
+                  ftAtt: 1,
+                  ftNum: i + 1,
+                  ftTotal: ftAtt,
+                });
               });
-            });
-            if (ftMade > 0) {
-              UI.animScore(victim.team);
-              GameEngine.updatePlusMinus(victim.team, ftMade);
-              GameEngine.addScorePoint(victim.team, ftMade);
+              if (ftMade > 0) {
+                UI.animScore(ftShooter.team);
+                GameEngine.updatePlusMinus(ftShooter.team, ftMade);
+                GameEngine.addScorePoint(ftShooter.team, ftMade);
+              }
             }
           }
 
@@ -1115,7 +1136,7 @@
           document.getElementById('startersTitle').innerHTML =
             `<div style="margin-bottom:10px;">5 de départ Q${this.quarter}</div>` +
             `<div style="display:flex;gap:8px;justify-content:center;">` +
-            `<button class="btn-mod ${isHome && !p.inactive ? 'prim' : ''}" onclick="StartersModal.setTab('home')" style="padding:6px 16px;font-size:0.75rem;">🏠 NOUS</button>` +
+            `<button class="btn-mod ${isHome ? 'prim' : ''}" onclick="StartersModal.setTab('home')" style="padding:6px 16px;font-size:0.75rem;">🏠 NOUS</button>` +
             `<button class="btn-mod ${!isHome ? 'prim' : ''}" onclick="StartersModal.setTab('away')" style="padding:6px 16px;font-size:0.75rem;">🚨 EUX</button>` +
             `</div>`;
 
@@ -2661,10 +2682,21 @@
           if (State.ui.pending === 'FOUL_WHO') {
             State.ui.ctx.fouler = id;
             State.ui.pending = 'FOUL_VICTIM';
-            UI.toast('Qui subit ?');
+            if (State.ui.ctx.foulType === 'technical') {
+              UI.toast('Qui tire les LF ?');
+            } else {
+              UI.toast('Qui subit ?');
+            }
             return;
           }
           if (State.ui.pending === 'FOUL_VICTIM') {
+            var foulType = State.ui.ctx.foulType;
+            if (foulType === 'technical') {
+              State.ui.ctx.ftShooterId = id;
+              FoulPanel.showTech(State.ui.ctx.fouler, id);
+              State.ui.pending = null;
+              return;
+            }
             if (p.team === State.players[State.ui.ctx.fouler]?.team)
               return UI.toast('Autre équipe !', 'error');
             FoulPanel.show(State.ui.ctx.fouler, id);
@@ -3870,17 +3902,22 @@
                       : ft === 'offensive'
                         ? '🔄'
                         : '🚨';
-                const ftLabel =
-                  ft === 'technical'
-                    ? 'Tech'
-                    : ft === 'unsportsmanlike'
+                if (ft === 'technical') {
+                  desc = 'Tech';
+                  if (a.ftShooterId && State.players[a.ftShooterId]) {
+                    desc += ' → LF #' + State.players[a.ftShooterId].number;
+                  }
+                } else {
+                  const ftLabel =
+                    ft === 'unsportsmanlike'
                       ? 'Anti'
                       : ft === 'offensive'
                         ? 'Off'
                         : ft === 'shooting'
                           ? 'Faute tir'
                           : 'Faute';
-                desc = `${ftLabel}${a.victim ? ` sur #${State.players[a.victim]?.number}` : ''}`;
+                  desc = `${ftLabel}${a.victim ? ` sur #${State.players[a.victim]?.number}` : ''}`;
+                }
               } else if (a.type === 'FT') {
                 icon = '🎯';
                 desc = `LF ${a.ftMade}/${a.ftAtt}`;
@@ -3910,7 +3947,24 @@
           let html = `<div style="margin-bottom:8px;"><label style="font-size:0.65rem;color:var(--text-muted);">Joueur</label><select id="edP" class="inp">${all.map((x) => `<option value="${x.id}" ${x.id === a.pid ? 'selected' : ''}>#${x.number} ${x.name}</option>`).join('')}</select></div>`;
           html += `<div style="margin-bottom:8px;"><label style="font-size:0.65rem;color:var(--text-muted);">Type</label><select id="edT" class="inp">${types.map((t) => `<option value="${t}" ${t === a.type ? 'selected' : ''}>${t}</option>`).join('')}</select></div>`;
           if (a.type === 'SHOT') {
-            html += `<div style="margin-bottom:8px;"><select id="edV" class="inp"><option value="2" ${a.val === 2 ? 'selected' : ''}>2pts</option><option value="3" ${a.val === 3 ? 'selected' : ''}>3pts</option></select></div><div><select id="edM" class="inp"><option value="1" ${a.made ? 'selected' : ''}>✅</option><option value="0" ${!a.made ? 'selected' : ''}>❌</option></select></div>`;
+            html += `<div style="margin-bottom:8px;"><select id="edV" class="inp"><option value="2" ${a.val === 2 ? 'selected' : ''}>2pts</option><option value="3" ${a.val === 3 ? 'selected' : ''}>3pts</option></select></div><div style="margin-bottom:8px;"><select id="edM" class="inp"><option value="1" ${a.made ? 'selected' : ''}>✅</option><option value="0" ${!a.made ? 'selected' : ''}>❌</option></select></div>`;
+            var shooterTeam = State.players[a.pid]?.team || 'home';
+            var teammates = Object.values(State.players).filter(function(x) { return x.team === shooterTeam && x.id !== a.pid; });
+            html += '<div style="margin-bottom:8px;"><label style="font-size:0.65rem;color:var(--text-muted);">Passe décisive</label><select id="edAst" class="inp"><option value="">— Aucune —</option>';
+            teammates.forEach(function(x) {
+              html += '<option value="' + x.id + '" ' + (a.astId === x.id ? 'selected' : '') + '>#' + x.number + ' ' + x.name + '</option>';
+            });
+            html += '</select></div>';
+          }
+          if (a.type === 'STL') {
+            var stlTeam = State.players[a.pid]?.team;
+            var oppTeam = stlTeam === 'home' ? 'away' : 'home';
+            var opponents = Object.values(State.players).filter(function(x) { return x.team === oppTeam; });
+            html += '<div style="margin-bottom:8px;"><label style="font-size:0.65rem;color:var(--text-muted);">Perte par</label><select id="edVictim" class="inp"><option value="">— Inconnu —</option>';
+            opponents.forEach(function(x) {
+              html += '<option value="' + x.id + '" ' + (a.victim === x.id ? 'selected' : '') + '>#' + x.number + ' ' + x.name + '</option>';
+            });
+            html += '</select></div>';
           }
           if (a.type === 'FOUL') {
             html += `<div style="margin-bottom:12px;"><label style="font-size:0.75rem;color:var(--text-muted);display:block;margin-bottom:4px;">Type de faute</label><select id="edFoulType" class="inp"><option value="personal" ${(a.foulType || 'personal') === 'personal' ? 'selected' : ''}>🚨 Personnelle</option><option value="shooting" ${a.foulType === 'shooting' ? 'selected' : ''}>🎯 Sur tir</option><option value="technical" ${a.foulType === 'technical' ? 'selected' : ''}>🟡 Technique</option><option value="unsportsmanlike" ${a.foulType === 'unsportsmanlike' ? 'selected' : ''}>🟥 Antisportive</option><option value="offensive" ${a.foulType === 'offensive' ? 'selected' : ''}>🔄 Offensive</option></select></div>`;
@@ -3940,6 +3994,16 @@
           if (ftEl) a.foulType = ftEl.value;
           const durEl = document.getElementById('edDuration');
           if (durEl) a.duration = parseInt(durEl.value) || 0;
+          const astEl = document.getElementById('edAst');
+          if (astEl) {
+            if (astEl.value && a.made) a.astId = parseInt(astEl.value);
+            else delete a.astId;
+          }
+          const victimEl = document.getElementById('edVictim');
+          if (victimEl) {
+            if (victimEl.value) a.victim = parseInt(victimEl.value);
+            else delete a.victim;
+          }
           GameEngine.recalc();
           this.closeModal();
           this.renderRoster();
