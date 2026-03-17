@@ -1055,18 +1055,465 @@ function PhysicalTab({ player }) {
   );
 }
 
-function TechnicalTab(props) {
+// ─── CriterionEval ────────────────────────────────────────────────────────────
+
+function CriterionEval({ criterionId, domain, category, currentLevel, currentComment, onLevelChange, onCommentChange, editing }) {
+  var [hoveredLevel, setHoveredLevel] = React.useState(null);
+
+  var B = window.DETECTION_BAREMES;
+  var descriptors = window.DETECTION_DESCRIPTORS || {};
+
+  var domainDef = B[domain];
+  var criterionDef = domainDef && domainDef[criterionId];
+  if (!criterionDef) return null;
+
+  var descData = descriptors[domain] && descriptors[domain][criterionId];
+  var catDesc = descData && descData[category];
+
+  // Replacement name for U11 K4/K6
+  var displayName = criterionDef.name;
+  if (category === 'U11' && catDesc && catDesc._replacement) {
+    displayName = catDesc._replacement;
+  }
+
+  function getDescriptor(level) {
+    if (!catDesc || !level) return null;
+    return catDesc[level] || null;
+  }
+
+  var levels = B.levels;
+  var levelLabels = B.levelLabels;
+  var activeDisplayLevel = (editing && hoveredLevel) ? hoveredLevel : currentLevel;
+
+  // ── Mode lecture ──
+  if (!editing) {
+    var descriptor = currentLevel ? getDescriptor(currentLevel) : null;
+    return (
+      <div className="border-b border-slate-800 px-4 py-3 last:border-b-0">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <span className="text-xs font-semibold text-slate-300">{criterionId} — {displayName}</span>
+            {currentLevel && descriptor ? (
+              <p className="text-xs text-slate-500 italic mt-0.5">{descriptor}</p>
+            ) : !currentLevel ? (
+              <p className="text-xs text-slate-600 mt-0.5">Non évalué</p>
+            ) : null}
+            {currentComment ? (
+              <p className="text-xs text-orange-300/70 mt-1">"{currentComment}"</p>
+            ) : null}
+          </div>
+          <div className="shrink-0 mt-0.5">
+            {currentLevel ? <LevelBadge level={currentLevel} /> : <span className="text-xs text-slate-600">—</span>}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Mode édition ──
+  var activeDesc = getDescriptor(activeDisplayLevel);
+
   return (
-    <div className="p-8 text-center text-slate-500">
-      Évaluation technique — Prompt 5
+    <div className="border-b border-slate-800 px-4 py-4 last:border-b-0">
+      <div className="text-xs font-semibold text-slate-300 mb-2.5">{criterionId} — {displayName}</div>
+
+      {/* Boutons niveaux */}
+      <div className="flex flex-wrap gap-1.5 mb-2">
+        {levels.map(function(lvl) {
+          var isSelected = currentLevel === lvl;
+          var color = window.DetectionEngine.levelColor(lvl);
+          var bg = window.DetectionEngine.levelBg(lvl);
+          return (
+            <button
+              key={lvl}
+              onClick={function() { onLevelChange(criterionId, isSelected ? null : lvl); }}
+              onMouseEnter={function() { setHoveredLevel(lvl); }}
+              onMouseLeave={function() { setHoveredLevel(null); }}
+              className={'text-xs px-2.5 py-1 rounded-lg font-medium border transition-colors ' +
+                (isSelected
+                  ? color + ' ' + bg + ' border-current ring-2 ring-offset-1 ring-offset-slate-900 ring-current'
+                  : 'text-slate-500 bg-slate-800 border-slate-700 hover:text-slate-200')}
+            >
+              {levelLabels[lvl]}
+            </button>
+          );
+        })}
+        {currentLevel ? (
+          <button
+            onClick={function() { onLevelChange(criterionId, null); }}
+            className="text-xs px-2 py-1 rounded text-slate-600 hover:text-slate-400 transition-colors"
+          >
+            ✕
+          </button>
+        ) : null}
+      </div>
+
+      {/* Descripteur (survol ou sélection) */}
+      {(hoveredLevel || currentLevel) ? (
+        <div className="mb-2.5 px-3 py-2 bg-slate-800/60 rounded-lg min-h-8">
+          {activeDesc ? (
+            <p className="text-xs text-slate-400 italic">{activeDesc}</p>
+          ) : (
+            <p className="text-xs text-slate-600">—</p>
+          )}
+        </div>
+      ) : null}
+
+      {/* Commentaire coach */}
+      <textarea
+        value={currentComment}
+        onChange={function(e) { onCommentChange(criterionId, e.target.value); }}
+        rows={2}
+        placeholder="Commentaire coach (optionnel)..."
+        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-600 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none resize-none transition-colors"
+      />
     </div>
   );
 }
 
-function TacticalTab(props) {
+// ─── TechnicalTab ─────────────────────────────────────────────────────────────
+
+function TechnicalTab({ player }) {
+  var B = window.DETECTION_BAREMES;
+  var technicalCriteria = Object.keys(B.technical);
+
+  var [editing, setEditing] = React.useState(false);
+  var [evaluations, setEvaluations] = React.useState(function() {
+    return (player.technical && player.technical.evaluations) ? player.technical.evaluations : [];
+  });
+  var [globalComment, setGlobalComment] = React.useState(function() {
+    return (player.technical && player.technical.comment) || '';
+  });
+
+  function getEval(criterionId) {
+    return evaluations.find(function(e) { return e.criterionId === criterionId; }) || null;
+  }
+
+  function handleLevelChange(criterionId, level) {
+    setEvaluations(function(prev) {
+      var found = false;
+      var updated = prev.map(function(e) {
+        if (e.criterionId === criterionId) {
+          found = true;
+          return { criterionId: e.criterionId, level: level, comment: e.comment || '' };
+        }
+        return e;
+      });
+      if (!found) return updated.concat([{ criterionId: criterionId, level: level, comment: '' }]);
+      return updated;
+    });
+  }
+
+  function handleCommentChange(criterionId, comment) {
+    setEvaluations(function(prev) {
+      var found = false;
+      var updated = prev.map(function(e) {
+        if (e.criterionId === criterionId) {
+          found = true;
+          return { criterionId: e.criterionId, level: e.level || null, comment: comment };
+        }
+        return e;
+      });
+      if (!found) return updated.concat([{ criterionId: criterionId, level: null, comment: comment }]);
+      return updated;
+    });
+  }
+
+  function handleCancel() {
+    setEvaluations((player.technical && player.technical.evaluations) ? player.technical.evaluations : []);
+    setGlobalComment((player.technical && player.technical.comment) || '');
+    setEditing(false);
+  }
+
+  function handleSave() {
+    var db = window.detectionDb;
+    if (!db) { alert('Firebase non connecté'); return; }
+    var technicalData = {
+      date: new Date().toISOString().split('T')[0],
+      evaluations: evaluations,
+      comment: globalComment.trim()
+    };
+    db.collection('detection').doc(player.id).update({
+      technical: technicalData,
+      updatedAt: new Date().toISOString()
+    }).then(function() {
+      setEditing(false);
+    }).catch(function(err) {
+      console.error('[Detection] Save technical error:', err);
+      alert('Erreur de sauvegarde');
+    });
+  }
+
+  // Score
+  var score = null;
+  var scoreSum = 0, scoreCount = 0;
+  evaluations.forEach(function(ev) {
+    if (ev.level) { scoreSum += window.DetectionEngine.levelToScore(ev.level); scoreCount++; }
+  });
+  if (scoreCount > 0) score = Math.round((scoreSum / scoreCount) * 20);
+
+  var lastDate = player.technical && player.technical.date ? player.technical.date : null;
+  var taClass = 'w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none resize-none transition-colors';
+
   return (
-    <div className="p-8 text-center text-slate-500">
-      Évaluation tactique — Prompt 5
+    <div>
+      {/* Header */}
+      <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+        <div>
+          <div className="text-sm font-semibold text-white">Évaluation technique</div>
+          <div className="text-xs text-slate-500 mt-0.5">
+            {lastDate ? 'Dernière évaluation : ' + formatDateFr(lastDate) : 'Aucune évaluation enregistrée'}
+          </div>
+        </div>
+        {!editing ? (
+          <button
+            onClick={function() { setEditing(true); }}
+            className="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-sm rounded-lg px-3 py-1.5 transition-colors border border-slate-700"
+          >
+            Modifier
+          </button>
+        ) : null}
+      </div>
+
+      {/* Critères */}
+      <div>
+        {technicalCriteria.map(function(cId) {
+          var ev = getEval(cId);
+          return (
+            <CriterionEval
+              key={cId}
+              criterionId={cId}
+              domain="technical"
+              category={player.category}
+              currentLevel={ev ? ev.level : null}
+              currentComment={ev ? (ev.comment || '') : ''}
+              onLevelChange={handleLevelChange}
+              onCommentChange={handleCommentChange}
+              editing={editing}
+            />
+          );
+        })}
+      </div>
+
+      {/* Commentaire global */}
+      <div className="px-4 py-3 border-t border-slate-800">
+        <div className="text-xs font-medium text-slate-400 mb-1.5">Commentaire global technique</div>
+        {editing ? (
+          <textarea
+            value={globalComment}
+            onChange={function(e) { setGlobalComment(e.target.value); }}
+            rows={3}
+            placeholder="Synthèse technique de la joueuse..."
+            className={taClass}
+          />
+        ) : (
+          globalComment
+            ? <p className="text-sm text-slate-300 whitespace-pre-wrap">{globalComment}</p>
+            : <p className="text-xs text-slate-600">—</p>
+        )}
+      </div>
+
+      {/* Score */}
+      <div className="px-4 py-3 border-t border-slate-800">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-xs font-semibold text-slate-400">Score technique</span>
+          <span className="text-sm font-bold text-white font-mono">{score !== null ? score + '/100' : '—'}</span>
+        </div>
+        {score !== null ? (
+          <div className="bg-slate-700/60 rounded-full h-2 overflow-hidden">
+            <div className={scoreBarColor(score) + ' h-2 rounded-full transition-all duration-300'} style={{ width: score + '%' }} />
+          </div>
+        ) : null}
+      </div>
+
+      {/* Boutons */}
+      {editing ? (
+        <div className="px-4 pb-6 pt-3 flex gap-3 justify-end border-t border-slate-800">
+          <button onClick={handleCancel} className="bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg px-4 py-2 text-sm transition-colors">
+            Annuler
+          </button>
+          <button onClick={handleSave} className="bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">
+            Enregistrer
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// ─── TacticalTab ──────────────────────────────────────────────────────────────
+
+function TacticalTab({ player }) {
+  var B = window.DETECTION_BAREMES;
+
+  // Critères disponibles pour cette catégorie (inclut les remplacements U11)
+  var tacticalCriteriaToShow = Object.keys(B.tactical).filter(function(cId) {
+    var def = B.tactical[cId];
+    var isAvailable = def.availableFor.indexOf(player.category) !== -1;
+    var hasReplacement = player.category === 'U11' && !!def.u11Replacement;
+    return isAvailable || hasReplacement;
+  });
+
+  var [editing, setEditing] = React.useState(false);
+  var [evaluations, setEvaluations] = React.useState(function() {
+    return (player.tactical && player.tactical.evaluations) ? player.tactical.evaluations : [];
+  });
+  var [globalComment, setGlobalComment] = React.useState(function() {
+    return (player.tactical && player.tactical.comment) || '';
+  });
+
+  function getEval(criterionId) {
+    return evaluations.find(function(e) { return e.criterionId === criterionId; }) || null;
+  }
+
+  function handleLevelChange(criterionId, level) {
+    setEvaluations(function(prev) {
+      var found = false;
+      var updated = prev.map(function(e) {
+        if (e.criterionId === criterionId) {
+          found = true;
+          return { criterionId: e.criterionId, level: level, comment: e.comment || '' };
+        }
+        return e;
+      });
+      if (!found) return updated.concat([{ criterionId: criterionId, level: level, comment: '' }]);
+      return updated;
+    });
+  }
+
+  function handleCommentChange(criterionId, comment) {
+    setEvaluations(function(prev) {
+      var found = false;
+      var updated = prev.map(function(e) {
+        if (e.criterionId === criterionId) {
+          found = true;
+          return { criterionId: e.criterionId, level: e.level || null, comment: comment };
+        }
+        return e;
+      });
+      if (!found) return updated.concat([{ criterionId: criterionId, level: null, comment: comment }]);
+      return updated;
+    });
+  }
+
+  function handleCancel() {
+    setEvaluations((player.tactical && player.tactical.evaluations) ? player.tactical.evaluations : []);
+    setGlobalComment((player.tactical && player.tactical.comment) || '');
+    setEditing(false);
+  }
+
+  function handleSave() {
+    var db = window.detectionDb;
+    if (!db) { alert('Firebase non connecté'); return; }
+    var tacticalData = {
+      date: new Date().toISOString().split('T')[0],
+      evaluations: evaluations,
+      comment: globalComment.trim()
+    };
+    db.collection('detection').doc(player.id).update({
+      tactical: tacticalData,
+      updatedAt: new Date().toISOString()
+    }).then(function() {
+      setEditing(false);
+    }).catch(function(err) {
+      console.error('[Detection] Save tactical error:', err);
+      alert('Erreur de sauvegarde');
+    });
+  }
+
+  // Score
+  var score = null;
+  var scoreSum = 0, scoreCount = 0;
+  evaluations.forEach(function(ev) {
+    if (ev.level) { scoreSum += window.DetectionEngine.levelToScore(ev.level); scoreCount++; }
+  });
+  if (scoreCount > 0) score = Math.round((scoreSum / scoreCount) * 20);
+
+  var lastDate = player.tactical && player.tactical.date ? player.tactical.date : null;
+  var taClass = 'w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none resize-none transition-colors';
+
+  return (
+    <div>
+      {/* Header */}
+      <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+        <div>
+          <div className="text-sm font-semibold text-white">Évaluation tactique</div>
+          <div className="text-xs text-slate-500 mt-0.5">
+            {lastDate ? 'Dernière évaluation : ' + formatDateFr(lastDate) : 'Aucune évaluation enregistrée'}
+          </div>
+        </div>
+        {!editing ? (
+          <button
+            onClick={function() { setEditing(true); }}
+            className="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-sm rounded-lg px-3 py-1.5 transition-colors border border-slate-700"
+          >
+            Modifier
+          </button>
+        ) : null}
+      </div>
+
+      {/* Critères */}
+      <div>
+        {tacticalCriteriaToShow.map(function(cId) {
+          var ev = getEval(cId);
+          return (
+            <CriterionEval
+              key={cId}
+              criterionId={cId}
+              domain="tactical"
+              category={player.category}
+              currentLevel={ev ? ev.level : null}
+              currentComment={ev ? (ev.comment || '') : ''}
+              onLevelChange={handleLevelChange}
+              onCommentChange={handleCommentChange}
+              editing={editing}
+            />
+          );
+        })}
+      </div>
+
+      {/* Commentaire global */}
+      <div className="px-4 py-3 border-t border-slate-800">
+        <div className="text-xs font-medium text-slate-400 mb-1.5">Commentaire global tactique</div>
+        {editing ? (
+          <textarea
+            value={globalComment}
+            onChange={function(e) { setGlobalComment(e.target.value); }}
+            rows={3}
+            placeholder="Synthèse tactique de la joueuse..."
+            className={taClass}
+          />
+        ) : (
+          globalComment
+            ? <p className="text-sm text-slate-300 whitespace-pre-wrap">{globalComment}</p>
+            : <p className="text-xs text-slate-600">—</p>
+        )}
+      </div>
+
+      {/* Score */}
+      <div className="px-4 py-3 border-t border-slate-800">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-xs font-semibold text-slate-400">Score tactique</span>
+          <span className="text-sm font-bold text-white font-mono">{score !== null ? score + '/100' : '—'}</span>
+        </div>
+        {score !== null ? (
+          <div className="bg-slate-700/60 rounded-full h-2 overflow-hidden">
+            <div className={scoreBarColor(score) + ' h-2 rounded-full transition-all duration-300'} style={{ width: score + '%' }} />
+          </div>
+        ) : null}
+      </div>
+
+      {/* Boutons */}
+      {editing ? (
+        <div className="px-4 pb-6 pt-3 flex gap-3 justify-end border-t border-slate-800">
+          <button onClick={handleCancel} className="bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg px-4 py-2 text-sm transition-colors">
+            Annuler
+          </button>
+          <button onClick={handleSave} className="bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">
+            Enregistrer
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
