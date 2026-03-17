@@ -220,21 +220,37 @@ const AnalysisEngine = {
   },
 
   // F5 — Calcul des stats par quart-temps pour un joueur (parsing play-by-play)
-  computeQuarterStats: function(playerId, games) {
+  computeQuarterStats: function (playerId, games) {
     var qMap = {};
     if (!games || !Array.isArray(games)) return null;
-    games.forEach(function(g) {
+    games.forEach(function (g) {
       if (!g.actions || !g.actions.length) return;
-      g.actions.forEach(function(a) {
+      g.actions.forEach(function (a) {
         var pid = a.pid;
         if (Number(pid) !== Number(playerId) && String(pid) !== String(playerId)) return;
         var q = a.q || a.quarter || 0;
         if (!q || q > 4) return; // ignore OT pour la fatigue
-        if (!qMap[q]) qMap[q] = { q: q, pts: 0, fgm: 0, fga: 0, fta: 0, ftm: 0, tov: 0, reb: 0, stl: 0, blk: 0, min: 0 };
+        if (!qMap[q])
+          qMap[q] = {
+            q: q,
+            pts: 0,
+            fgm: 0,
+            fga: 0,
+            fta: 0,
+            ftm: 0,
+            tov: 0,
+            reb: 0,
+            stl: 0,
+            blk: 0,
+            min: 0,
+          };
         var m = qMap[q];
         if (a.type === 'SHOT') {
           m.fga++;
-          if (a.made) { m.fgm++; m.pts += a.val || 2; }
+          if (a.made) {
+            m.fgm++;
+            m.pts += a.val || 2;
+          }
         }
         if (a.type === 'FT') {
           m.fta += a.ftAtt || 1;
@@ -253,11 +269,11 @@ const AnalysisEngine = {
     // Estimer les minutes si non tracées : on divise les minutes totales du joueur par matchs × quarts
     var totalMinutes = 0;
     if (games) {
-      games.forEach(function(g) {
+      games.forEach(function (g) {
         var raw = g.players || g.playerStats;
         if (!raw) return;
         var list = Array.isArray(raw) ? raw : Object.values(raw);
-        list.forEach(function(s) {
+        list.forEach(function (s) {
           if (Number(s.id) === Number(playerId) || String(s.id) === String(playerId)) {
             totalMinutes += parseFloat(s.min || s.minutes || 0);
           }
@@ -265,54 +281,98 @@ const AnalysisEngine = {
       });
     }
     var minPerQ = totalMinutes > 0 ? totalMinutes / (qStats.length * (games.length || 1)) : 2.5;
-    qStats.forEach(function(q) { if (q.min === 0) q.min = minPerQ; });
+    qStats.forEach(function (q) {
+      if (q.min === 0) q.min = minPerQ;
+    });
     // Calculer EFF par quart
-    qStats.forEach(function(q) {
-      q.eff = window.StatsEngine.EFF(q.pts, q.reb, 0, q.stl, q.blk, q.fga, q.fgm, q.fta, q.ftm, q.tov);
+    qStats.forEach(function (q) {
+      q.eff = window.StatsEngine.EFF(
+        q.pts,
+        q.reb,
+        0,
+        q.stl,
+        q.blk,
+        q.fga,
+        q.fgm,
+        q.fta,
+        q.ftm,
+        q.tov
+      );
     });
     return window.StatsEngine.fatigueProfile(qStats);
   },
 
   // F3 — Clustering dynamique des rôles dans l'équipe (k-means sur fingerprint 6D)
-  computeSquadClusters: function(player, allPlayers, games) {
-    var eligible = (allPlayers || []).filter(function(p) {
+  computeSquadClusters: function (player, allPlayers, games) {
+    var eligible = (allPlayers || []).filter(function (p) {
       return p && p.logs && p.logs.length >= 3 && p.avg && (p.avg.min || 0) >= 10;
     });
     if (eligible.length < 4) return null;
-    var fps = eligible.map(function(p) {
+    var fps = eligible.map(function (p) {
       return AnalysisEngine.computeFingerprint(p, eligible, games);
     });
-    var vectors = fps.map(function(fp) {
-      if (!fp) return null;
-      return [fp.volume || 0, fp.efficiency || 0, fp.shooting || 0, fp.creation || 0, fp.rebounding || 0, fp.defense || 0];
-    }).filter(Boolean);
+    var vectors = fps
+      .map(function (fp) {
+        if (!fp) return null;
+        return [
+          fp.volume || 0,
+          fp.efficiency || 0,
+          fp.shooting || 0,
+          fp.creation || 0,
+          fp.rebounding || 0,
+          fp.defense || 0,
+        ];
+      })
+      .filter(Boolean);
     if (vectors.length < 4) return null;
     var k = Math.min(4, Math.floor(vectors.length / 2));
-    var eligibleFp = eligible.filter(function(_, i) { return fps[i] !== null; });
+    var eligibleFp = eligible.filter(function (_, i) {
+      return fps[i] !== null;
+    });
     var assignments = window.StatsEngine.kMeansCluster(vectors, k);
-    var playerIdx = eligibleFp.findIndex(function(p) { return Number(p.id) === Number(player.id) || String(p.id) === String(player.id); });
+    var playerIdx = eligibleFp.findIndex(function (p) {
+      return Number(p.id) === Number(player.id) || String(p.id) === String(player.id);
+    });
     if (playerIdx === -1) return null;
     var playerCluster = assignments[playerIdx];
-    var clusterMembers = eligibleFp.filter(function(_, i) { return assignments[i] === playerCluster; });
-    var clusterVecs = vectors.filter(function(_, i) { return assignments[i] === playerCluster; });
-    var dims = ['volume', 'efficiency', 'shooting', 'creation', 'rebounding', 'defense'];
-    var centroid = dims.map(function(_, di) {
-      return clusterVecs.reduce(function(s, v) { return s + v[di]; }, 0) / clusterVecs.length;
+    var clusterMembers = eligibleFp.filter(function (_, i) {
+      return assignments[i] === playerCluster;
     });
-    var sortedDims = dims.slice().sort(function(a, b) { return centroid[dims.indexOf(b)] - centroid[dims.indexOf(a)]; });
+    var clusterVecs = vectors.filter(function (_, i) {
+      return assignments[i] === playerCluster;
+    });
+    var dims = ['volume', 'efficiency', 'shooting', 'creation', 'rebounding', 'defense'];
+    var centroid = dims.map(function (_, di) {
+      return (
+        clusterVecs.reduce(function (s, v) {
+          return s + v[di];
+        }, 0) / clusterVecs.length
+      );
+    });
+    var sortedDims = dims.slice().sort(function (a, b) {
+      return centroid[dims.indexOf(b)] - centroid[dims.indexOf(a)];
+    });
     var LABELS = {
-      'volume+efficiency': 'Scoreur Dominant', 'volume+creation': 'Moteur Offensif',
-      'volume+shooting': 'Scoreur Extérieur', 'volume+interior': 'Force Intérieure',
-      'rebounding+defense': 'Ancre Défensive', 'defense+rebounding': 'Ancre Défensive',
-      'shooting+efficiency': 'Spacer Élite', 'creation+efficiency': 'Maestro',
-      'efficiency+shooting': 'Tireur Clinique', 'creation+volume': 'Moteur Offensif',
+      'volume+efficiency': 'Scoreur Dominant',
+      'volume+creation': 'Moteur Offensif',
+      'volume+shooting': 'Scoreur Extérieur',
+      'volume+interior': 'Force Intérieure',
+      'rebounding+defense': 'Ancre Défensive',
+      'defense+rebounding': 'Ancre Défensive',
+      'shooting+efficiency': 'Spacer Élite',
+      'creation+efficiency': 'Maestro',
+      'efficiency+shooting': 'Tireur Clinique',
+      'creation+volume': 'Moteur Offensif',
     };
     var key = sortedDims[0] + '+' + sortedDims[1];
-    var label = LABELS[key] || ('Profil ' + sortedDims[0].charAt(0).toUpperCase() + sortedDims[0].slice(1));
+    var label =
+      LABELS[key] || 'Profil ' + sortedDims[0].charAt(0).toUpperCase() + sortedDims[0].slice(1);
     return {
       label: label,
       topDim: sortedDims[0],
-      members: clusterMembers.map(function(p) { return { id: p.id, name: p.name, number: p.number }; }),
+      members: clusterMembers.map(function (p) {
+        return { id: p.id, name: p.name, number: p.number };
+      }),
       size: clusterMembers.length,
     };
   },
@@ -338,6 +398,166 @@ const AnalysisEngine = {
     const poss = window.StatsEngine.possAdvanced(teamTotals, oppTotals);
     const pm = parseFloat(playerStat.plusMinus || 0);
     return window.StatsEngine.playerNetRtg(pm, poss, pMin, teamMin);
+  },
+
+  /**
+   * Agrège les stats ON/OFF court d'un joueur sur tous les matchs PBP.
+   * Ne prend en compte que les matchs ayant actions[0].onCourt défini.
+   */
+  calcOnOffAggregated: (games, playerId, roster) => {
+    if (!games || !roster) return null;
+
+    const homeIds = new Set(roster.map(p => p.id || parseInt(p.id)));
+    const agg = {
+      on:  { pts: 0, ptsConceded: 0, fga: 0, fta: 0, tov: 0, orb: 0, oppFga: 0, oppFta: 0, oppTov: 0, oppOrb: 0 },
+      off: { pts: 0, ptsConceded: 0, fga: 0, fta: 0, tov: 0, orb: 0, oppFga: 0, oppFta: 0, oppTov: 0, oppOrb: 0 },
+    };
+    let gamesUsed = 0;
+
+    games.forEach(game => {
+      if (!game.actions || !game.actions.length) return;
+      if (!game.actions[0].onCourt) return;
+      gamesUsed++;
+
+      game.actions.forEach(a => {
+        if (!a.onCourt) return;
+        const isHome = homeIds.has(a.pid);
+        const playerOn = a.onCourt.includes(playerId) || a.onCourt.includes(Number(playerId));
+        const seg = playerOn ? agg.on : agg.off;
+
+        if (a.type === 'SHOT') {
+          if (isHome) { seg.fga++; if (a.made) seg.pts += a.val; }
+          else        { seg.oppFga++; if (a.made) seg.ptsConceded += a.val; }
+        }
+        if (a.type === 'FT') {
+          if (isHome) { seg.fta += (a.ftAtt || 0); seg.pts += (a.ftMade || 0); }
+          else        { seg.oppFta += (a.ftAtt || 0); seg.ptsConceded += (a.ftMade || 0); }
+        }
+        if (a.type === 'TOV') { if (isHome) seg.tov++; else seg.oppTov++; }
+        if (a.type === 'OREB') { if (isHome) seg.orb++; else seg.oppOrb++; }
+      });
+    });
+
+    if (gamesUsed === 0) return null;
+
+    const calcRatings = (s) => {
+      const poss    = Math.max(1, s.fga + 0.44 * s.fta + s.tov - s.orb);
+      const oppPoss = Math.max(1, s.oppFga + 0.44 * s.oppFta + s.oppTov - s.oppOrb);
+      const avgP    = (poss + oppPoss) / 2 || 1;
+      return {
+        pts: s.pts,
+        ptsConceded: s.ptsConceded,
+        poss: Math.round(avgP),
+        ortg: Math.round((s.pts / avgP) * 100),
+        drtg: Math.round((s.ptsConceded / avgP) * 100),
+      };
+    };
+
+    const on  = calcRatings(agg.on);
+    const off = calcRatings(agg.off);
+    return {
+      on,
+      off,
+      netOn:   on.ortg - on.drtg,
+      netOff:  off.ortg - off.drtg,
+      netDiff: (on.ortg - on.drtg) - (off.ortg - off.drtg),
+      gamesUsed,
+    };
+  },
+
+  /**
+   * Calcule les moyennes d'un joueur par phase.
+   */
+  calcPhaseProgression: (player, phases, games) => {
+    if (!phases || phases.length < 2 || !player.logs || player.logs.length === 0) return null;
+    if (!games) return null;
+
+    const gamePhaseMap = {};
+    games.forEach(g => {
+      if (g.phase) gamePhaseMap[g.date + '||' + (g.opponent || '')] = g.phase;
+    });
+
+    const phaseMap = {};
+    phases.forEach(ph => { phaseMap[ph.id] = { id: ph.id, name: ph.name, logs: [] }; });
+
+    player.logs.forEach(log => {
+      const key = log.date + '||' + log.opponent;
+      const phId = gamePhaseMap[key];
+      if (phId && phaseMap[phId]) phaseMap[phId].logs.push(log);
+    });
+
+    const results = Object.values(phaseMap)
+      .filter(ph => ph.logs.length > 0)
+      .map(ph => {
+        const n = ph.logs.length;
+        const s = (k) => ph.logs.reduce((a, l) => a + (l[k] || 0), 0);
+        const totalFga = s('fga'), totalFgm = s('fgm');
+        const totalThreea = s('threea'), totalThreem = s('threem');
+        const totalFta = s('fta'), totalFtm = s('ftm');
+        const totalPts = s('pts');
+        return {
+          phaseId: ph.id,
+          phaseName: ph.name,
+          gp: n,
+          avg: {
+            pts:      s('pts') / n,
+            reb:      s('reb') / n,
+            ast:      s('ast') / n,
+            stl:      s('stl') / n,
+            blk:      s('blk') / n,
+            tov:      s('tov') / n,
+            eff:      s('eff') / n,
+            usage:    s('usage') / n,
+            min:      s('min') / n,
+            fgPct:    totalFga > 0 ? (totalFgm / totalFga * 100) : 0,
+            threePct: totalThreea > 0 ? (totalThreem / totalThreea * 100) : 0,
+            ftPct:    totalFta > 0 ? (totalFtm / totalFta * 100) : 0,
+            TS:       window.StatsEngine.TS(totalPts, totalFga, totalFta),
+          },
+        };
+      });
+
+    const phaseOrder = phases.map(ph => ph.id);
+    results.sort((a, b) => phaseOrder.indexOf(a.phaseId) - phaseOrder.indexOf(b.phaseId));
+
+    return results.length >= 2 ? results : null;
+  },
+
+  /**
+   * Compare les stats d'un joueur entre la saison courante et une saison archivée.
+   * Matching par id identique uniquement.
+   */
+  calcSeasonComparison: (currentPlayer, archivedSeason) => {
+    if (!archivedSeason || !archivedSeason.roster || !archivedSeason.games) return null;
+
+    const archRoster = archivedSeason.roster;
+    const archPlayer = archRoster.find(r =>
+      r.id === currentPlayer.id ||
+      String(r.id) === String(currentPlayer.id) ||
+      Number(r.id) === Number(currentPlayer.id)
+    );
+    if (!archPlayer) return null;
+
+    const archPlayers = AnalysisEngine.processPlayerData(archivedSeason.games, archRoster);
+    const archProcessed = archPlayers.find(ap =>
+      ap.id === currentPlayer.id ||
+      String(ap.id) === String(currentPlayer.id) ||
+      Number(ap.id) === Number(currentPlayer.id)
+    );
+    if (!archProcessed || !archProcessed.logs || archProcessed.logs.length === 0) return null;
+
+    const KEYS = ['pts','reb','ast','stl','blk','tov','eff','usage','min','fgPct','threePct','ftPct','TS'];
+    const deltas = {};
+    KEYS.forEach(k => {
+      deltas[k] = (currentPlayer.avg[k] || 0) - (archProcessed.avg[k] || 0);
+    });
+
+    return {
+      archivedName: archivedSeason.name || 'Archive',
+      archivedGp: archProcessed.logs.length,
+      archivedAvg: archProcessed.avg,
+      deltas,
+    };
   },
 
   // --- PROCESSEUR PRINCIPAL ---
@@ -450,6 +670,12 @@ const AnalysisEngine = {
               _hasFteData: stat.foulDrawn !== undefined,
               foulDrawn: parseFloat(stat.foulDrawn || 0),
             });
+            // Accumuler les totaux team pour AST%/TOV% agrégés
+            if (!playerMap[stat.id]._teamAgg) {
+              playerMap[stat.id]._teamAgg = { teamMin: 0, teamFgm: 0 };
+            }
+            playerMap[stat.id]._teamAgg.teamMin += ctx.team.min;
+            playerMap[stat.id]._teamAgg.teamFgm += ctx.team.fgm;
           }
         });
       });
@@ -493,6 +719,8 @@ const AnalysisEngine = {
               fgm: 0,
               fta: 0,
               ftm: 0,
+              astPct: 0,
+              tovPct: 0,
             },
           };
         const sum = (k) => p.logs.reduce((acc, c) => acc + (c[k] || 0), 0);
@@ -526,6 +754,18 @@ const AnalysisEngine = {
         avg.eFG = window.StatsEngine.eFG(avg.fgm, avg.threem, avg.fga);
         avg.astTov = window.StatsEngine.astTovRatio(avg.ast, avg.tov);
         avg.pf36 = window.StatsEngine.per36(avg.fouls, avg.min);
+        // AST% et TOV% agrégés sur totaux
+        const totalAst = sum('ast');
+        const totalFga = sum('fga');
+        const totalFta = sum('fta');
+        const totalTov = sum('tov');
+        const totalFgm = sum('fgm');
+        const totalMin = sum('min');
+        const tmAgg = p._teamAgg || { teamMin: 0, teamFgm: 0 };
+        avg.astPct = Math.min(window.StatsEngine.astPct(
+          totalAst, totalMin, tmAgg.teamMin, tmAgg.teamFgm, totalFgm
+        ), 100);
+        avg.tovPct = Math.min(window.StatsEngine.tovPct(totalTov, totalFga, totalFta), 100);
         // FTE
         const trackedLogs = p.logs.filter((l) => l._hasFteData);
         const untrackedLogs = p.logs.filter((l) => !l._hasFteData);
@@ -542,7 +782,17 @@ const AnalysisEngine = {
         avg.fte = totalFte / gp;
         // Impact Total
         const dreb_pg = avg.reb - avg.oreb;
-        const OIS = window.StatsEngine.OIS(avg.pts, avg.ast, avg.oreb, avg.fte, avg.tov);
+        const OIS = window.StatsEngine.OIS(
+          avg.pts,
+          avg.ast,
+          avg.oreb,
+          avg.fte,
+          avg.tov,
+          avg.fga,
+          avg.fgm,
+          avg.fta,
+          avg.ftm
+        );
         const DIS = window.StatsEngine.DIS(avg.stl, avg.blk, dreb_pg, avg.fouls, avg.plusMinus);
         avg.impactTotal = window.StatsEngine.impactTotal(OIS, DIS, avg.min);
         if ((avg.netRtg || 0) < 0 && (avg.plusMinus || 0) < 0) {
@@ -580,7 +830,7 @@ const AnalysisEngine = {
           totalShots: shotProfile.total,
         };
         window.console.log(
-          `Player ${p.name} tir toala= ${avg.fga} ts=${avg.TS} calcul TS% ${window.StatsEngine.TS(avg.pts, avg.fga, avg.fta)} efg=${avg.eFG} 3PAr=${avg.threePAr} FTr=${avg.FTr} astTov=${avg.astTov}`
+          `Player ${p.name} ois= ${OIS} miss ttt = ${(avg.fga - avg.fgm + (avg.fta - avg.ftm)) * 0.8}dis= ${DIS} tir tt= ${avg.fga} ts=${avg.TS} calcul TS% ${window.StatsEngine.TS(avg.pts, avg.fga, avg.fta)} efg=${avg.eFG} 3PAr=${avg.threePAr} FTr=${avg.FTr} astTov=${avg.astTov}`
         );
         return { ...p, avg, shotProfile: sp };
       })
@@ -1824,7 +2074,10 @@ function calcFiveManLineups(playerId, games, roster) {
   const results = Object.values(lineupMap)
     .map((m) => {
       const poss = Math.max(1, window.StatsEngine.possSimple(m.fga, m.fta, m.tov, m.orb));
-      const oppPoss = Math.max(1, window.StatsEngine.possSimple(m.oppFga, m.oppFta, m.oppTov, m.oppOrb));
+      const oppPoss = Math.max(
+        1,
+        window.StatsEngine.possSimple(m.oppFga, m.oppFta, m.oppTov, m.oppOrb)
+      );
       const avgPoss = (poss + oppPoss) / 2;
       if (avgPoss < MIN_POSS) return null;
       const ortg = Math.round((m.pts / avgPoss) * 100);
@@ -1852,11 +2105,12 @@ function calcFiveManLineups(playerId, games, roster) {
 // =================================================================================
 // 4. COMPOSANT PRINCIPAL
 // =================================================================================
-const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: propRoster }) => {
+const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: propRoster, phases: propPhases, seasons: propSeasons }) => {
   const [players, setPlayers] = React.useState([]);
   const [selectedId, setSelectedId] = React.useState(null);
   const [aiNarrative, setAiNarrative] = React.useState(null);
   const [isExportingPDF, setIsExportingPDF] = React.useState(false);
+  const [compareSeasonId, setCompareSeasonId] = React.useState('');
 
   const exportPlayerPDF = async (player) => {
     if (!window.html2canvas || !window.jspdf) {
@@ -1926,6 +2180,10 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
   }, [propGames, propRoster]);
 
   React.useEffect(() => {
+    setCompareSeasonId('');
+  }, [selectedId]);
+
+  React.useEffect(() => {
     setAiNarrative(null);
     if (!selectedId) return;
     if (!players || players.length === 0) return;
@@ -1944,22 +2202,58 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
   // --- LISTE DES JOUEURS ---
   if (!selectedId) {
     return (
-      <div className="fixed inset-0 z-[60] flex flex-col font-sans" style={{ background: 'var(--bg-0)', color: 'var(--text-1)' }}>
+      <div
+        className="fixed inset-0 z-[60] flex flex-col font-sans"
+        style={{ background: 'var(--bg-0)', color: 'var(--text-1)' }}
+      >
         {/* Header */}
-        <div className="px-6 py-4 flex justify-between items-center z-10 shrink-0" style={{ background: 'var(--bg-1)', borderBottom: '1px solid var(--border)' }}>
+        <div
+          className="px-6 py-4 flex justify-between items-center z-10 shrink-0"
+          style={{ background: 'var(--bg-1)', borderBottom: '1px solid var(--border)' }}
+        >
           <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-9 h-9 rounded-[10px] text-white shrink-0" style={{ background: 'var(--accent)' }}>
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+            <div
+              className="flex items-center justify-center w-9 h-9 rounded-[10px] text-white shrink-0"
+              style={{ background: 'var(--accent)' }}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="w-5 h-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                />
+              </svg>
             </div>
             <div>
-              <h1 className="text-base font-black uppercase tracking-tight" style={{ color: 'var(--text-1)' }}>
+              <h1
+                className="text-base font-black uppercase tracking-tight"
+                style={{ color: 'var(--text-1)' }}
+              >
                 Scouting <span style={{ color: 'var(--accent)' }}>Pro</span>
               </h1>
-              <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-3)' }}>{players.length} profils analysés</p>
+              <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-3)' }}>
+                {players.length} profils analysés
+              </p>
             </div>
           </div>
           <button onClick={onClose} className="sc-btn-ghost">
-            <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="w-3.5 h-3.5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
             Fermer
           </button>
         </div>
@@ -1981,42 +2275,75 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
                     borderRadius: 'var(--r-lg)',
                     padding: '16px 16px 14px',
                     boxShadow: 'var(--shadow-card)',
-                    transition: 'border-color var(--t-base), box-shadow var(--t-base), transform var(--t-base)',
+                    transition:
+                      'border-color var(--t-base), box-shadow var(--t-base), transform var(--t-base)',
                   }}
-                  onMouseEnter={function(e) {
+                  onMouseEnter={function (e) {
                     e.currentTarget.style.borderLeftColor = 'var(--accent)';
                     e.currentTarget.style.boxShadow = 'var(--shadow-accent)';
                     e.currentTarget.style.transform = 'translateY(-2px)';
                   }}
-                  onMouseLeave={function(e) {
+                  onMouseLeave={function (e) {
                     e.currentTarget.style.borderLeftColor = 'var(--accent-ghost)';
                     e.currentTarget.style.boxShadow = 'var(--shadow-card)';
                     e.currentTarget.style.transform = 'translateY(0)';
                   }}
                 >
                   {p.photo && (
-                    <div className="absolute inset-0 opacity-[0.07] group-hover:opacity-[0.13] transition-opacity bg-cover bg-center" style={{ backgroundImage: 'url(' + p.photo + ')', filter: 'grayscale(100%)' }}></div>
+                    <div
+                      className="absolute inset-0 opacity-[0.07] group-hover:opacity-[0.13] transition-opacity bg-cover bg-center"
+                      style={{ backgroundImage: 'url(' + p.photo + ')', filter: 'grayscale(100%)' }}
+                    ></div>
                   )}
-                  <div className="absolute right-2 bottom-1 font-black pointer-events-none select-none" style={{ fontSize: '4.5rem', lineHeight: 1, opacity: 0.04, color: 'var(--text-1)', fontFamily: 'Fira Code, monospace' }}>
+                  <div
+                    className="absolute right-2 bottom-1 font-black pointer-events-none select-none"
+                    style={{
+                      fontSize: '4.5rem',
+                      lineHeight: 1,
+                      opacity: 0.04,
+                      color: 'var(--text-1)',
+                      fontFamily: 'Fira Code, monospace',
+                    }}
+                  >
                     {p.number}
                   </div>
 
                   <div className="relative z-10 flex flex-col h-full">
                     <div className="flex justify-between items-start mb-2">
-                      <span className="text-base font-bold truncate pr-2" style={{ color: 'var(--text-1)' }}>{p.name}</span>
-                      <span className="text-[10px] shrink-0 font-mono" style={{ color: 'var(--text-3)' }}>#{p.number}</span>
+                      <span
+                        className="text-base font-bold truncate pr-2"
+                        style={{ color: 'var(--text-1)' }}
+                      >
+                        {p.name}
+                      </span>
+                      <span
+                        className="text-[10px] shrink-0 font-mono"
+                        style={{ color: 'var(--text-3)' }}
+                      >
+                        #{p.number}
+                      </span>
                     </div>
 
                     <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
-                      <div className={`sc-badge ${arch.border} ${arch.color} ${arch.bg}`} style={{ alignSelf: 'flex-start' }}>
+                      <div
+                        className={`sc-badge ${arch.border} ${arch.color} ${arch.bg}`}
+                        style={{ alignSelf: 'flex-start' }}
+                      >
                         {arch.name}
                       </div>
-                      {(function() {
+                      {(function () {
                         var streak = window.StatsEngine.hotColdStreak(p.logs);
                         if (!streak || streak.status === 'steady') return null;
                         var isHot = streak.status === 'hot';
                         return (
-                          <span className={'text-[9px] font-black px-1.5 py-0.5 rounded-full ' + (isHot ? 'bg-orange-500/20 text-orange-400' : 'bg-blue-500/20 text-blue-400')}>
+                          <span
+                            className={
+                              'text-[9px] font-black px-1.5 py-0.5 rounded-full ' +
+                              (isHot
+                                ? 'bg-orange-500/20 text-orange-400'
+                                : 'bg-blue-500/20 text-blue-400')
+                            }
+                          >
                             {isHot ? 'EN FORME' : 'CREUX'}
                           </span>
                         );
@@ -2024,25 +2351,50 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
                     </div>
 
                     {arch.nbaComp && arch.nbaComp.best && arch.nbaComp.best.name ? (
-                      <div className="text-[9px] mb-3 flex items-center gap-1" style={{ color: 'var(--text-3)' }}>
+                      <div
+                        className="text-[9px] mb-3 flex items-center gap-1"
+                        style={{ color: 'var(--text-3)' }}
+                      >
                         <span>~</span>
-                        <span style={{ color: 'var(--accent-light)' }} className="font-medium">{arch.nbaComp.best.name}</span>
+                        <span style={{ color: 'var(--accent-light)' }} className="font-medium">
+                          {arch.nbaComp.best.name}
+                        </span>
                         <span>({arch.nbaComp.best.similarity}%)</span>
                       </div>
-                    ) : <div className="mb-3"></div>}
+                    ) : (
+                      <div className="mb-3"></div>
+                    )}
 
-                    <div className="flex items-end mt-auto pt-3" style={{ borderTop: '1px solid var(--border)' }}>
+                    <div
+                      className="flex items-end mt-auto pt-3"
+                      style={{ borderTop: '1px solid var(--border)' }}
+                    >
                       <div className="flex-1 text-center">
                         <div className="sc-section-label mb-0.5">PTS</div>
-                        <div className="sc-stat-value text-[15px]" style={{ color: 'var(--text-1)' }}>{p.avg.pts.toFixed(1)}</div>
+                        <div
+                          className="sc-stat-value text-[15px]"
+                          style={{ color: 'var(--text-1)' }}
+                        >
+                          {p.avg.pts.toFixed(1)}
+                        </div>
                       </div>
                       <div className="flex-1 text-center">
                         <div className="sc-section-label mb-0.5">EFF</div>
-                        <div className="sc-stat-value text-[15px]" style={{ color: 'var(--sys-warn)' }}>{p.avg.eff.toFixed(1)}</div>
+                        <div
+                          className="sc-stat-value text-[15px]"
+                          style={{ color: 'var(--sys-warn)' }}
+                        >
+                          {p.avg.eff.toFixed(1)}
+                        </div>
                       </div>
                       <div className="flex-1 text-center">
                         <div className="sc-section-label mb-0.5">USG</div>
-                        <div className="sc-stat-value text-[15px]" style={{ color: 'var(--text-2)' }}>{p.avg.usage.toFixed(0)}%</div>
+                        <div
+                          className="sc-stat-value text-[15px]"
+                          style={{ color: 'var(--text-2)' }}
+                        >
+                          {p.avg.usage.toFixed(0)}%
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -2055,870 +2407,2115 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
     );
   }
 
+  // =============================================================================
+  // REMPLACEMENT : Tout le bloc "VUE DETAIL" dans PlayerReportModule
+  // Commence après : if (!selectedId) { return (...) } — la liste joueurs reste inchangée
+  // Se termine à la fin du return du composant PlayerReportModule
+  // =============================================================================
+
   // --- VUE DETAIL ---
-  const p = players.find((x) => x.id === selectedId);
+  var p = players.find(function (x) {
+    return x.id === selectedId;
+  });
   if (!p) return null;
-  const arch = AnalysisEngine.getArchetype(p, players, propGames);
-  const narrativeText = aiNarrative || AnalysisEngine.getFallbackNarrative(p);
-  const last5 = p.logs.slice(0, 5);
+  var arch = AnalysisEngine.getArchetype(p, players, propGames);
+  var swot = AnalysisEngine.getSWOT(p);
+  var narrativeText = aiNarrative || AnalysisEngine.getFallbackNarrative(p);
+  var last5 = p.logs.slice(0, 5);
 
-  return (
-    <div className="fixed inset-0 z-[60] overflow-y-auto font-sans custom-scrollbar" style={{ background: 'var(--bg-0)', color: 'var(--text-1)' }}>
-      {/* STICKY HEADER */}
-      <div className="sticky top-0 backdrop-blur p-3 flex justify-between items-center z-50 print:hidden" style={{ background: 'rgba(6,6,9,0.92)', borderBottom: '1px solid var(--border)', backdropFilter: 'blur(16px)' }}>
-        <button
-          onClick={() => setSelectedId(null)}
-          className="flex items-center gap-2 font-bold uppercase text-xs cursor-pointer transition-colors duration-200"
-          style={{ color: 'var(--text-3)' }}
-          onMouseEnter={function(e){ e.currentTarget.style.color = 'var(--text-1)'; }}
-          onMouseLeave={function(e){ e.currentTarget.style.color = 'var(--text-3)'; }}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7"/></svg>
-          Retour
-        </button>
-        <div className="flex gap-2">
-          <button onClick={() => window.print()} className="sc-btn-ghost">
-            <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
-            Imprimer
-          </button>
-          <button onClick={() => exportPlayerPDF(p)} disabled={isExportingPDF} className="sc-btn-accent" style={{ opacity: isExportingPDF ? 0.5 : 1 }}>
-            <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-            {isExportingPDF ? 'Export...' : 'PDF'}
-          </button>
-        </div>
-      </div>
+  // --- Precalculs detail ---
+  var a = p.avg;
+  var gp = p.logs.length;
+  var B = getBenchmarks();
+  var dreb = a.reb - a.oreb;
+  var totalFGA = a.fga + a.threea;
+  var totalFGM = a.fgm + a.threem;
+  var fgPctGlobal = totalFGA > 0 ? (totalFGM / totalFGA) * 100 : 0;
+  var per30 = function (stat) {
+    return a.min > 0 ? (stat / a.min) * 30 : 0;
+  };
+  var p30 = {
+    pts: per30(a.pts),
+    reb: per30(a.reb),
+    ast: per30(a.ast),
+    stl: per30(a.stl),
+    pf: per30(a.fouls),
+  };
 
-      <div className="max-w-6xl mx-auto p-4 md:p-6 space-y-5 pb-24 print:p-0">
-        {/* HERO HEADER */}
-        <section className="rounded-[var(--r-xl)] overflow-hidden relative" style={{ background: 'var(--bg-2)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-elevated)' }}>
-          {p.photo && (
-            <div className="absolute inset-0 z-0 opacity-30 bg-cover bg-top" style={{ backgroundImage: 'url(' + p.photo + ')', filter: 'grayscale(40%)' }}></div>
-          )}
-          <div className="absolute inset-0 z-0" style={{ background: 'linear-gradient(90deg, var(--bg-0) 45%, transparent 100%)' }}></div>
-          {/* Border-left accent archétype */}
-          <div className="absolute left-0 top-0 bottom-0 w-1 z-10" style={{ background: 'var(--accent)' }}></div>
+  // Analyse Coach
+  var strengths = [];
+  var improvements = [];
+  if (a.TS > B.ts_elite)
+    strengths.push({
+      icon: '\u25B2',
+      text:
+        'Efficacit\u00e9 au scoring \u00e9lite (TS% ' +
+        a.TS.toFixed(1) +
+        '%). Excellent choix de tirs.',
+    });
+  else if (a.TS > B.ts_good)
+    strengths.push({
+      icon: '\u25B2',
+      text: 'Bonne efficacit\u00e9 au scoring (TS% ' + a.TS.toFixed(1) + '%).',
+    });
+  if (a.astTov > B.astTov_good && a.ast > 2)
+    strengths.push({
+      icon: '\u25B2',
+      text:
+        'Gestionnaire fiable \u2014 ratio AST/TOV de ' +
+        a.astTov.toFixed(1) +
+        ' avec ' +
+        a.ast.toFixed(1) +
+        ' passes/match.',
+    });
+  if (a.threePct > B.threePct_good && a.threea > 2)
+    strengths.push({
+      icon: '\u25B2',
+      text:
+        'Menace \u00e0 3 points : ' +
+        a.threePct.toFixed(1) +
+        '% sur ' +
+        a.threea.toFixed(1) +
+        ' tent./match.',
+    });
+  if (p30.reb > 8 && strengths.length < 3)
+    strengths.push({
+      icon: '\u25B2',
+      text:
+        'Pr\u00e9sence au rebond : ' + p30.reb.toFixed(1) + ' rebonds projet\u00e9s sur 30 min.',
+    });
+  if (a.stl + a.blk > B.def_active && strengths.length < 3)
+    strengths.push({
+      icon: '\u25B2',
+      text:
+        'Activit\u00e9 d\u00e9fensive notable : ' +
+        a.stl.toFixed(1) +
+        ' INT + ' +
+        a.blk.toFixed(1) +
+        ' CTR/match.',
+    });
+  if (a.oreb > B.oreb_good && strengths.length < 3)
+    strengths.push({
+      icon: '\u25B2',
+      text: 'Guerrier au rebond offensif (' + a.oreb.toFixed(1) + '/match).',
+    });
+  if (a.min < 20 && a.min > 5 && p30.pts > 15 && strengths.length < 3)
+    strengths.push({
+      icon: '\u25B2',
+      text:
+        'Impact fort rapport\u00e9 au temps de jeu : ' +
+        p30.pts.toFixed(1) +
+        ' PTS/30 min (' +
+        a.min.toFixed(1) +
+        ' min jou\u00e9es).',
+    });
+  if (a.plusMinus > 5 && strengths.length < 3)
+    strengths.push({
+      icon: '\u25B2',
+      text: 'Impact collectif positif : +' + a.plusMinus.toFixed(1) + ' de +/- moyen.',
+    });
+  if (a.FTr > 0.35 && strengths.length < 3)
+    strengths.push({
+      icon: '\u25B2',
+      text: 'Provoque des fautes r\u00e9guli\u00e8rement (FTr ' + a.FTr.toFixed(2) + ').',
+    });
+  if (a.netRtg > 8 && strengths.length < 3)
+    strengths.push({
+      icon: '\u25B2',
+      text: "L'\u00e9quipe performe mieux avec lui (NetRtg +" + a.netRtg.toFixed(0) + ').',
+    });
 
-          <div className="relative z-10 flex flex-col md:flex-row justify-between items-end gap-6 p-7 pl-8">
-            <div>
-              <div className="flex items-baseline gap-3 mb-2">
-                <h1 className="text-4xl font-black uppercase tracking-tight" style={{ color: 'var(--text-1)' }}>{p.name}</h1>
-                <span className="text-xl font-mono" style={{ color: 'var(--text-3)' }}>#{p.number}</span>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className={`text-lg font-bold uppercase tracking-wide ${arch.color}`}>{arch.name}</span>
-                <span className="text-sm italic" style={{ color: 'var(--text-3)' }}>"{arch.desc}"</span>
-              </div>
-              {arch.secondary && (
-                <div className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>
-                  Secondaire : <span style={{ color: 'var(--text-2)' }}>{arch.secondary}</span>
-                </div>
-              )}
-              {arch.tags && arch.tags.length > 0 && (
-                <div className="flex gap-1.5 mt-2">
-                  {arch.tags.map(function (t, i) {
-                    return (
-                      <span key={i} className="text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wide" style={{ background: 'rgba(255,255,255,0.06)', color: 'var(--text-2)', border: '1px solid var(--border-strong)' }}>{t}</span>
-                    );
-                  })}
-                </div>
-              )}
-              {(function() {
-                var streak = window.StatsEngine.hotColdStreak(p.logs);
-                if (streak.status === 'steady') return null;
-                var isHot = streak.status === 'hot';
-                return (
-                  <div className="flex items-center gap-2 mt-3">
-                    <span className={`text-[10px] px-2.5 py-1 rounded-full font-black uppercase tracking-widest ${isHot ? 'bg-orange-900/60 text-orange-300 border border-orange-600/60' : 'bg-blue-900/60 text-blue-300 border border-blue-600/60'}`}>
-                      {isHot ? 'EN FORME' : 'PASSAGE A VIDE'}
-                    </span>
-                    <span className="text-[9px]" style={{ color: 'var(--text-3)' }}>
-                      {isHot ? '+' : ''}{streak.delta} EFF sur 3 derniers matchs
-                    </span>
-                    <span className="text-[9px]" style={{ color: 'var(--text-4, var(--text-3))' }}>
-                      ({streak.recentAvg} récent · {streak.seasonAvg} moy. saison)
-                    </span>
-                  </div>
+  if (p30.pf > 4.5)
+    improvements.push({
+      icon: '\u25BC',
+      text:
+        'Gestion des fautes \u2014 ' +
+        p30.pf.toFixed(1) +
+        ' fautes/30 min. Risque de foul trouble.',
+    });
+  else if (a.pf36 > B.pf36_warn)
+    improvements.push({
+      icon: '\u25BC',
+      text: 'Discipline limite (' + a.pf36.toFixed(1) + ' fautes/36m, seuil: ' + B.pf36_warn + ').',
+    });
+  if (a.astTov < B.astTov_bad && a.tov > 1.5)
+    improvements.push({
+      icon: '\u25BC',
+      text:
+        'Ratio AST/TOV faible (' +
+        a.astTov.toFixed(1) +
+        '). R\u00e9duire les pertes (' +
+        a.tov.toFixed(1) +
+        '/match).',
+    });
+  if (a.TS < B.ts_bad && a.usage > B.usage_low + 5 && improvements.length < 2)
+    improvements.push({
+      icon: '\u25BC',
+      text: 'Efficacit\u00e9 offensive insuffisante (TS% ' + a.TS.toFixed(1) + '%) pour le volume.',
+    });
+  if (a.ftPct < 60 && a.fta / Math.max(gp, 1) > 1.5 && improvements.length < 2)
+    improvements.push({
+      icon: '\u25BC',
+      text: 'Lancer-franc \u00e0 travailler : ' + a.ftPct.toFixed(1) + '%. Points gratuits perdus.',
+    });
+  if (a.threePct < B.threePct_good - 5 && a.threea > 2 && improvements.length < 2)
+    improvements.push({
+      icon: '\u25BC',
+      text:
+        'Adresse ext\u00e9rieure insuffisante (' +
+        a.threePct.toFixed(1) +
+        '% sur ' +
+        a.threea.toFixed(1) +
+        ' tent./match).',
+    });
+  if (a.netRtg < -8 && improvements.length < 2)
+    improvements.push({
+      icon: '\u25BC',
+      text:
+        'Impact collectif n\u00e9gatif (NetRtg ' + a.netRtg.toFixed(0) + '). Le groupe souffre.',
+    });
+  var topS = strengths.slice(0, 3);
+  var topI = improvements.slice(0, 2);
+
+  // --- Helpers visuels ---
+  var StatCard = function (props) {
+    return React.createElement(
+      'div',
+      {
+        className: 'relative group',
+        style: {
+          background: 'linear-gradient(135deg, rgba(15,23,42,0.9), rgba(30,41,59,0.7))',
+          border: '1px solid rgba(100,116,139,0.3)',
+          borderRadius: '16px',
+          padding: '20px',
+          textAlign: 'center',
+          backdropFilter: 'blur(12px)',
+          minWidth: '0',
+        },
+      },
+      React.createElement('div', {
+        className:
+          'absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity',
+        style: {
+          background:
+            'linear-gradient(135deg, ' +
+            (props.accentColor || 'rgba(34,211,238,0.08)') +
+            ', transparent)',
+          borderRadius: '16px',
+        },
+      }),
+      React.createElement(
+        'div',
+        { className: 'relative z-10' },
+        React.createElement(
+          'div',
+          {
+            className: 'text-xs font-bold uppercase tracking-widest mb-2',
+            style: { color: props.labelColor || '#94a3b8' },
+          },
+          props.label
+        ),
+        React.createElement(
+          'div',
+          {
+            className: 'font-black leading-none',
+            style: { fontSize: props.fontSize || '2.5rem', color: props.valueColor || '#ffffff' },
+          },
+          props.value
+        ),
+        props.sub &&
+          React.createElement(
+            'div',
+            { className: 'text-xs mt-2', style: { color: '#64748b' } },
+            props.sub
+          )
+      )
+    );
+  };
+
+  var ProgressBar = function (props) {
+    var pct = Math.min(Math.max(props.value || 0, 0), 100);
+    var barColor = props.color || '#22d3ee';
+    return React.createElement(
+      'div',
+      { className: 'flex items-center gap-3 py-1.5' },
+      React.createElement(
+        'div',
+        {
+          className: 'w-20 text-xs font-bold uppercase tracking-wide text-right shrink-0',
+          style: { color: '#94a3b8' },
+        },
+        props.label
+      ),
+      React.createElement(
+        'div',
+        {
+          className: 'flex-1 h-2.5 rounded-full overflow-hidden',
+          style: { background: 'rgba(30,41,59,0.8)' },
+        },
+        React.createElement('div', {
+          className: 'h-full rounded-full transition-all duration-700',
+          style: {
+            width: pct + '%',
+            background: 'linear-gradient(90deg, ' + barColor + ', ' + barColor + 'cc)',
+          },
+        })
+      ),
+      React.createElement(
+        'div',
+        { className: 'w-16 text-sm font-bold text-right shrink-0', style: { color: barColor } },
+        props.display || pct.toFixed(1) + '%'
+      )
+    );
+  };
+
+  var SectionTitle = function (props) {
+    return React.createElement(
+      'div',
+      { className: 'flex items-center gap-3 mb-5' },
+      React.createElement(
+        'div',
+        {
+          className: 'w-8 h-8 rounded-lg flex items-center justify-center text-sm font-black',
+          style: { background: 'linear-gradient(135deg, #f97316, #ea580c)', color: '#fff' },
+        },
+        props.num
+      ),
+      React.createElement(
+        'h3',
+        { className: 'text-sm font-bold uppercase tracking-widest text-slate-300' },
+        props.title
+      ),
+      props.badge &&
+        React.createElement(
+          'span',
+          {
+            className: 'ml-auto text-xs font-mono px-2 py-0.5 rounded',
+            style: {
+              background: 'rgba(15,23,42,0.8)',
+              color: '#64748b',
+              border: '1px solid rgba(51,65,85,0.5)',
+            },
+          },
+          props.badge
+        )
+    );
+  };
+
+  // --- Impact color ---
+  var impactColor =
+    a.impactTotal > 110
+      ? '#60a5fa'
+      : a.impactTotal > 85
+        ? '#34d399'
+        : a.impactTotal > 59
+          ? '#ffffff'
+          : '#f87171';
+  var tsColor =
+    a.TS > B.ts_elite
+      ? '#34d399'
+      : a.TS > B.ts_good
+        ? '#22d3ee'
+        : a.TS < B.ts_bad
+          ? '#f87171'
+          : '#f59e0b';
+  var efgColor =
+    a.eFG > 55 ? '#34d399' : a.eFG > 48 ? '#22d3ee' : a.eFG < 42 ? '#f87171' : '#f59e0b';
+  var usageColor =
+    a.usage > B.usage_high ? '#f97316' : a.usage > B.usage_low ? '#22d3ee' : '#94a3b8';
+
+  // --- Data reliability ---
+  var reliabilityLabel =
+    gp >= 15
+      ? 'FIABLE'
+      : gp >= 8
+        ? 'ACCEPTABLE'
+        : gp >= 3
+          ? 'PRUDENCE (LOW SAMPLE)'
+          : 'TRES FAIBLE ECHANTILLON';
+  var reliabilityColor = gp >= 15 ? '#34d399' : gp >= 8 ? '#f59e0b' : '#f87171';
+
+  return React.createElement(
+    'div',
+    {
+      className: 'fixed inset-0 z-[60] overflow-y-auto font-sans text-slate-200',
+      style: { background: 'linear-gradient(180deg, #050a18 0%, #0a0e1a 30%, #0f172a 100%)' },
+    },
+
+    // ========== STICKY NAV ==========
+    React.createElement(
+      'div',
+      {
+        className: 'sticky top-0 z-50 print:hidden',
+        style: {
+          background: 'rgba(5,10,24,0.85)',
+          backdropFilter: 'blur(20px)',
+          borderBottom: '1px solid rgba(51,65,85,0.4)',
+        },
+      },
+      React.createElement(
+        'div',
+        { className: 'max-w-7xl mx-auto px-4 py-3 flex justify-between items-center' },
+        React.createElement(
+          'button',
+          {
+            onClick: function () {
+              setSelectedId(null);
+            },
+            className:
+              'flex items-center gap-2 text-slate-400 hover:text-white font-bold uppercase text-xs tracking-widest transition-colors',
+          },
+          React.createElement('span', { style: { fontSize: '18px' } }, '\u2190'),
+          'Retour'
+        ),
+        React.createElement(
+          'div',
+          { className: 'flex items-center gap-3' },
+          React.createElement(
+            'span',
+            {
+              className: 'text-xs font-bold uppercase tracking-widest',
+              style: { color: '#f97316' },
+            },
+            'STAT'
+          ),
+          React.createElement(
+            'span',
+            { className: 'text-xs font-bold uppercase tracking-widest text-white' },
+            'CHAMP'
+          ),
+          React.createElement('span', { className: 'text-slate-600 mx-2' }, '|'),
+          React.createElement('span', { className: 'text-xs text-slate-500' }, 'Profil Joueur')
+        ),
+        React.createElement(
+          'div',
+          { className: 'flex gap-2' },
+          React.createElement(
+            'button',
+            {
+              onClick: function () {
+                window.print();
+              },
+              className:
+                'px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide transition-all',
+              style: {
+                background: 'rgba(30,41,59,0.6)',
+                color: '#94a3b8',
+                border: '1px solid rgba(51,65,85,0.4)',
+              },
+            },
+            'Imprimer'
+          ),
+          React.createElement(
+            'button',
+            {
+              onClick: function () {
+                exportPlayerPDF(p);
+              },
+              disabled: isExportingPDF,
+              className:
+                'px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide transition-all',
+              style: {
+                background: 'linear-gradient(135deg, #4f46e5, #6366f1)',
+                color: '#fff',
+                opacity: isExportingPDF ? 0.5 : 1,
+              },
+            },
+            isExportingPDF ? 'Export...' : 'PDF'
+          )
+        )
+      )
+    ),
+
+    // ========== HERO HEADER ==========
+    React.createElement(
+      'div',
+      {
+        className: 'relative overflow-hidden',
+        style: {
+          background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)',
+          borderBottom: '1px solid rgba(99,102,241,0.2)',
+        },
+      },
+      // Background glow
+      React.createElement('div', {
+        className: 'absolute inset-0 pointer-events-none',
+        style: {
+          background:
+            'radial-gradient(ellipse at 30% 50%, rgba(99,102,241,0.08) 0%, transparent 70%)',
+        },
+      }),
+      p.photo &&
+        React.createElement('div', {
+          className: 'absolute inset-0 opacity-5',
+          style: {
+            backgroundImage: 'url(' + p.photo + ')',
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            filter: 'blur(30px) grayscale(100%)',
+          },
+        }),
+
+      React.createElement(
+        'div',
+        { className: 'relative z-10 max-w-7xl mx-auto px-4 py-8' },
+        React.createElement(
+          'div',
+          { className: 'flex flex-col md:flex-row items-start md:items-center gap-6' },
+
+          // Photo
+          p.photo
+            ? React.createElement(
+                'div',
+                {
+                  className: 'w-24 h-24 md:w-28 md:h-28 rounded-2xl overflow-hidden shrink-0',
+                  style: {
+                    border: '3px solid rgba(99,102,241,0.4)',
+                    boxShadow: '0 0 30px rgba(99,102,241,0.15)',
+                  },
+                },
+                React.createElement('img', {
+                  src: p.photo,
+                  className: 'w-full h-full object-cover',
+                })
+              )
+            : React.createElement(
+                'div',
+                {
+                  className:
+                    'w-24 h-24 md:w-28 md:h-28 rounded-2xl flex items-center justify-center shrink-0',
+                  style: {
+                    background: 'linear-gradient(135deg, #1e293b, #334155)',
+                    border: '3px solid rgba(99,102,241,0.3)',
+                  },
+                },
+                React.createElement(
+                  'span',
+                  { className: 'text-3xl font-black text-slate-500' },
+                  '#' + (p.number || '?')
+                )
+              ),
+
+          // Infos
+          React.createElement(
+            'div',
+            { className: 'flex-1 min-w-0' },
+            React.createElement(
+              'div',
+              { className: 'flex items-center gap-3 mb-1' },
+              React.createElement(
+                'span',
+                {
+                  className: 'text-xs font-bold uppercase tracking-widest',
+                  style: { color: '#94a3b8' },
+                },
+                'Profil Joueur'
+              ),
+              React.createElement(
+                'span',
+                {
+                  className: 'text-xs font-bold px-2 py-0.5 rounded-full',
+                  style: {
+                    background: 'rgba(99,102,241,0.15)',
+                    color: '#a5b4fc',
+                    border: '1px solid rgba(99,102,241,0.3)',
+                  },
+                },
+                '#' + (p.number || '?')
+              )
+            ),
+            React.createElement(
+              'h1',
+              {
+                className:
+                  'text-3xl md:text-4xl font-black text-white uppercase tracking-tight leading-none mb-2',
+              },
+              p.name
+            ),
+            React.createElement(
+              'div',
+              { className: 'flex flex-wrap items-center gap-3' },
+              // Archetype badge
+              React.createElement(
+                'span',
+                {
+                  className: 'text-xs font-bold px-3 py-1 rounded-full',
+                  style: {
+                    background: arch.bg || 'rgba(30,41,59,0.5)',
+                    color: arch.color ? arch.color.replace('text-', '') : '#94a3b8',
+                    border:
+                      '1px solid ' +
+                      (arch.border
+                        ? arch.border.replace('border-', '').replace('/50', '')
+                        : 'rgba(71,85,105,0.5)'),
+                  },
+                },
+                (arch.name || 'Inconnu').toUpperCase()
+              ),
+              // Data reliability
+              React.createElement(
+                'span',
+                {
+                  className: 'text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded',
+                  style: {
+                    color: reliabilityColor,
+                    background: reliabilityColor + '15',
+                    border: '1px solid ' + reliabilityColor + '30',
+                  },
+                },
+                'DATA: ' + reliabilityLabel
+              ),
+              // NBA Comp
+              arch.nbaComp &&
+                arch.nbaComp.best &&
+                arch.nbaComp.best.name &&
+                React.createElement(
+                  'span',
+                  {
+                    className: 'text-xs px-2 py-0.5 rounded',
+                    style: {
+                      background: 'rgba(249,115,22,0.1)',
+                      color: '#fb923c',
+                      border: '1px solid rgba(249,115,22,0.25)',
+                    },
+                  },
+                  'Comp. NBA: ' +
+                    arch.nbaComp.best.name +
+                    ' (' +
+                    arch.nbaComp.best.similarity +
+                    '%)'
+                )
+            )
+          ),
+
+          // Minutes badge (right side)
+          React.createElement(
+            'div',
+            {
+              className: 'hidden md:flex flex-col items-center shrink-0',
+              style: {
+                background: 'rgba(15,23,42,0.6)',
+                border: '1px solid rgba(51,65,85,0.4)',
+                borderRadius: '16px',
+                padding: '16px 24px',
+                backdropFilter: 'blur(8px)',
+              },
+            },
+            React.createElement(
+              'div',
+              { className: 'text-3xl font-black text-white' },
+              a.min.toFixed(1)
+            ),
+            React.createElement(
+              'div',
+              { className: 'text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1' },
+              'MIN/MATCH'
+            ),
+            React.createElement('div', { className: 'text-xs text-slate-500 mt-1' }, gp + ' matchs')
+          )
+        )
+      )
+    ),
+
+    // ========== MAIN CONTENT ==========
+    React.createElement(
+      'div',
+      { className: 'max-w-7xl mx-auto px-4 py-6 space-y-6', id: 'player-report-content' },
+
+      // ========== DEBUG PANEL (TEMPORAIRE) ==========
+      React.createElement(
+        'div',
+        {
+          style: {
+            background: 'rgba(220,38,38,0.1)',
+            border: '2px solid #dc2626',
+            borderRadius: '12px',
+            padding: '16px',
+            fontFamily: 'monospace',
+            fontSize: '11px',
+            color: '#fca5a5',
+          },
+        },
+        React.createElement(
+          'div',
+          { style: { color: '#fff', fontWeight: 'bold', marginBottom: '8px', fontSize: '13px' } },
+          'DEBUG STATS — ' + p.name + ' (id: ' + p.id + ')'
+        ),
+        React.createElement(
+          'div',
+          { style: { marginBottom: '12px', color: '#fbbf24' } },
+          'GP (logs.length): ' + gp
+        ),
+
+        // avg bruts
+        React.createElement(
+          'div',
+          { style: { fontWeight: 'bold', color: '#fff', marginBottom: '4px' } },
+          'p.avg (valeurs brutes) :'
+        ),
+        React.createElement(
+          'table',
+          { style: { borderCollapse: 'collapse', width: '100%', marginBottom: '12px' } },
+          React.createElement(
+            'thead',
+            null,
+            React.createElement(
+              'tr',
+              null,
+              ['Champ', 'Valeur avg', 'Type attendu'].map(function (h) {
+                return React.createElement(
+                  'th',
+                  {
+                    key: h,
+                    style: {
+                      textAlign: 'left',
+                      padding: '2px 8px',
+                      borderBottom: '1px solid #dc2626',
+                      color: '#f87171',
+                    },
+                  },
+                  h
                 );
-              })()}
-            </div>
+              })
+            )
+          ),
+          React.createElement(
+            'tbody',
+            null,
+            [
+              { k: 'fga', v: a.fga, t: 'CUMUL saison' },
+              { k: 'fgm', v: a.fgm, t: 'CUMUL saison' },
+              { k: 'threea', v: a.threea, t: '??? (sum ou sum/gp)' },
+              { k: 'threem', v: a.threem, t: 'CUMUL saison' },
+              { k: 'fta', v: a.fta, t: 'CUMUL saison' },
+              { k: 'ftm', v: a.ftm, t: 'CUMUL saison' },
+              { k: 'pts', v: a.pts, t: 'MOY /match' },
+              { k: 'reb', v: a.reb, t: 'MOY /match' },
+              { k: 'ast', v: a.ast, t: 'MOY /match' },
+              { k: 'min', v: a.min, t: 'MOY /match' },
+              { k: 'threePct', v: a.threePct, t: 'calcule: threem/threea*100' },
+              { k: 'eFG', v: a.eFG, t: 'calcule' },
+              { k: 'TS', v: a.TS, t: 'calcule' },
+            ].map(function (row) {
+              return React.createElement(
+                'tr',
+                { key: row.k },
+                React.createElement(
+                  'td',
+                  { style: { padding: '2px 8px', color: '#fbbf24' } },
+                  row.k
+                ),
+                React.createElement(
+                  'td',
+                  { style: { padding: '2px 8px', color: '#fff', fontWeight: 'bold' } },
+                  typeof row.v === 'number' ? row.v.toFixed(4) : String(row.v)
+                ),
+                React.createElement(
+                  'td',
+                  { style: { padding: '2px 8px', color: '#94a3b8' } },
+                  row.t
+                )
+              );
+            })
+          )
+        ),
 
-            {/* Stats hero block */}
-            <div className="flex gap-5 p-4 rounded-[var(--r-lg)]" style={{ background: 'rgba(6,6,9,0.65)', border: '1px solid var(--border)', backdropFilter: 'blur(8px)' }}>
-              {[
-                { val: p.avg.pts.toFixed(1), label: 'PTS', color: 'var(--text-1)' },
-                { val: p.avg.reb.toFixed(1), label: 'REB', color: 'var(--data-light)' },
-                { val: p.avg.ast.toFixed(1), label: 'AST', color: 'var(--data)' },
-                { val: p.avg.eff.toFixed(1), label: 'EFF', color: 'var(--sys-warn)' },
-              ].map(function(s) {
-                return (
-                  <div key={s.label} className="text-center">
-                    <div className="sc-stat-value text-3xl" style={{ color: s.color }}>{s.val}</div>
-                    <div className="sc-section-label mt-1">{s.label}</div>
-                  </div>
+        // Logs detail (3 premiers + dernier)
+        React.createElement(
+          'div',
+          { style: { fontWeight: 'bold', color: '#fff', marginBottom: '4px' } },
+          'Logs bruts (3 premiers + dernier) :'
+        ),
+        React.createElement(
+          'table',
+          { style: { borderCollapse: 'collapse', width: '100%', marginBottom: '12px' } },
+          React.createElement(
+            'thead',
+            null,
+            React.createElement(
+              'tr',
+              null,
+              [
+                '#',
+                'Date',
+                'Adv',
+                'threea',
+                'threem',
+                'fga',
+                'fgm',
+                'fta',
+                'ftm',
+                'pts',
+                'min',
+              ].map(function (h) {
+                return React.createElement(
+                  'th',
+                  {
+                    key: h,
+                    style: {
+                      textAlign: 'left',
+                      padding: '2px 6px',
+                      borderBottom: '1px solid #dc2626',
+                      color: '#f87171',
+                      fontSize: '10px',
+                    },
+                  },
+                  h
                 );
-              })}
-            </div>
-          </div>
-        </section>
-
-        {/* Comparaison NBA — Double Axe */}
-        {arch.nbaComp && arch.nbaComp.best && arch.nbaComp.best.name && (
-          <div className="sc-card p-4">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-[10px] text-slate-500 uppercase font-bold">Comparaison NBA</div>
-              {arch.nbaComp.isAnomaly && (
-                <span className="text-[9px] bg-amber-900/40 text-amber-400 px-1.5 py-0.5 rounded-full border border-amber-700/50 font-bold">
-                  ATYPIQUE
-                </span>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="text-[9px] text-orange-500 font-bold uppercase w-12">Match</span>
-              <span className="text-sm text-white font-semibold">{arch.nbaComp.best.name}</span>
-              <span className="text-[10px] text-slate-600 ml-auto">
-                {arch.nbaComp.best.similarity}%
-                {arch.nbaComp.shotMatchUsed && (
-                  <span className="text-green-600 ml-1" title="Validé par carte de tir">
-                    ●
-                  </span>
-                )}
-              </span>
-            </div>
-
-            {arch.nbaComp.styleTwin &&
-              arch.nbaComp.styleTwin.name &&
-              arch.nbaComp.styleTwin.name !== arch.nbaComp.best.name && (
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span className="text-[9px] text-purple-400 font-bold uppercase w-12">Style</span>
-                  <span className="text-sm text-slate-300">{arch.nbaComp.styleTwin.name}</span>
-                  <span className="text-[10px] text-slate-600 ml-auto">
-                    {arch.nbaComp.styleTwin.similarity}%
-                  </span>
-                </div>
-              )}
-
-            {(() => {
-              var comp = arch.nbaComp;
-              var primary = comp.best.name;
-              var twin = comp.styleTwin ? comp.styleTwin.name : null;
-              var narrative = '';
-
-              if (comp.isAnomaly) {
-                narrative =
-                  'Profil atypique — produit comme ' +
-                  primary +
-                  (twin ? ', style de jeu à la ' + twin : '') +
-                  '. Carte de tir inclassable.';
-              } else if (twin && twin !== primary) {
-                narrative =
-                  'Produit comme ' +
-                  primary +
-                  (comp.shotMatchUsed ? ' (tir validé)' : '') +
-                  ', dans le style de ' +
-                  twin +
-                  '.';
-              } else {
-                narrative = 'Match complet avec ' + primary + '.';
-              }
-              return <div className="text-[11px] text-slate-400 mt-1 italic">{narrative}</div>;
-            })()}
-
-            {arch.nbaComp.top5 && arch.nbaComp.top5.length > 1 && (
-              <details className="mt-2">
-                <summary className="text-[9px] text-slate-600 cursor-pointer hover:text-slate-400">
-                  Top 5 production
-                </summary>
-                <div className="mt-1 space-y-0.5">
-                  {arch.nbaComp.top5.map(function (t, i) {
-                    return (
-                      <div key={i} className="flex items-center gap-2 text-[10px]">
-                        <span className="text-slate-700 w-3">{i + 1}.</span>
-                        <span className="text-slate-400">{t.name}</span>
-                        <span className="text-slate-700 ml-auto">{t.dist}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </details>
-            )}
-          </div>
-        )}
-
-        {/* ADN du Joueur (fingerprint radar) */}
-        {arch.fingerprint && (
-          <div className="sc-card p-4">
-            <div className="text-[10px] text-slate-500 uppercase font-bold mb-2">
-              ADN du Joueur{' '}
-              <span className="text-[8px] text-slate-600 font-normal normal-case ml-1">
-                (mix percentile rotation + normes {getBenchmarks().label})
-              </span>
-            </div>
-            <div className="grid grid-cols-4 gap-2">
-              {(function () {
-                var DIMENSION_TOOLTIPS = {
-                  volume: 'Volume offensif — Quantité de tirs et responsabilité offensive',
-                  efficiency: 'Efficacité — Rendement par rapport aux tirs pris (TS% + eFG%)',
-                  shooting: 'Tir extérieur — Volume, pourcentage et fréquence à 3 points',
-                  creation: 'Création — Passes décisives et ratio AST/TOV',
-                  rebounding: 'Rebond — Total + bonus rebond offensif',
-                  interior: 'Jeu intérieur — FTr, rebond offensif, proportion tirs à 2pts',
-                  defense: 'Défense — Interceptions + contres, pénalité fautes',
-                  impact: 'Impact collectif — Net Rating, +/-, évaluation globale',
-                };
-                return [
-                  { key: 'volume', label: 'VOL' },
-                  { key: 'efficiency', label: 'EFF' },
-                  { key: 'shooting', label: 'SHOOT' },
-                  { key: 'creation', label: 'CREA' },
-                  { key: 'rebounding', label: 'REB' },
-                  { key: 'interior', label: 'PAINT' },
-                  { key: 'defense', label: 'DEF' },
-                  { key: 'impact', label: 'IMP' },
-                ].map(function (d) {
-                  var score = arch.fingerprint[d.key] || 0;
-                  var barColor =
-                    score >= 70
-                      ? 'bg-green-500'
-                      : score >= 45
-                        ? 'bg-orange-500'
-                        : score >= 25
-                          ? 'bg-yellow-500'
-                          : 'bg-slate-600';
-                  return (
-                    <div
-                      key={d.key}
-                      className="text-center"
-                      title={DIMENSION_TOOLTIPS[d.key] || ''}
-                    >
-                      <div className="text-[9px] text-slate-500">{d.label}</div>
-                      <div className="text-sm font-bold text-white">{score}</div>
-                      <div className="w-full h-1.5 bg-slate-800 rounded-full mt-0.5 overflow-hidden">
-                        <div
-                          className={barColor + ' h-full rounded-full'}
-                          style={{ width: score + '%' }}
-                        ></div>
-                      </div>
-                    </div>
-                  );
+              })
+            )
+          ),
+          React.createElement(
+            'tbody',
+            null,
+            (function () {
+              var logsToShow = [];
+              if (p.logs.length <= 5) {
+                logsToShow = p.logs.map(function (l, i) {
+                  return { log: l, idx: i };
                 });
-              })()}
-            </div>
-          </div>
-        )}
-
-        {/* NARRATIVE */}
-        <div className="sc-card sc-card--accent p-5 relative overflow-hidden" style={{ borderLeft: '3px solid var(--accent)' }}>
-          <h3 className="text-slate-400 font-bold uppercase text-xs mb-2 flex items-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-            Note Rapide
-          </h3>
-          <p className="text-slate-200 text-lg leading-relaxed font-medium">{narrativeText}</p>
-        </div>
-
-        {/* ============================================================ */}
-        {/* TABLEAU DE BORD — 5 SECTIONS                                 */}
-        {/* ============================================================ */}
-        {(() => {
-          const a = p.avg;
-          const gp = p.logs.length;
-          const B = getBenchmarks();
-          const dreb = a.reb - a.oreb;
-          const totalFGA = a.fga + a.threea;
-          const totalFGM = a.fgm + a.threem;
-          const fgPctGlobal = totalFGA > 0 ? (totalFGM / totalFGA) * 100 : 0;
-          const per30 = (stat) => (a.min > 0 ? (stat / a.min) * 30 : 0);
-          const p30 = {
-            pts: per30(a.pts),
-            reb: per30(a.reb),
-            ast: per30(a.ast),
-            stl: per30(a.stl),
-            pf: per30(a.fouls),
-          };
-
-          // Analyse Coach
-          const strengths = [];
-          const improvements = [];
-          const iconOk = <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 mt-0.5 shrink-0 text-green-400" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>;
-          const iconWarn = <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 mt-0.5 shrink-0 text-orange-400" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>;
-          if (a.TS > B.ts_elite)
-            strengths.push({
-              icon: iconOk,
-              text: `Efficacité au scoring élite (TS% ${a.TS.toFixed(1)}%). Excellent choix de tirs.`,
-            });
-          else if (a.TS > B.ts_good)
-            strengths.push({
-              icon: iconOk,
-              text: `Bonne efficacité au scoring (TS% ${a.TS.toFixed(1)}%).`,
-            });
-          if (a.astTov > B.astTov_good && a.ast > 2)
-            strengths.push({
-              icon: iconOk,
-              text: `Gestionnaire fiable — ratio AST/TOV de ${a.astTov.toFixed(1)} avec ${a.ast.toFixed(1)} passes décisives/match.`,
-            });
-          if (a.threePct > B.threePct_good && a.threea > 2)
-            strengths.push({
-              icon: iconOk,
-              text: `Menace à 3 points : ${a.threePct.toFixed(1)}% sur ${a.threea.toFixed(1)} tentatives/match.`,
-            });
-          if (p30.reb > 8 && strengths.length < 3)
-            strengths.push({
-              icon: iconOk,
-              text: `Présence au rebond : ${p30.reb.toFixed(1)} rebonds projetés sur 30 min.`,
-            });
-          if (a.stl + a.blk > B.def_active && strengths.length < 3)
-            strengths.push({
-              icon: iconOk,
-              text: `Activité défensive notable : ${a.stl.toFixed(1)} INT + ${a.blk.toFixed(1)} CTR/match.`,
-            });
-          if (a.oreb > B.oreb_good && strengths.length < 3)
-            strengths.push({
-              icon: iconOk,
-              text: `Guerrier au rebond offensif (${a.oreb.toFixed(1)}/match).`,
-            });
-          if (a.min < 20 && a.min > 5 && p30.pts > 15 && strengths.length < 3)
-            strengths.push({
-              icon: iconOk,
-              text: `Impact fort rapporté au temps de jeu : ${p30.pts.toFixed(1)} PTS projetés sur 30 min (${a.min.toFixed(1)} min jouées).`,
-            });
-          if (a.plusMinus > 5 && strengths.length < 3)
-            strengths.push({
-              icon: iconOk,
-              text: `Impact collectif positif : +${a.plusMinus.toFixed(1)} de +/- moyen.`,
-            });
-          if (a.FTr > 0.35 && strengths.length < 3)
-            strengths.push({
-              icon: iconOk,
-              text: `Provoque des fautes régulièrement (FTr ${a.FTr.toFixed(2)}).`,
-            });
-          if (a.netRtg > 8 && strengths.length < 3)
-            strengths.push({
-              icon: iconOk,
-              text: `L'équipe performe nettement mieux avec lui (NetRtg +${a.netRtg.toFixed(0)}).`,
-            });
-          if (p30.pf > 4.5)
-            improvements.push({
-              icon: iconWarn,
-              text: `Gestion des fautes à travailler — ${p30.pf.toFixed(1)} fautes projetées sur 30 min. Risque de foul trouble si temps de jeu élargi.`,
-            });
-          else if (a.pf36 > B.pf36_warn)
-            improvements.push({
-              icon: iconWarn,
-              text: `Discipline : ${a.pf36.toFixed(1)} fautes/36 min, au-dessus du seuil d'alerte (${B.pf36_warn}).`,
-            });
-          if (a.astTov < B.astTov_bad && a.tov > 1.5)
-            improvements.push({
-              icon: iconWarn,
-              text: `Ratio AST/TOV faible (${a.astTov.toFixed(1)}). Réduire les pertes de balle (${a.tov.toFixed(1)}/match).`,
-            });
-          if (a.TS < B.ts_bad && a.usage > B.usage_low + 5 && improvements.length < 2)
-            improvements.push({
-              icon: iconWarn,
-              text: `Efficacité offensive insuffisante (TS% ${a.TS.toFixed(1)}%) pour le volume de tirs.`,
-            });
-          if (a.ftPct < 60 && a.fta / Math.max(gp, 1) > 1.5 && improvements.length < 2)
-            improvements.push({
-              icon: iconWarn,
-              text: `Lancer-franc à travailler : ${a.ftPct.toFixed(1)}%. Points gratuits perdus.`,
-            });
-          if (a.threePct < B.threePct_good - 5 && a.threea > 2 && improvements.length < 2)
-            improvements.push({
-              icon: iconWarn,
-              text: `Adresse extérieure insuffisante (${a.threePct.toFixed(1)}% à 3pts sur ${a.threea.toFixed(1)} tent./match).`,
-            });
-          if (a.netRtg < -8 && improvements.length < 2)
-            improvements.push({
-              icon: iconWarn,
-              text: `Impact collectif négatif (NetRtg ${a.netRtg.toFixed(0)}). Le groupe souffre sur ses minutes.`,
-            });
-          const topS = strengths.slice(0, 3),
-            topI = improvements.slice(0, 2);
-
-          return (
-            <React.Fragment>
-              {/* S1 : VUE D'ENSEMBLE */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                <div className="lg:col-span-1 sc-card p-5 flex flex-col items-center">
-                  <h3 className="sc-section-label mb-4 w-full">Empreinte</h3>
-                  <ScoutingRadar avg={a} />
-                </div>
-                <div className="lg:col-span-2 sc-card p-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="sc-section-label">Vue d'ensemble</h3>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full" style={{ background: 'var(--bg-4)', color: 'var(--text-3)' }}>{gp} matchs</span>
-                  </div>
-                  <div className="grid grid-cols-3 gap-3 mb-4">
-                    {[
-                      { val: a.eff.toFixed(1), label: 'PIR', color: a.eff > 12 ? 'var(--sys-warn)' : a.eff > 6 ? 'var(--text-1)' : 'var(--text-3)' },
-                      { val: (a.plusMinus > 0 ? '+' : '') + a.plusMinus.toFixed(1), label: '+/-', color: a.plusMinus > 0 ? 'var(--made)' : a.plusMinus < 0 ? 'var(--miss)' : 'var(--text-3)' },
-                      { val: a.min.toFixed(1), label: 'MIN', color: 'var(--data-light)' },
-                    ].map(function(s) {
-                      return (
-                        <div key={s.label} className="sc-stat-block">
-                          <div className="sc-stat-value text-3xl" style={{ color: s.color }}>{s.val}</div>
-                          <div className="sc-section-label mt-1">{s.label}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="flex items-center justify-between p-3 rounded-[var(--r-md)]" style={{ background: 'var(--data-ghost)', border: '1px solid rgba(129,140,248,0.15)' }}>
-                    <div>
-                      <div className="text-[11px] font-bold uppercase" style={{ color: 'var(--data)' }}>Impact Total</div>
-                      <div className="sc-section-label mt-0.5">Elite ≥ 110 · Bon ≥ 85 · Correct ≥ 60</div>
-                    </div>
-                    <div className="sc-stat-value text-2xl" style={{ color: a.impactTotal > 110 ? 'var(--data-light)' : a.impactTotal > 85 ? 'var(--made)' : a.impactTotal > 59 ? 'var(--text-1)' : 'var(--miss)' }}>
-                      {a.impactTotal.toFixed(1)}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* S2 : EFFICACITE OFFENSIVE */}
-              <div className="sc-card p-5">
-                <h3 className="sc-section-label mb-4" style={{ color: 'var(--accent)' }}>Efficacité Offensive</h3>
-                <div className="grid grid-cols-4 md:grid-cols-8 gap-3">
-                  <div className="sc-stat-block">
-                    <div className="text-2xl font-black text-orange-400">{a.pts.toFixed(1)}</div>
-                    <div className="text-[10px] text-slate-500 uppercase font-bold">PTS</div>
-                  </div>
-                  <div className="sc-stat-block">
-                    <div
-                      className={`text-2xl font-black ${fgPctGlobal > 50 ? 'text-green-400' : fgPctGlobal > 40 ? 'text-white' : 'text-red-400'}`}
-                    >
-                      {fgPctGlobal.toFixed(1)}
-                    </div>
-                    <div className="text-[10px] text-slate-500 uppercase font-bold">FG%</div>
-                    <div className="text-[9px] text-slate-600">
-                      {totalFGM}/{totalFGA > 0 ? totalFGA.toFixed(0) : 0}
-                    </div>
-                  </div>
-                  <div className="sc-stat-block">
-                    <div
-                      className={`text-2xl font-black ${a.threePct > B.threePct_good ? 'text-green-400' : a.threePct > 30 ? 'text-white' : 'text-red-400'}`}
-                    >
-                      {a.threePct.toFixed(1)}
-                    </div>
-                    <div className="text-[10px] text-slate-500 uppercase font-bold">3P%</div>
-                    <div className="text-[9px] text-slate-600">
-                      {a.threem}/{a.threea}
-                    </div>
-                  </div>
-                  <div className="sc-stat-block">
-                    <div
-                      className={`text-2xl font-black ${a.ftPct > 75 ? 'text-green-400' : a.ftPct > 60 ? 'text-white' : 'text-red-400'}`}
-                    >
-                      {a.ftPct.toFixed(1)}
-                    </div>
-                    <div className="text-[10px] text-slate-500 uppercase font-bold">FT%</div>
-                    <div className="text-[9px] text-slate-600">
-                      {a.ftm}/{a.fta}
-                    </div>
-                  </div>
-                  <div className="sc-stat-block">
-                    <div
-                      className={`text-2xl font-black ${a.TS > B.ts_elite ? 'text-blue-400' : a.TS > B.ts_good ? 'text-green-400' : a.TS > B.ts_bad ? 'text-white' : 'text-red-400'}`}
-                    >
-                      {a.TS.toFixed(1)}
-                    </div>
-                    <div className="text-[10px] text-slate-500 uppercase font-bold">TS%</div>
-                  </div>
-                  <div className="sc-stat-block">
-                    <div className="text-2xl font-black text-white">{a.eFG.toFixed(1)}</div>
-                    <div className="text-[10px] text-slate-500 uppercase font-bold">eFG%</div>
-                  </div>
-                  {(function() {
-                    var wobaVal = window.StatsEngine.woba(a.pts, a.ast, a.oreb, a.tov, a.fga + a.threea, a.fgm + a.threem, a.fta, a.ftm);
-                    var wobaColor = wobaVal >= 0.45 ? 'text-cyan-400' : wobaVal >= 0.30 ? 'text-white' : 'text-slate-400';
-                    return (
-                      <div className="sc-stat-block" title="WOBA — valeur offensive nette par possession. >0.45 élite · 0.30-0.40 correct · <0.25 faible">
-                        <div className={`text-2xl font-black ${wobaColor}`}>{wobaVal.toFixed(3)}</div>
-                        <div className="text-[10px] text-slate-500 uppercase font-bold">WOBA</div>
-                        <div className="text-[9px] text-slate-600">{wobaVal >= 0.45 ? 'Elite' : wobaVal >= 0.30 ? 'Correct' : 'Faible'}</div>
-                      </div>
-                    );
-                  })()}
-                  <div className="sc-stat-block">
-                    <div
-                      className={`text-2xl font-black ${a.usage > 30 ? 'text-red-400' : a.usage > 25 ? 'text-orange-400' : 'text-white'}`}
-                    >
-                      {a.usage.toFixed(0)}
-                    </div>
-                    <div className="text-[10px] text-slate-500 uppercase font-bold">USG%</div>
-                  </div>
-                  <div className="sc-stat-block">
-                    <div
-                      className={`text-2xl font-black ${a.astTov > B.astTov_good ? 'text-green-400' : a.astTov >= 1.5 ? 'text-white' : a.astTov >= 1.0 ? 'text-orange-400' : 'text-red-400'}`}
-                    >
-                      {a.astTov.toFixed(1)}
-                    </div>
-                    <div className="text-[10px] text-slate-500 uppercase font-bold">AST/TOV</div>
-                    <div className="text-[9px] text-slate-600">
-                      {a.ast.toFixed(1)} / {a.tov.toFixed(1)}
-                    </div>
-                  </div>
-                  <div className="sc-stat-block">
-                    <div
-                      className={`text-2xl font-black ${a.FTr > 0.35 ? 'text-green-400' : a.FTr > 0.2 ? 'text-white' : 'text-slate-400'}`}
-                    >
-                      {a.FTr.toFixed(2)}
-                    </div>
-                    <div className="text-[10px] text-slate-500 uppercase font-bold">FTr</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* S3 : IMPACT DEFENSIF */}
-              <div className="sc-card p-5">
-                <h3 className="sc-section-label mb-4" style={{ color: 'var(--data)' }}>Impact Défensif & Hustle</h3>
-                <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-                  <div className="sc-stat-block">
-                    <div className="text-2xl font-black text-white">{a.reb.toFixed(1)}</div>
-                    <div className="text-[10px] text-slate-500 uppercase font-bold">TRB</div>
-                    <div className="text-[9px] text-slate-600 mt-0.5">
-                      <span className="text-orange-400">{a.oreb.toFixed(1)} OFF</span>
-                      {' / '}
-                      <span className="text-blue-400">{dreb.toFixed(1)} DEF</span>
-                    </div>
-                  </div>
-                  <div className="sc-stat-block">
-                    <div
-                      className={`text-2xl font-black ${a.stl > 1.5 ? 'text-green-400' : 'text-white'}`}
-                    >
-                      {a.stl.toFixed(1)}
-                    </div>
-                    <div className="text-[10px] text-slate-500 uppercase font-bold">STL</div>
-                  </div>
-                  <div className="sc-stat-block">
-                    <div
-                      className={`text-2xl font-black ${a.blk > 1.0 ? 'text-green-400' : 'text-white'}`}
-                    >
-                      {a.blk.toFixed(1)}
-                    </div>
-                    <div className="text-[10px] text-slate-500 uppercase font-bold">BLK</div>
-                  </div>
-                  <div className="sc-stat-block">
-                    <div
-                      className={`text-2xl font-black ${a.fouls > 3.5 ? 'text-red-400' : a.fouls > 2.5 ? 'text-yellow-400' : 'text-white'}`}
-                    >
-                      {a.fouls.toFixed(1)}
-                    </div>
-                    <div className="text-[10px] text-slate-500 uppercase font-bold">PF</div>
-                    <div className="text-[9px] text-slate-600">{a.pf36.toFixed(1)} /36m</div>
-                  </div>
-                  <div className="sc-stat-block">
-                    <div
-                      className={`text-2xl font-black ${a.netRtg > 0 ? 'text-green-400' : a.netRtg < 0 ? 'text-red-400' : 'text-slate-400'}`}
-                    >
-                      {a.netRtg > 0 ? '+' : ''}
-                      {a.netRtg.toFixed(0)}
-                    </div>
-                    <div className="text-[10px] text-slate-500 uppercase font-bold">Net Rtg</div>
-                  </div>
-                  <div className="sc-stat-block">
-                    <div className="text-2xl font-black text-white">
-                      {(a.stl + a.blk).toFixed(1)}
-                    </div>
-                    <div className="text-[10px] text-slate-500 uppercase font-bold">STL+BLK</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* F5 : PROFIL DE FATIGUE PAR QUART-TEMPS */}
-              {(function() {
-                var fatigue = AnalysisEngine.computeQuarterStats(p.id, propGames);
-                if (!fatigue || !fatigue.quarters || fatigue.quarters.length < 2) return null;
-                var trendLabel = fatigue.slope < -0.5 ? 'Déclin progressif' : fatigue.slope > 0.5 ? 'Montée en régime' : 'Profil stable';
-                var trendColor = fatigue.slope < -0.5 ? 'text-red-400' : fatigue.slope > 0.5 ? 'text-green-400' : 'text-slate-400';
-                var maxEff = Math.max.apply(null, fatigue.quarters.map(function(q) { return Math.abs(q.eff10); })) || 1;
-                var qLabels = ['Q1', 'Q2', 'Q3', 'Q4'];
-                return (
-                  <div className="sc-card p-5">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="sc-section-label" style={{ color: 'var(--warning)' }}>Profil de Fatigue</h3>
-                      <span className={'text-xs font-bold ' + trendColor}>{trendLabel}</span>
-                    </div>
-                    <div className="flex items-end gap-2 h-20 mb-3">
-                      {fatigue.quarters.map(function(q, i) {
-                        var pct = maxEff > 0 ? Math.max(4, Math.abs(q.eff10) / maxEff * 100) : 4;
-                        var barColor = q.eff10 >= 0 ? 'var(--made)' : 'var(--miss)';
-                        return (
-                          <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                            <span className="text-[9px] font-mono" style={{ color: 'var(--text-3)' }}>{q.eff10 >= 0 ? '+' : ''}{q.eff10.toFixed(1)}</span>
-                            <div className="w-full rounded-t-sm" style={{ height: pct + '%', background: barColor, minHeight: '4px' }}></div>
-                            <span className="text-[10px] text-slate-500 font-bold">{qLabels[i] || ('Q' + q.q)}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {fatigue.breakpoint && (
-                      <p className="text-[10px] text-slate-500">
-                        Rupture détectée à <span className="text-amber-400 font-bold">{qLabels[(fatigue.breakpoint - 1)] || ('Q' + fatigue.breakpoint)}</span> — baisse d'efficacité après ce quart.
-                      </p>
-                    )}
-                    <p className="text-[10px] text-slate-600 mt-1">EFF/10 min par quart-temps — pente de régression : {fatigue.slope >= 0 ? '+' : ''}{fatigue.slope.toFixed(2)}</p>
-                  </div>
+              } else {
+                logsToShow = p.logs.slice(0, 3).map(function (l, i) {
+                  return { log: l, idx: i };
+                });
+                logsToShow.push({ log: null, idx: -1 }); // separator
+                logsToShow.push({ log: p.logs[p.logs.length - 1], idx: p.logs.length - 1 });
+              }
+              return logsToShow.map(function (item) {
+                if (!item.log)
+                  return React.createElement(
+                    'tr',
+                    { key: 'sep' },
+                    React.createElement(
+                      'td',
+                      { colSpan: 11, style: { padding: '2px 6px', color: '#475569' } },
+                      '...'
+                    )
+                  );
+                var l = item.log;
+                return React.createElement(
+                  'tr',
+                  { key: item.idx },
+                  React.createElement(
+                    'td',
+                    { style: { padding: '2px 6px', color: '#94a3b8' } },
+                    item.idx
+                  ),
+                  React.createElement(
+                    'td',
+                    { style: { padding: '2px 6px', color: '#94a3b8' } },
+                    l.date
+                  ),
+                  React.createElement(
+                    'td',
+                    { style: { padding: '2px 6px', color: '#94a3b8' } },
+                    l.opponent
+                  ),
+                  React.createElement(
+                    'td',
+                    { style: { padding: '2px 6px', color: '#fbbf24', fontWeight: 'bold' } },
+                    l.threea
+                  ),
+                  React.createElement(
+                    'td',
+                    { style: { padding: '2px 6px', color: '#22d3ee' } },
+                    l.threem
+                  ),
+                  React.createElement(
+                    'td',
+                    { style: { padding: '2px 6px', color: '#fff' } },
+                    l.fga
+                  ),
+                  React.createElement(
+                    'td',
+                    { style: { padding: '2px 6px', color: '#fff' } },
+                    l.fgm
+                  ),
+                  React.createElement(
+                    'td',
+                    { style: { padding: '2px 6px', color: '#fff' } },
+                    l.fta
+                  ),
+                  React.createElement(
+                    'td',
+                    { style: { padding: '2px 6px', color: '#fff' } },
+                    l.ftm
+                  ),
+                  React.createElement(
+                    'td',
+                    { style: { padding: '2px 6px', color: '#f97316' } },
+                    l.pts
+                  ),
+                  React.createElement(
+                    'td',
+                    { style: { padding: '2px 6px', color: '#94a3b8' } },
+                    l.min
+                  )
                 );
-              })()}
-
-              {/* F3 : PROFIL DE RÔLE (K-MEANS CLUSTERING) */}
-              {(function() {
-                var cluster = AnalysisEngine.computeSquadClusters(p, players, propGames);
-                if (!cluster) return null;
-                var dimColors = { volume: 'text-orange-400', efficiency: 'text-cyan-400', shooting: 'text-yellow-400', creation: 'text-purple-400', rebounding: 'text-blue-400', defense: 'text-green-400' };
-                var dimColor = dimColors[cluster.topDim] || 'text-white';
-                return (
-                  <div className="sc-card p-5">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="sc-section-label" style={{ color: 'var(--accent)' }}>Profil de Rôle — Clustering</h3>
-                      <span className={'text-xs font-black uppercase px-2 py-0.5 rounded-full ' + dimColor} style={{ background: 'var(--bg-4)' }}>{cluster.label}</span>
-                    </div>
-                    <p className="text-[11px] mb-3" style={{ color: 'var(--text-3)' }}>
-                      Dimension dominante : <span className={'font-bold ' + dimColor}>{cluster.topDim}</span> — groupe de {cluster.size} joueur{cluster.size > 1 ? 's' : ''} au profil similaire.
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {cluster.members.map(function(m) {
-                        var isSelf = Number(m.id) === Number(p.id) || String(m.id) === String(p.id);
-                        return (
-                          <span
-                            key={m.id}
-                            className={'text-[10px] font-mono px-2 py-0.5 rounded-full ' + (isSelf ? 'text-black font-black' : 'text-slate-300')}
-                            style={{ background: isSelf ? 'var(--accent)' : 'var(--bg-4)' }}
-                          >
-                            #{m.number} {m.name}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* S4 : PER 30 */}
-              <div className="sc-card p-5">
-                <h3 className="sc-section-label mb-1" style={{ color: 'var(--made)' }}>Projection Titulaire FIBA</h3>
-                <p className="text-[11px] mb-4" style={{ color: 'var(--text-3)' }}>
-                  Statistiques projetées sur 30 minutes — (Stat / MIN) × 30.
-                  {a.min < 10 && (
-                    <span className="text-amber-400 ml-1 inline-flex items-center gap-1">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
-                      Faible échantillon ({a.min.toFixed(1)} min/match).
-                    </span>
-                  )}
-                </p>
-                <div className="grid grid-cols-5 gap-3">
-                  <div className="sc-stat-block">
-                    <div className="text-2xl font-black text-orange-400">{p30.pts.toFixed(1)}</div>
-                    <div className="text-[10px] text-slate-500 uppercase font-bold">PTS</div>
-                    <div className="text-[9px] text-slate-600">réel: {a.pts.toFixed(1)}</div>
-                  </div>
-                  <div className="sc-stat-block">
-                    <div className="text-2xl font-black text-blue-400">{p30.reb.toFixed(1)}</div>
-                    <div className="text-[10px] text-slate-500 uppercase font-bold">REB</div>
-                    <div className="text-[9px] text-slate-600">réel: {a.reb.toFixed(1)}</div>
-                  </div>
-                  <div className="sc-stat-block">
-                    <div className="text-2xl font-black text-purple-400">{p30.ast.toFixed(1)}</div>
-                    <div className="text-[10px] text-slate-500 uppercase font-bold">AST</div>
-                    <div className="text-[9px] text-slate-600">réel: {a.ast.toFixed(1)}</div>
-                  </div>
-                  <div className="sc-stat-block">
-                    <div className="text-2xl font-black text-green-400">{p30.stl.toFixed(1)}</div>
-                    <div className="text-[10px] text-slate-500 uppercase font-bold">STL</div>
-                    <div className="text-[9px] text-slate-600">réel: {a.stl.toFixed(1)}</div>
-                  </div>
-                  <div className="sc-stat-block">
-                    <div
-                      className={`text-2xl font-black ${p30.pf > 4.5 ? 'text-red-400' : p30.pf > 3.5 ? 'text-yellow-400' : 'text-white'}`}
-                    >
-                      {p30.pf.toFixed(1)}
-                    </div>
-                    <div className="text-[10px] text-slate-500 uppercase font-bold">PF</div>
-                    <div className="text-[9px] text-slate-600">réel: {a.fouls.toFixed(1)}</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* S5 : ANALYSE DU COACH */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="sc-card p-5 relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-20 h-20 rounded-bl-full pointer-events-none" style={{ background: 'rgba(52,211,153,0.04)' }}></div>
-                  <h4 className="sc-section-label mb-3">Analyse du Coach</h4>
-                  <h4 className="text-green-400 font-black uppercase text-sm mb-4 flex items-center gap-1.5">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7"/></svg>
-                    Points Forts
-                  </h4>
-                  {topS.length > 0 ? (
-                    <div className="space-y-2">
-                      {topS.map((s, i) => (
-                        <div
-                          key={i}
-                          className="flex gap-3 text-slate-300 text-sm p-3 bg-slate-950/50 rounded-lg border border-green-900/20"
-                        >
-                          {s.icon}
-                          <span>{s.text}</span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-slate-500 text-sm italic">
-                      Pas de point fort marquant identifié.
-                    </p>
-                  )}
-                </div>
-                <div className="sc-card p-5 relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-20 h-20 rounded-bl-full pointer-events-none" style={{ background: 'rgba(249,115,22,0.04)' }}></div>
-                  <h4 className="sc-section-label mb-3">&nbsp;</h4>
-                  <h4 className="text-orange-400 font-black uppercase text-sm mb-4 flex items-center gap-1.5">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/></svg>
-                    Axes de Progression
-                  </h4>
-                  {topI.length > 0 ? (
-                    <div className="space-y-2">
-                      {topI.map((s, i) => (
-                        <div
-                          key={i}
-                          className="flex gap-3 text-slate-300 text-sm p-3 bg-slate-950/50 rounded-lg border border-orange-900/20"
-                        >
-                          {s.icon}
-                          <span>{s.text}</span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-slate-500 text-sm italic">
-                      Aucun axe de progression critique détecté.
-                    </p>
-                  )}
-                </div>
-              </div>
-            </React.Fragment>
-          );
-        })()}
-
-        {/* 5 DERNIERS MATCHS */}
-        <div className="sc-card overflow-hidden">
-          <div className="px-5 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
-            <h3 className="sc-section-label">5 Derniers Matchs</h3>
-          </div>
-          <table className="w-full text-sm text-left" style={{ color: 'var(--text-2)' }}>
-            <thead style={{ background: 'var(--bg-0)' }}>
-              <tr>
-                {['Date','Adv','MIN','PTS','REB','AST','EFF','+/-'].map(function(h, i) {
-                  return <th key={h} className={'p-3 sc-section-label ' + (i > 1 ? 'text-center' : '')}>{h}</th>;
-                })}
-              </tr>
-            </thead>
-            <tbody>
-              {last5.map((l, i) => (
-                <tr key={i} className="sc-table-row" style={{ borderTop: '1px solid var(--border-subtle)' }}>
-                  <td className="p-3 text-xs font-mono" style={{ color: 'var(--text-3)' }}>{l.rawDate.toLocaleDateString('fr-FR')}</td>
-                  <td className="p-3 font-medium" style={{ color: 'var(--text-1)' }}>{l.opponent}</td>
-                  <td className="p-3 text-center text-xs font-mono">{l.min}</td>
-                  <td className="p-3 text-center font-bold sc-stat-value" style={{ color: 'var(--text-1)' }}>{l.pts}</td>
-                  <td className="p-3 text-center sc-stat-value">{l.reb}</td>
-                  <td className="p-3 text-center sc-stat-value">{l.ast}</td>
-                  <td className="p-3 text-center font-bold sc-stat-value" style={{ color: 'var(--sys-warn)' }}>{l.eff.toFixed(0)}</td>
-                  <td className="p-3 text-center font-bold sc-stat-value" style={{ color: l.plusMinus > 0 ? 'var(--made)' : l.plusMinus < 0 ? 'var(--miss)' : 'var(--text-3)' }}>
-                    {l.plusMinus > 0 ? '+' : ''}{l.plusMinus}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {/* SHOT CHART */}
-          {(() => {
-            const ShotChart = window.ShotChart;
-            if (!ShotChart || !propGames) return null;
-            const rawPid = p.id;
-            if (!rawPid) return null;
-            const numPid = Number(rawPid);
-            const playerShots = [];
-            propGames.forEach((g) => {
-              if (!g.actions || !g.actions.length) return;
-              g.actions.forEach((a) => {
-                if (a.type === 'SHOT' && (a.pid === rawPid || a.pid === numPid))
-                  playerShots.push(a);
               });
-            });
-            if (playerShots.length === 0) return null;
-            return (
-              <div className="mt-6">
-                <ShotChart shots={playerShots} playerName={p.name || ''} />
-              </div>
+            })()
+          )
+        ),
+
+        // Sommes calculees
+        React.createElement(
+          'div',
+          { style: { fontWeight: 'bold', color: '#fff', marginBottom: '4px' } },
+          'Sommes recalculees ici :'
+        ),
+        (function () {
+          var sums = { threea: 0, threem: 0, fga: 0, fgm: 0, fta: 0, ftm: 0, pts: 0 };
+          p.logs.forEach(function (l) {
+            sums.threea += l.threea || 0;
+            sums.threem += l.threem || 0;
+            sums.fga += l.fga || 0;
+            sums.fgm += l.fgm || 0;
+            sums.fta += l.fta || 0;
+            sums.ftm += l.ftm || 0;
+            sums.pts += l.pts || 0;
+          });
+          return React.createElement(
+            'div',
+            { style: { display: 'flex', gap: '16px', flexWrap: 'wrap' } },
+            Object.keys(sums).map(function (k) {
+              var mismatch = false;
+              if (k === 'pts') mismatch = Math.abs(sums[k] / gp - a.pts) > 0.01;
+              else mismatch = Math.abs(sums[k] - a[k]) > 0.01;
+              return React.createElement(
+                'div',
+                { key: k, style: { color: mismatch ? '#ff0000' : '#34d399' } },
+                'sum(' + k + ')=' + sums[k].toFixed(1),
+                mismatch ? ' MISMATCH vs avg.' + k + '=' + a[k].toFixed(1) : ' OK'
+              );
+            })
+          );
+        })(),
+
+        // Clefs presentes dans le premier log
+        p.logs.length > 0 &&
+          React.createElement(
+            'div',
+            { style: { marginTop: '8px' } },
+            React.createElement(
+              'span',
+              { style: { fontWeight: 'bold', color: '#fff' } },
+              'Clefs log[0]: '
+            ),
+            React.createElement(
+              'span',
+              { style: { color: '#94a3b8', wordBreak: 'break-all' } },
+              Object.keys(p.logs[0]).join(', ')
+            )
+          )
+      ),
+
+      // ========== MAIN STATS ROW ==========
+      React.createElement(
+        'div',
+        { className: 'grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4' },
+        React.createElement(StatCard, {
+          label: 'PTS',
+          value: a.pts.toFixed(1),
+          valueColor: '#ffffff',
+          sub: 'par match',
+          accentColor: 'rgba(249,115,22,0.08)',
+          fontSize: '2.8rem',
+        }),
+        React.createElement(StatCard, {
+          label: 'REB',
+          value: a.reb.toFixed(1),
+          valueColor: '#22d3ee',
+          sub: a.oreb.toFixed(1) + ' OFF / ' + dreb.toFixed(1) + ' DEF',
+          accentColor: 'rgba(34,211,238,0.08)',
+        }),
+        React.createElement(StatCard, {
+          label: 'AST',
+          value: a.ast.toFixed(1),
+          valueColor: '#34d399',
+          sub: 'Ratio: ' + a.astTov.toFixed(1),
+          accentColor: 'rgba(52,211,153,0.08)',
+        }),
+        React.createElement(StatCard, {
+          label: 'EVAL',
+          value: a.eff.toFixed(1),
+          valueColor: a.eff > 12 ? '#facc15' : a.eff > 6 ? '#ffffff' : '#f87171',
+          sub: 'PIR: ' + (a.pir || 0).toFixed(1),
+          accentColor: 'rgba(250,204,21,0.08)',
+        }),
+        React.createElement(StatCard, {
+          label: 'IMPACT',
+          value: a.impactTotal.toFixed(0),
+          valueColor: impactColor,
+          sub: 'OIS + DIS',
+          accentColor: impactColor + '12',
+          fontSize: '2.2rem',
+        })
+      ),
+
+      // ========== DUAL PANEL : RADAR + ADVANCED METRICS ==========
+      React.createElement(
+        'div',
+        { className: 'grid grid-cols-1 lg:grid-cols-3 gap-6' },
+
+        // Radar
+        React.createElement(
+          'div',
+          {
+            style: {
+              background: 'linear-gradient(135deg, rgba(15,23,42,0.9), rgba(30,41,59,0.5))',
+              border: '1px solid rgba(100,116,139,0.25)',
+              borderRadius: '16px',
+              padding: '24px',
+            },
+          },
+          React.createElement(SectionTitle, { num: '1', title: 'Empreinte' }),
+          React.createElement(ScoutingRadar, { avg: a }),
+          // Fingerprint mini-bars
+          arch.fingerprint &&
+            React.createElement(
+              'div',
+              { className: 'mt-4 space-y-1.5' },
+              Object.keys(arch.fingerprint).map(function (dim) {
+                var val = arch.fingerprint[dim] || 0;
+                var dimLabels = {
+                  volume: 'VOL',
+                  efficiency: 'EFF',
+                  shooting: 'TIR',
+                  creation: 'CREA',
+                  rebounding: 'REB',
+                  interior: 'INT',
+                  defense: 'DEF',
+                  impact: 'IMP',
+                };
+                var dimColor =
+                  val >= 70 ? '#34d399' : val >= 45 ? '#22d3ee' : val >= 25 ? '#f59e0b' : '#64748b';
+                return React.createElement(
+                  'div',
+                  { key: dim, className: 'flex items-center gap-2' },
+                  React.createElement(
+                    'span',
+                    {
+                      className: 'text-[9px] font-bold w-8 text-right',
+                      style: { color: '#64748b' },
+                    },
+                    dimLabels[dim] || dim
+                  ),
+                  React.createElement(
+                    'div',
+                    {
+                      className: 'flex-1 h-1.5 rounded-full overflow-hidden',
+                      style: { background: 'rgba(15,23,42,0.8)' },
+                    },
+                    React.createElement('div', {
+                      className: 'h-full rounded-full',
+                      style: { width: val + '%', background: dimColor },
+                    })
+                  ),
+                  React.createElement(
+                    'span',
+                    { className: 'text-[9px] font-bold w-6', style: { color: dimColor } },
+                    val
+                  )
+                );
+              })
+            )
+        ),
+
+        // Advanced Metrics
+        React.createElement(
+          'div',
+          {
+            className: 'lg:col-span-2',
+            style: {
+              background: 'linear-gradient(135deg, rgba(15,23,42,0.9), rgba(30,41,59,0.5))',
+              border: '1px solid rgba(100,116,139,0.25)',
+              borderRadius: '16px',
+              padding: '24px',
+            },
+          },
+          React.createElement(SectionTitle, {
+            num: '2',
+            title: 'Efficacit\u00e9 Offensive',
+            badge: gp + ' matchs',
+          }),
+
+          // Impact Total highlight
+          React.createElement(
+            'div',
+            {
+              className: 'mb-6 flex items-center justify-between p-4 rounded-xl',
+              style: {
+                background: 'linear-gradient(135deg, rgba(79,70,229,0.12), rgba(34,211,238,0.08))',
+                border: '1px solid rgba(99,102,241,0.2)',
+              },
+            },
+            React.createElement(
+              'div',
+              null,
+              React.createElement(
+                'div',
+                {
+                  className: 'text-xs font-bold uppercase tracking-widest',
+                  style: { color: '#818cf8' },
+                },
+                'Impact Total'
+              ),
+              React.createElement(
+                'div',
+                { className: 'text-[10px] mt-0.5', style: { color: '#64748b' } },
+                'Elite \u2265 110 \u2022 Bon \u2265 85 \u2022 Correct \u2265 60'
+              )
+            ),
+            React.createElement(
+              'div',
+              { className: 'text-3xl font-black', style: { color: impactColor } },
+              a.impactTotal.toFixed(1)
+            )
+          ),
+
+          // Progress bars
+          React.createElement(
+            'div',
+            { className: 'space-y-1' },
+            React.createElement(ProgressBar, {
+              label: 'eFG%',
+              value: a.eFG,
+              display: a.eFG.toFixed(1) + '%',
+              color: efgColor,
+            }),
+            React.createElement(ProgressBar, {
+              label: 'TS%',
+              value: a.TS,
+              display: a.TS.toFixed(1) + '%',
+              color: tsColor,
+            }),
+            React.createElement(ProgressBar, {
+              label: 'Usage',
+              value: a.usage,
+              display: a.usage.toFixed(1) + '%',
+              color: usageColor,
+            }),
+            React.createElement(ProgressBar, {
+              label: 'FG%',
+              value: fgPctGlobal,
+              display: fgPctGlobal.toFixed(1) + '%',
+              color: fgPctGlobal > 50 ? '#34d399' : fgPctGlobal > 42 ? '#22d3ee' : '#f87171',
+            }),
+            React.createElement(ProgressBar, {
+              label: '3PT%',
+              value: a.threePct,
+              display: a.threePct.toFixed(1) + '%',
+              color:
+                a.threePct > B.threePct_good ? '#34d399' : a.threePct > 28 ? '#f59e0b' : '#f87171',
+            }),
+            React.createElement(ProgressBar, {
+              label: 'LF%',
+              value: a.ftPct,
+              display: a.ftPct.toFixed(1) + '%',
+              color: a.ftPct > 75 ? '#34d399' : a.ftPct > 60 ? '#f59e0b' : '#f87171',
+            }),
+            React.createElement(ProgressBar, {
+              label: 'FTr',
+              value: a.FTr * 100,
+              display: a.FTr.toFixed(2),
+              color: a.FTr > 0.35 ? '#34d399' : '#94a3b8',
+            })
+          ),
+
+          // Shooting splits row
+          React.createElement(
+            'div',
+            {
+              className: 'grid grid-cols-4 gap-3 mt-5 pt-4',
+              style: { borderTop: '1px solid rgba(51,65,85,0.3)' },
+            },
+            React.createElement(
+              'div',
+              { className: 'text-center' },
+              React.createElement(
+                'div',
+                { className: 'text-lg font-black text-white' },
+                totalFGM.toFixed(0) + '-' + totalFGA.toFixed(0)
+              ),
+              React.createElement(
+                'div',
+                { className: 'text-[9px] text-slate-500 uppercase font-bold' },
+                'FG (cum.)'
+              )
+            ),
+            React.createElement(
+              'div',
+              { className: 'text-center' },
+              React.createElement(
+                'div',
+                { className: 'text-lg font-black', style: { color: '#22d3ee' } },
+                a.threem.toFixed(0) + '-' + a.threea.toFixed(0)
+              ),
+              React.createElement(
+                'div',
+                { className: 'text-[9px] text-slate-500 uppercase font-bold' },
+                '3PT (cum.)'
+              )
+            ),
+            React.createElement(
+              'div',
+              { className: 'text-center' },
+              React.createElement(
+                'div',
+                { className: 'text-lg font-black text-white' },
+                a.ftm.toFixed(0) + '-' + a.fta.toFixed(0)
+              ),
+              React.createElement(
+                'div',
+                { className: 'text-[9px] text-slate-500 uppercase font-bold' },
+                'FT (cum.)'
+              )
+            ),
+            React.createElement(
+              'div',
+              { className: 'text-center' },
+              React.createElement(
+                'div',
+                { className: 'text-lg font-black', style: { color: '#f59e0b' } },
+                a.tov.toFixed(1)
+              ),
+              React.createElement(
+                'div',
+                { className: 'text-[9px] text-slate-500 uppercase font-bold' },
+                'TOV/m'
+              )
+            )
+          )
+        )
+      ),
+
+      // ========== SECTION 3 : DEFENSE & HUSTLE ==========
+      React.createElement(
+        'div',
+        {
+          style: {
+            background: 'linear-gradient(135deg, rgba(15,23,42,0.9), rgba(30,41,59,0.5))',
+            border: '1px solid rgba(100,116,139,0.25)',
+            borderRadius: '16px',
+            padding: '24px',
+          },
+        },
+        React.createElement(SectionTitle, { num: '3', title: 'Impact D\u00e9fensif & Hustle' }),
+        React.createElement(
+          'div',
+          { className: 'grid grid-cols-3 md:grid-cols-6 gap-4' },
+          [
+            { l: 'STL', v: a.stl.toFixed(1), c: a.stl > 1.5 ? '#34d399' : '#fff' },
+            { l: 'BLK', v: a.blk.toFixed(1), c: a.blk > 1.0 ? '#34d399' : '#fff' },
+            { l: 'OREB', v: a.oreb.toFixed(1), c: a.oreb > B.oreb_good ? '#34d399' : '#fff' },
+            {
+              l: 'PF',
+              v: a.fouls.toFixed(1),
+              c: a.fouls > 3.5 ? '#f87171' : a.fouls > 2.5 ? '#f59e0b' : '#fff',
+              sub: a.pf36.toFixed(1) + '/36m',
+            },
+            {
+              l: 'NET RTG',
+              v: (a.netRtg > 0 ? '+' : '') + a.netRtg.toFixed(0),
+              c: a.netRtg > 0 ? '#34d399' : a.netRtg < 0 ? '#f87171' : '#94a3b8',
+            },
+            {
+              l: 'STL+BLK',
+              v: (a.stl + a.blk).toFixed(1),
+              c: a.stl + a.blk > B.def_active ? '#22d3ee' : '#fff',
+            },
+          ].map(function (item) {
+            return React.createElement(
+              'div',
+              {
+                key: item.l,
+                className: 'text-center p-3 rounded-xl',
+                style: { background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(51,65,85,0.3)' },
+              },
+              React.createElement(
+                'div',
+                { className: 'text-2xl font-black', style: { color: item.c } },
+                item.v
+              ),
+              React.createElement(
+                'div',
+                {
+                  className: 'text-[10px] font-bold uppercase tracking-wide mt-1',
+                  style: { color: '#64748b' },
+                },
+                item.l
+              ),
+              item.sub &&
+                React.createElement(
+                  'div',
+                  { className: 'text-[9px] mt-0.5', style: { color: '#475569' } },
+                  item.sub
+                )
             );
-          })()}
-          {/* 5-MAN LINEUPS */}
-          {(() => {
-            const currentPlayerId = p.id;
-            const lineups = calcFiveManLineups(currentPlayerId, propGames, propRoster);
-            if (lineups.total === 0) return null;
-            const renderLineup = (lu, idx) => (
-              <div
-                key={idx}
-                className="flex items-center gap-2 p-2 bg-slate-950/50 rounded border border-slate-800/50"
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs text-white font-medium">{lu.names.join(' ')}</div>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-[10px] text-slate-500">{lu.poss} poss</span>
-                    {lu.lowSample && (
-                      <span className="text-[9px] bg-amber-900/30 text-amber-400 px-1 rounded">
-                        Faible éch.
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="text-center px-2">
-                  <div className="text-[10px] text-slate-500">ORtg</div>
-                  <div className="text-xs font-bold text-purple-400">{lu.ortg}</div>
-                </div>
-                <div className="text-center px-2">
-                  <div className="text-[10px] text-slate-500">DRtg</div>
-                  <div className="text-xs font-bold text-red-400">{lu.drtg}</div>
-                </div>
-                <div className="text-center px-2">
-                  <div
-                    className={`text-sm font-bold ${lu.netRtg >= 0 ? 'text-green-400' : 'text-red-400'}`}
-                  >
-                    {lu.netRtg > 0 ? '+' : ''}
-                    {lu.netRtg}
-                  </div>
-                  <div className="text-[10px] text-slate-500">Net</div>
-                </div>
-              </div>
+          })
+        )
+      ),
+
+      // ========== SECTION 4 : PER 30 ==========
+      React.createElement(
+        'div',
+        {
+          style: {
+            background: 'linear-gradient(135deg, rgba(15,23,42,0.9), rgba(30,41,59,0.5))',
+            border: '1px solid rgba(100,116,139,0.25)',
+            borderRadius: '16px',
+            padding: '24px',
+          },
+        },
+        React.createElement(SectionTitle, {
+          num: '4',
+          title: 'Projection Titulaire FIBA (Per 30)',
+          badge: a.min.toFixed(1) + ' min/m',
+        }),
+        a.min < 10 &&
+          React.createElement(
+            'div',
+            {
+              className: 'mb-4 px-3 py-2 rounded-lg text-xs',
+              style: {
+                background: 'rgba(245,158,11,0.1)',
+                border: '1px solid rgba(245,158,11,0.2)',
+                color: '#f59e0b',
+              },
+            },
+            'Faible \u00e9chantillon (' +
+              a.min.toFixed(1) +
+              ' min/match). Projections \u00e0 consid\u00e9rer avec prudence.'
+          ),
+        React.createElement(
+          'div',
+          { className: 'grid grid-cols-2 md:grid-cols-5 gap-4' },
+          [
+            { l: 'PTS/30', v: p30.pts.toFixed(1), c: p30.pts > 18 ? '#f97316' : '#fff' },
+            { l: 'REB/30', v: p30.reb.toFixed(1), c: p30.reb > 8 ? '#22d3ee' : '#fff' },
+            { l: 'AST/30', v: p30.ast.toFixed(1), c: p30.ast > 5 ? '#34d399' : '#fff' },
+            { l: 'STL/30', v: p30.stl.toFixed(1), c: p30.stl > 2 ? '#34d399' : '#fff' },
+            {
+              l: 'PF/30',
+              v: p30.pf.toFixed(1),
+              c: p30.pf > 4.5 ? '#f87171' : p30.pf > 3.5 ? '#f59e0b' : '#fff',
+              sub: 'r\u00e9el: ' + a.fouls.toFixed(1),
+            },
+          ].map(function (item) {
+            return React.createElement(
+              'div',
+              {
+                key: item.l,
+                className: 'text-center p-4 rounded-xl',
+                style: { background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(51,65,85,0.3)' },
+              },
+              React.createElement(
+                'div',
+                { className: 'text-2xl font-black', style: { color: item.c } },
+                item.v
+              ),
+              React.createElement(
+                'div',
+                {
+                  className: 'text-[10px] font-bold uppercase tracking-wide mt-1',
+                  style: { color: '#64748b' },
+                },
+                item.l
+              ),
+              item.sub &&
+                React.createElement(
+                  'div',
+                  { className: 'text-[9px] mt-0.5', style: { color: '#475569' } },
+                  item.sub
+                )
             );
-            return (
-              <div className="sc-card overflow-hidden mt-5">
-                <div className="px-5 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
-                  <h3 className="sc-section-label">Lineups 5-Man</h3>
-                  <span className="text-[10px] text-slate-600">
-                    {lineups.total} combos analysés (matchs PBP uniquement)
-                  </span>
-                </div>
-                <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {lineups.best.length > 0 && (
-                    <div>
-                      <h4 className="text-xs text-green-400 uppercase font-bold mb-2">
-                        Meilleurs lineups
-                      </h4>
-                      <div className="space-y-1">{lineups.best.map(renderLineup)}</div>
-                    </div>
-                  )}
-                  {lineups.worst.length > 0 && (
-                    <div>
-                      <h4 className="text-xs text-red-400 uppercase font-bold mb-2">
-                        Pires lineups
-                      </h4>
-                      <div className="space-y-1">{lineups.worst.map(renderLineup)}</div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
-        </div>
-      </div>
-    </div>
+          })
+        )
+      ),
+
+      // ========== SECTION 5 : ANALYSE DU COACH ==========
+      React.createElement(
+        'div',
+        { className: 'grid grid-cols-1 md:grid-cols-2 gap-6' },
+        // Forces
+        React.createElement(
+          'div',
+          {
+            className: 'relative overflow-hidden',
+            style: {
+              background: 'linear-gradient(135deg, rgba(15,23,42,0.9), rgba(30,41,59,0.5))',
+              border: '1px solid rgba(34,197,94,0.15)',
+              borderRadius: '16px',
+              padding: '24px',
+            },
+          },
+          React.createElement('div', {
+            className: 'absolute top-0 right-0 w-32 h-32 pointer-events-none',
+            style: { background: 'radial-gradient(circle, rgba(34,197,94,0.06), transparent)' },
+          }),
+          React.createElement(SectionTitle, { num: '5', title: 'Points Forts' }),
+          topS.length > 0
+            ? React.createElement(
+                'div',
+                { className: 'space-y-3' },
+                topS.map(function (s, i) {
+                  return React.createElement(
+                    'div',
+                    {
+                      key: i,
+                      className: 'flex gap-3 p-3 rounded-xl text-sm',
+                      style: {
+                        background: 'rgba(34,197,94,0.06)',
+                        border: '1px solid rgba(34,197,94,0.12)',
+                      },
+                    },
+                    React.createElement(
+                      'span',
+                      { className: 'shrink-0 font-bold', style: { color: '#34d399' } },
+                      s.icon
+                    ),
+                    React.createElement('span', { style: { color: '#d1d5db' } }, s.text)
+                  );
+                })
+              )
+            : React.createElement(
+                'p',
+                { className: 'text-sm italic', style: { color: '#475569' } },
+                'Pas de point fort marquant identifi\u00e9.'
+              )
+        ),
+        // Progressions
+        React.createElement(
+          'div',
+          {
+            className: 'relative overflow-hidden',
+            style: {
+              background: 'linear-gradient(135deg, rgba(15,23,42,0.9), rgba(30,41,59,0.5))',
+              border: '1px solid rgba(249,115,22,0.15)',
+              borderRadius: '16px',
+              padding: '24px',
+            },
+          },
+          React.createElement('div', {
+            className: 'absolute top-0 right-0 w-32 h-32 pointer-events-none',
+            style: { background: 'radial-gradient(circle, rgba(249,115,22,0.06), transparent)' },
+          }),
+          React.createElement(
+            'div',
+            { className: 'flex items-center gap-3 mb-5' },
+            React.createElement('div', { className: 'w-8 h-8' }),
+            React.createElement(
+              'h3',
+              { className: 'text-sm font-bold uppercase tracking-widest text-slate-300' },
+              'Axes de Progression'
+            )
+          ),
+          topI.length > 0
+            ? React.createElement(
+                'div',
+                { className: 'space-y-3' },
+                topI.map(function (s, i) {
+                  return React.createElement(
+                    'div',
+                    {
+                      key: i,
+                      className: 'flex gap-3 p-3 rounded-xl text-sm',
+                      style: {
+                        background: 'rgba(249,115,22,0.06)',
+                        border: '1px solid rgba(249,115,22,0.12)',
+                      },
+                    },
+                    React.createElement(
+                      'span',
+                      { className: 'shrink-0 font-bold', style: { color: '#f97316' } },
+                      s.icon
+                    ),
+                    React.createElement('span', { style: { color: '#d1d5db' } }, s.text)
+                  );
+                })
+              )
+            : React.createElement(
+                'p',
+                { className: 'text-sm italic', style: { color: '#475569' } },
+                'Aucun axe prioritaire identifi\u00e9.'
+              )
+        )
+      ),
+
+      // ========== NARRATIVE ==========
+      React.createElement(
+        'div',
+        {
+          style: {
+            background: 'linear-gradient(135deg, rgba(15,23,42,0.9), rgba(30,41,59,0.5))',
+            border: '1px solid rgba(100,116,139,0.25)',
+            borderRadius: '16px',
+            padding: '24px',
+          },
+        },
+        React.createElement(
+          'div',
+          { className: 'flex items-center gap-2 mb-3' },
+          React.createElement(
+            'span',
+            {
+              className: 'text-xs font-bold uppercase tracking-widest',
+              style: { color: '#94a3b8' },
+            },
+            'Note Scouting'
+          )
+        ),
+        React.createElement(
+          'p',
+          { className: 'text-lg leading-relaxed font-medium', style: { color: '#e2e8f0' } },
+          narrativeText
+        )
+      ),
+
+      // ========== LAST 5 GAMES ==========
+      React.createElement(
+        'div',
+        {
+          style: {
+            background: 'linear-gradient(135deg, rgba(15,23,42,0.9), rgba(30,41,59,0.5))',
+            border: '1px solid rgba(100,116,139,0.25)',
+            borderRadius: '16px',
+            padding: '24px',
+          },
+        },
+        React.createElement(
+          'div',
+          { className: 'flex items-center gap-2 mb-4' },
+          React.createElement(
+            'span',
+            {
+              className: 'text-xs font-bold uppercase tracking-widest',
+              style: { color: '#94a3b8' },
+            },
+            '5 Derniers Matchs'
+          )
+        ),
+        React.createElement(
+          'div',
+          { className: 'overflow-x-auto' },
+          React.createElement(
+            'table',
+            { className: 'w-full text-sm' },
+            React.createElement(
+              'thead',
+              null,
+              React.createElement(
+                'tr',
+                { style: { borderBottom: '1px solid rgba(51,65,85,0.4)' } },
+                [
+                  'Date',
+                  'Adv.',
+                  'MIN',
+                  'PTS',
+                  'REB',
+                  'AST',
+                  'STL',
+                  'BLK',
+                  'TOV',
+                  'FG%',
+                  '3P%',
+                  '+/-',
+                  'EFF',
+                ].map(function (h) {
+                  return React.createElement(
+                    'th',
+                    {
+                      key: h,
+                      className:
+                        'text-[10px] font-bold uppercase tracking-wider text-right first:text-left px-2 py-2',
+                      style: { color: '#475569' },
+                    },
+                    h
+                  );
+                })
+              )
+            ),
+            React.createElement(
+              'tbody',
+              null,
+              last5.map(function (g, i) {
+                var gameFgPct = g.fga > 0 ? ((g.fgm / g.fga) * 100).toFixed(0) : '-';
+                var game3Pct = g.threePA > 0 ? ((g.threePM / g.threePA) * 100).toFixed(0) : '-';
+                return React.createElement(
+                  'tr',
+                  {
+                    key: i,
+                    className: 'transition-colors',
+                    style: {
+                      borderBottom: '1px solid rgba(30,41,59,0.5)',
+                      background: i % 2 === 0 ? 'transparent' : 'rgba(15,23,42,0.3)',
+                    },
+                  },
+                  React.createElement(
+                    'td',
+                    { className: 'px-2 py-2 text-xs text-left', style: { color: '#94a3b8' } },
+                    g.date
+                  ),
+                  React.createElement(
+                    'td',
+                    { className: 'px-2 py-2 text-xs text-right font-medium text-white' },
+                    g.opponent
+                  ),
+                  React.createElement(
+                    'td',
+                    { className: 'px-2 py-2 text-xs text-right', style: { color: '#94a3b8' } },
+                    g.min
+                  ),
+                  React.createElement(
+                    'td',
+                    {
+                      className: 'px-2 py-2 text-xs text-right font-bold',
+                      style: { color: g.pts >= 20 ? '#f97316' : '#fff' },
+                    },
+                    g.pts
+                  ),
+                  React.createElement(
+                    'td',
+                    { className: 'px-2 py-2 text-xs text-right', style: { color: '#22d3ee' } },
+                    g.reb
+                  ),
+                  React.createElement(
+                    'td',
+                    { className: 'px-2 py-2 text-xs text-right', style: { color: '#34d399' } },
+                    g.ast
+                  ),
+                  React.createElement(
+                    'td',
+                    { className: 'px-2 py-2 text-xs text-right text-white' },
+                    g.stl
+                  ),
+                  React.createElement(
+                    'td',
+                    { className: 'px-2 py-2 text-xs text-right text-white' },
+                    g.blk
+                  ),
+                  React.createElement(
+                    'td',
+                    {
+                      className: 'px-2 py-2 text-xs text-right',
+                      style: { color: g.tov >= 4 ? '#f87171' : '#94a3b8' },
+                    },
+                    g.tov
+                  ),
+                  React.createElement(
+                    'td',
+                    { className: 'px-2 py-2 text-xs text-right text-white' },
+                    gameFgPct + '%'
+                  ),
+                  React.createElement(
+                    'td',
+                    { className: 'px-2 py-2 text-xs text-right', style: { color: '#60a5fa' } },
+                    game3Pct + '%'
+                  ),
+                  React.createElement(
+                    'td',
+                    {
+                      className: 'px-2 py-2 text-xs text-right font-bold',
+                      style: {
+                        color:
+                          g.plusMinus > 0 ? '#34d399' : g.plusMinus < 0 ? '#f87171' : '#94a3b8',
+                      },
+                    },
+                    (g.plusMinus > 0 ? '+' : '') + g.plusMinus
+                  ),
+                  React.createElement(
+                    'td',
+                    {
+                      className: 'px-2 py-2 text-xs text-right font-bold',
+                      style: { color: '#facc15' },
+                    },
+                    g.eff
+                  )
+                );
+              })
+            )
+          )
+        )
+      ),
+
+      // ========== SHOT CHART ==========
+      (function () {
+        var ShotChartComp = window.ShotChart;
+        if (!ShotChartComp || !propGames) return null;
+        var rawPid = p.id;
+        if (!rawPid) return null;
+        var numPid = Number(rawPid);
+        var playerShots = [];
+        propGames.forEach(function (g) {
+          if (!g.actions || !g.actions.length) return;
+          g.actions.forEach(function (ac) {
+            if (ac.type === 'SHOT' && (ac.pid === rawPid || ac.pid === numPid))
+              playerShots.push(ac);
+          });
+        });
+        if (playerShots.length === 0) return null;
+        return React.createElement(
+          'div',
+          {
+            style: {
+              background: 'linear-gradient(135deg, rgba(15,23,42,0.9), rgba(30,41,59,0.5))',
+              border: '1px solid rgba(100,116,139,0.25)',
+              borderRadius: '16px',
+              padding: '24px',
+            },
+          },
+          React.createElement(SectionTitle, { num: '', title: 'Shot Chart' }),
+          React.createElement(ShotChartComp, { shots: playerShots, playerName: p.name || '' })
+        );
+      })(),
+
+      // ========== 5-MAN LINEUPS ==========
+      (function () {
+        var currentPlayerId = p.id;
+        var lineups = calcFiveManLineups(currentPlayerId, propGames, propRoster);
+        if (lineups.total === 0) return null;
+
+        var renderLineup = function (lu, idx) {
+          return React.createElement(
+            'div',
+            {
+              key: idx,
+              className: 'flex items-center gap-2 p-3 rounded-xl',
+              style: { background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(51,65,85,0.3)' },
+            },
+            React.createElement(
+              'div',
+              { className: 'flex-1 min-w-0' },
+              React.createElement(
+                'div',
+                { className: 'text-xs text-white font-medium' },
+                lu.names.join(' \u2022 ')
+              ),
+              React.createElement(
+                'div',
+                { className: 'flex items-center gap-2 mt-0.5' },
+                React.createElement(
+                  'span',
+                  { className: 'text-[10px]', style: { color: '#64748b' } },
+                  lu.poss + ' poss'
+                ),
+                lu.lowSample &&
+                  React.createElement(
+                    'span',
+                    {
+                      className: 'text-[9px] px-1 rounded',
+                      style: { background: 'rgba(245,158,11,0.15)', color: '#f59e0b' },
+                    },
+                    'Faible \u00e9ch.'
+                  )
+              )
+            ),
+            React.createElement(
+              'div',
+              { className: 'text-center px-2' },
+              React.createElement(
+                'div',
+                { className: 'text-[10px]', style: { color: '#64748b' } },
+                'ORtg'
+              ),
+              React.createElement(
+                'div',
+                { className: 'text-xs font-bold', style: { color: '#a78bfa' } },
+                lu.ortg
+              )
+            ),
+            React.createElement(
+              'div',
+              { className: 'text-center px-2' },
+              React.createElement(
+                'div',
+                { className: 'text-[10px]', style: { color: '#64748b' } },
+                'DRtg'
+              ),
+              React.createElement(
+                'div',
+                { className: 'text-xs font-bold', style: { color: '#f87171' } },
+                lu.drtg
+              )
+            ),
+            React.createElement(
+              'div',
+              { className: 'text-center px-2' },
+              React.createElement(
+                'div',
+                {
+                  className: 'text-sm font-bold',
+                  style: { color: lu.netRtg >= 0 ? '#34d399' : '#f87171' },
+                },
+                (lu.netRtg > 0 ? '+' : '') + lu.netRtg
+              ),
+              React.createElement(
+                'div',
+                { className: 'text-[10px]', style: { color: '#64748b' } },
+                'Net Rtg'
+              )
+            ),
+            React.createElement(
+              'div',
+              { className: 'text-right ml-2' },
+              React.createElement(
+                'div',
+                {
+                  className: 'text-xs font-mono',
+                  style: { color: lu.pm >= 0 ? '#34d399' : '#f87171' },
+                },
+                (lu.pm > 0 ? '+' : '') + lu.pm
+              ),
+              React.createElement(
+                'div',
+                { className: 'text-[10px]', style: { color: '#64748b' } },
+                '+/-'
+              )
+            )
+          );
+        };
+
+        return React.createElement(
+          'div',
+          {
+            style: {
+              background: 'linear-gradient(135deg, rgba(15,23,42,0.9), rgba(30,41,59,0.5))',
+              border: '1px solid rgba(100,116,139,0.25)',
+              borderRadius: '16px',
+              padding: '24px',
+            },
+          },
+          React.createElement(SectionTitle, {
+            num: '',
+            title: '5-Man Lineups',
+            badge: lineups.total + ' combos',
+          }),
+          lineups.best.length > 0 &&
+            React.createElement(
+              React.Fragment,
+              null,
+              React.createElement(
+                'h4',
+                {
+                  className: 'text-xs font-bold uppercase tracking-widest mb-3',
+                  style: { color: '#34d399' },
+                },
+                'Meilleurs Lineups'
+              ),
+              React.createElement(
+                'div',
+                { className: 'space-y-2 mb-5' },
+                lineups.best.map(renderLineup)
+              )
+            ),
+          lineups.worst.length > 0 &&
+            React.createElement(
+              React.Fragment,
+              null,
+              React.createElement(
+                'h4',
+                {
+                  className: 'text-xs font-bold uppercase tracking-widest mb-3',
+                  style: { color: '#f87171' },
+                },
+                'Pires Lineups'
+              ),
+              React.createElement(
+                'div',
+                { className: 'space-y-2' },
+                lineups.worst.map(renderLineup)
+              )
+            )
+        );
+      })(),
+
+      // ON/OFF COURT IMPACT
+      (() => {
+        const onOff = AnalysisEngine.calcOnOffAggregated(propGames, p.id, propRoster);
+        if (!onOff) return null;
+
+        const fmtNet = (v) => (v > 0 ? '+' + v : '' + v);
+        const diffColor = (v) => v >= 0 ? 'text-green-400' : 'text-red-400';
+
+        return React.createElement(
+          'div',
+          { className: 'bg-slate-900 border border-slate-800 rounded-xl overflow-hidden mt-6' },
+          // Header
+          React.createElement(
+            'div',
+            { className: 'p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between' },
+            React.createElement('h3', { className: 'text-xs font-bold text-slate-400 uppercase' }, 'Impact On/Off Court'),
+            React.createElement('span', { className: 'text-[10px] text-slate-600' }, onOff.gamesUsed + ' matchs PBP')
+          ),
+          // Body
+          React.createElement(
+            'div',
+            { className: 'p-4' },
+            // Tableau ON vs OFF
+            React.createElement(
+              'div',
+              { className: 'grid grid-cols-3 gap-2 text-center text-xs mb-4' },
+              React.createElement('div', null),
+              React.createElement('div', { className: 'font-bold text-green-400 uppercase text-[10px]' }, 'ON Court'),
+              React.createElement('div', { className: 'font-bold text-red-400 uppercase text-[10px]' }, 'OFF Court'),
+
+              React.createElement('div', { className: 'text-slate-500 text-right pr-2' }, 'ORtg'),
+              React.createElement('div', { className: 'font-bold text-white' }, onOff.on.ortg),
+              React.createElement('div', { className: 'font-bold text-white' }, onOff.off.ortg),
+
+              React.createElement('div', { className: 'text-slate-500 text-right pr-2' }, 'DRtg'),
+              React.createElement('div', { className: 'font-bold text-white' }, onOff.on.drtg),
+              React.createElement('div', { className: 'font-bold text-white' }, onOff.off.drtg),
+
+              React.createElement('div', { className: 'text-slate-500 text-right pr-2' }, 'Net'),
+              React.createElement('div', { className: 'font-bold ' + diffColor(onOff.netOn) }, fmtNet(onOff.netOn)),
+              React.createElement('div', { className: 'font-bold ' + diffColor(onOff.netOff) }, fmtNet(onOff.netOff)),
+
+              React.createElement('div', { className: 'text-slate-500 text-right pr-2' }, 'Poss'),
+              React.createElement('div', { className: 'text-slate-300' }, onOff.on.poss),
+              React.createElement('div', { className: 'text-slate-300' }, onOff.off.poss)
+            ),
+            // Différentiel
+            React.createElement(
+              'div',
+              { className: 'text-center p-3 rounded-lg bg-slate-950 border border-slate-800' },
+              React.createElement('div', { className: 'text-[10px] text-slate-500 uppercase mb-1' }, 'Différentiel Net'),
+              React.createElement('div', { className: 'text-2xl font-black ' + diffColor(onOff.netDiff) }, fmtNet(onOff.netDiff)),
+              React.createElement(
+                'div',
+                { className: 'text-[10px] text-slate-600 mt-1' },
+                "L'équipe est " + (onOff.netDiff >= 0 ? 'meilleure' : 'moins bonne') + ' de ' + Math.abs(onOff.netDiff) + ' pts/100 poss avec ce joueur'
+              )
+            ),
+            // AST% / TOV%
+            React.createElement(
+              'div',
+              { className: 'grid grid-cols-2 gap-3 mt-4' },
+              React.createElement(
+                'div',
+                { className: 'bg-slate-950 rounded-lg p-3 text-center border border-slate-800' },
+                React.createElement('div', { className: 'text-[10px] text-slate-500 uppercase' }, 'AST%'),
+                React.createElement('div', { className: 'text-lg font-bold text-blue-400' }, (p.avg.astPct || 0).toFixed(1) + '%'),
+                React.createElement('div', { className: 'text-[9px] text-slate-600' }, '% paniers équipe assistés')
+              ),
+              React.createElement(
+                'div',
+                { className: 'bg-slate-950 rounded-lg p-3 text-center border border-slate-800' },
+                React.createElement('div', { className: 'text-[10px] text-slate-500 uppercase' }, 'TOV%'),
+                React.createElement('div', { className: 'text-lg font-bold text-red-400' }, (p.avg.tovPct || 0).toFixed(1) + '%'),
+                React.createElement('div', { className: 'text-[9px] text-slate-600' }, '% possessions en perte')
+              )
+            )
+          )
+        );
+      })(),
+
+      // PROGRESSION PAR PHASE
+      (() => {
+        const progression = AnalysisEngine.calcPhaseProgression(p, propPhases, propGames);
+        if (!progression) return null;
+
+        const STATS = [
+          { key: 'pts',      label: 'PTS',  dec: 1 },
+          { key: 'reb',      label: 'REB',  dec: 1 },
+          { key: 'ast',      label: 'AST',  dec: 1 },
+          { key: 'tov',      label: 'BP',   dec: 1, invert: true },
+          { key: 'eff',      label: 'EFF',  dec: 1 },
+          { key: 'min',      label: 'MIN',  dec: 1 },
+          { key: 'usage',    label: 'USG%', dec: 1 },
+          { key: 'fgPct',    label: 'FG%',  dec: 1 },
+          { key: 'threePct', label: '3P%',  dec: 1 },
+          { key: 'TS',       label: 'TS%',  dec: 1 },
+        ];
+
+        const deltaColor = (val, invert) => {
+          if (Math.abs(val) < 0.05) return 'text-slate-500';
+          const positive = invert ? val < 0 : val > 0;
+          return positive ? 'text-green-400' : 'text-red-400';
+        };
+
+        return React.createElement(
+          'div',
+          { className: 'bg-slate-900 border border-slate-800 rounded-xl overflow-hidden mt-6' },
+          React.createElement(
+            'div',
+            { className: 'p-4 bg-slate-950 border-b border-slate-800' },
+            React.createElement('h3', { className: 'text-xs font-bold text-slate-400 uppercase' }, 'Progression par phase')
+          ),
+          React.createElement(
+            'div',
+            { className: 'p-4 overflow-x-auto' },
+            React.createElement(
+              'table',
+              { className: 'w-full text-xs' },
+              React.createElement(
+                'thead',
+                null,
+                React.createElement(
+                  'tr',
+                  { className: 'border-b border-slate-800 text-slate-500' },
+                  React.createElement('th', { className: 'text-left p-2' }, 'Phase'),
+                  React.createElement('th', { className: 'text-center p-1 text-[10px]' }, 'MJ'),
+                  ...STATS.map(s => React.createElement('th', { key: s.key, className: 'text-center p-1 text-[10px]' }, s.label))
+                )
+              ),
+              React.createElement(
+                'tbody',
+                null,
+                ...progression.map((ph, idx) => {
+                  const prev = idx > 0 ? progression[idx - 1] : null;
+                  return React.createElement(
+                    'tr',
+                    { key: ph.phaseId, className: 'border-b border-slate-800/50' },
+                    React.createElement('td', { className: 'p-2 font-bold text-white whitespace-nowrap' }, ph.phaseName),
+                    React.createElement('td', { className: 'text-center text-slate-400' }, ph.gp),
+                    ...STATS.map(s => {
+                      const val = ph.avg[s.key] || 0;
+                      const delta = prev ? val - (prev.avg[s.key] || 0) : null;
+                      return React.createElement(
+                        'td',
+                        { key: s.key, className: 'text-center p-1' },
+                        React.createElement('div', { className: 'font-bold text-white' }, val.toFixed(s.dec)),
+                        delta !== null && Math.abs(delta) >= 0.05
+                          ? React.createElement(
+                              'div',
+                              { className: 'text-[9px] ' + deltaColor(delta, s.invert) },
+                              (delta > 0 ? '+' : '') + delta.toFixed(s.dec)
+                            )
+                          : null
+                      );
+                    })
+                  );
+                })
+              )
+            )
+          )
+        );
+      })(),
+
+      // COMPARAISON INTER-SAISONS
+      (() => {
+        if (!propSeasons || propSeasons.length === 0) return null;
+
+        const comparison = compareSeasonId
+          ? AnalysisEngine.calcSeasonComparison(p, propSeasons.find(s => s.id === compareSeasonId))
+          : null;
+
+        const STATS = [
+          { key: 'pts',      label: 'PTS',  dec: 1 },
+          { key: 'reb',      label: 'REB',  dec: 1 },
+          { key: 'ast',      label: 'AST',  dec: 1 },
+          { key: 'tov',      label: 'BP',   dec: 1, invert: true },
+          { key: 'eff',      label: 'EFF',  dec: 1 },
+          { key: 'min',      label: 'MIN',  dec: 1 },
+          { key: 'usage',    label: 'USG%', dec: 1 },
+          { key: 'fgPct',    label: 'FG%',  dec: 1 },
+          { key: 'threePct', label: '3P%',  dec: 1 },
+          { key: 'ftPct',    label: 'LF%',  dec: 1 },
+          { key: 'TS',       label: 'TS%',  dec: 1 },
+        ];
+
+        const deltaColor = (val, invert) => {
+          if (Math.abs(val) < 0.05) return 'text-slate-500';
+          return (invert ? val < 0 : val > 0) ? 'text-green-400' : 'text-red-400';
+        };
+
+        return React.createElement(
+          'div',
+          { className: 'bg-slate-900 border border-slate-800 rounded-xl overflow-hidden mt-6' },
+          // Header
+          React.createElement(
+            'div',
+            { className: 'p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between flex-wrap gap-2' },
+            React.createElement('h3', { className: 'text-xs font-bold text-slate-400 uppercase' }, 'Comparaison saisons'),
+            React.createElement(
+              'select',
+              {
+                value: compareSeasonId,
+                onChange: (e) => setCompareSeasonId(e.target.value),
+                className: 'bg-slate-800 text-white border border-slate-700 rounded px-2 py-1 text-xs',
+              },
+              React.createElement('option', { value: '' }, '-- Choisir une saison --'),
+              ...propSeasons.map(s => React.createElement(
+                'option',
+                { key: s.id, value: s.id },
+                s.name + ' (' + (s.games || []).length + ' matchs)'
+              ))
+            )
+          ),
+          // État vide
+          !compareSeasonId && React.createElement(
+            'div',
+            { className: 'p-6 text-center text-slate-600 text-xs' },
+            'Sélectionnez une saison archivée pour comparer.'
+          ),
+          // Joueur introuvable
+          compareSeasonId && !comparison && React.createElement(
+            'div',
+            { className: 'p-6 text-center text-slate-600 text-xs' },
+            'Joueur introuvable dans cette saison (id différent ou aucune stat).'
+          ),
+          // Tableau comparatif
+          comparison && React.createElement(
+            'div',
+            { className: 'p-4 overflow-x-auto' },
+            React.createElement(
+              'table',
+              { className: 'w-full text-xs' },
+              React.createElement(
+                'thead',
+                null,
+                React.createElement(
+                  'tr',
+                  { className: 'border-b border-slate-800 text-slate-500' },
+                  React.createElement('th', { className: 'text-left p-2' }, 'Saison'),
+                  React.createElement('th', { className: 'text-center p-1 text-[10px]' }, 'MJ'),
+                  ...STATS.map(s => React.createElement('th', { key: s.key, className: 'text-center p-1 text-[10px]' }, s.label))
+                )
+              ),
+              React.createElement(
+                'tbody',
+                null,
+                // Saison archivée
+                React.createElement(
+                  'tr',
+                  { className: 'border-b border-slate-800/50' },
+                  React.createElement('td', { className: 'p-2 font-bold text-amber-400 whitespace-nowrap' }, comparison.archivedName),
+                  React.createElement('td', { className: 'text-center text-slate-400' }, comparison.archivedGp),
+                  ...STATS.map(s => React.createElement(
+                    'td',
+                    { key: s.key, className: 'text-center p-1 text-slate-300' },
+                    (comparison.archivedAvg[s.key] || 0).toFixed(s.dec)
+                  ))
+                ),
+                // Saison courante
+                React.createElement(
+                  'tr',
+                  { className: 'border-b border-slate-800/50' },
+                  React.createElement('td', { className: 'p-2 font-bold text-orange-400 whitespace-nowrap' }, 'Actuelle'),
+                  React.createElement('td', { className: 'text-center text-slate-400' }, p.logs.length),
+                  ...STATS.map(s => React.createElement(
+                    'td',
+                    { key: s.key, className: 'text-center p-1' },
+                    React.createElement('div', { className: 'font-bold text-white' }, (p.avg[s.key] || 0).toFixed(s.dec)),
+                    Math.abs(comparison.deltas[s.key] || 0) >= 0.05
+                      ? React.createElement(
+                          'div',
+                          { className: 'text-[9px] ' + deltaColor(comparison.deltas[s.key], s.invert) },
+                          (comparison.deltas[s.key] > 0 ? '+' : '') + (comparison.deltas[s.key] || 0).toFixed(s.dec)
+                        )
+                      : null
+                  ))
+                )
+              )
+            )
+          )
+        );
+      })(),
+
+      // Spacer bottom
+      React.createElement('div', { className: 'h-8' })
+    )
   );
 };
 

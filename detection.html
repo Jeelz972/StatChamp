@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StatChamp — Détection</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@3.4/dist/tailwind.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="design-tokens.css">
+  <style>
+    body { background: #0f172a; color: #e2e8f0; font-family: system-ui, -apple-system, sans-serif; margin: 0; }
+    /* Scrollbar custom */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #1e293b; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- Firebase compat v9 -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+  <!-- Module Detection -->
+  <script src="detection-baremes.js"></script>
+  <script src="detection-engine.js"></script>
+
+  <!-- React 18 + Babel standalone -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- App React (Prompt 2+) -->
+  <script type="text/babel" src="detection-app.js"></script>
+
+  <script>
+    // Firebase init — même config préconfigurée que le projet principal
+    // Sera activé quand detection-app.js existe
+    (function() {
+      var PRECONFIGURED_FIREBASE = {
+        apiKey: "AIzaSyDiJhCMRoHRksgihMmBxkDnOagMOisFJMk",
+        authDomain: "statc-30921.firebaseapp.com",
+        projectId: "statc-30921",
+        storageBucket: "statc-30921.firebasestorage.app",
+        messagingSenderId: "762498605407",
+        appId: "1:762498605407:web:3e53d87ee57e4be72ef498"
+      };
+      try {
+        if (window.firebase && !firebase.apps.length) {
+          firebase.initializeApp(PRECONFIGURED_FIREBASE);
+        }
+        window.detectionDb = firebase.firestore();
+      } catch(e) {
+        console.warn('[Detection] Firebase init skipped or failed:', e.message);
+        window.detectionDb = null;
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -5083,6 +5083,8 @@ function App() {
           onClose={() => setShowReport(false)}
           games={games}
           roster={players}
+          phases={phases}
+          seasons={seasons}
         />
       )}
     </div>
