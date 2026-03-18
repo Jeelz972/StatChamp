@@ -32,28 +32,12 @@
 <body>
   <div id="root"></div>
 
-  <!-- Firebase compat v9 -->
+  <!-- 1. Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 
-  <!-- Module Detection -->
-  <script src="detection-baremes.js"></script>
-  <script src="detection-engine.js"></script>
-
-  <!-- React 18 + Babel standalone -->
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-  <!-- Descripteurs niveaux technique/tactique -->
-  <script src="detection-descriptors.js"></script>
-
-  <!-- App React (Prompt 2+) -->
-  <script type="text/babel" src="detection-app.js"></script>
-
+  <!-- 2. Firebase init — DOIT être AVANT tout code applicatif -->
   <script>
-    // Firebase init — même config préconfigurée que le projet principal
-    // Sera activé quand detection-app.js existe
     (function() {
       var PRECONFIGURED_FIREBASE = {
         apiKey: "AIzaSyDiJhCMRoHRksgihMmBxkDnOagMOisFJMk",
@@ -68,11 +52,25 @@
           firebase.initializeApp(PRECONFIGURED_FIREBASE);
         }
         window.detectionDb = firebase.firestore();
+        console.log('[Detection] Firebase initialized');
       } catch(e) {
-        console.warn('[Detection] Firebase init skipped or failed:', e.message);
+        console.warn('[Detection] Firebase init failed:', e.message);
         window.detectionDb = null;
       }
     })();
   </script>
+
+  <!-- 3. Modules métier -->
+  <script src="detection-baremes.js"></script>
+  <script src="detection-engine.js"></script>
+  <script src="detection-descriptors.js"></script>
+
+  <!-- 4. React 18 + Babel standalone -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- 5. App React -->
+  <script type="text/babel" src="detection-app.js"></script>
 </body>
 </html>
