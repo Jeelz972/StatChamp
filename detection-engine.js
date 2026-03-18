@@ -216,6 +216,99 @@
      */
     generateId: function(prefix) {
       return (prefix || 'det') + '_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+    },
+
+    /**
+     * Normalise une valeur brute en score 0-100 par palier de niveau.
+     */
+    normalizeTestValue: function(testId, value, category, refLevel) {
+      refLevel = refLevel || 'regional';
+      var test = B.physical[testId];
+      if (!test || test.direction === 'qualitative') return 0;
+      var level = this.evaluatePhysical(testId, value, category, refLevel);
+      if (!level) return 0;
+      return this.levelToScore(level) * 20;
+    },
+
+    /**
+     * Calcule le Fit Score (0-100) d'une session physique.
+     */
+    computeFitScore: function(session, category, refLevel) {
+      if (!session || !session.tests) return null;
+      var self = this;
+      refLevel = refLevel || 'regional';
+      var tests = self.getTestsForCategory(category);
+      var sum = 0, count = 0;
+      tests.forEach(function(testId) {
+        var val = session.tests[testId];
+        if (val == null || val === '') return;
+        var info = B.physical[testId];
+        if (!info || info.direction === 'qualitative') return;
+        sum += self.normalizeTestValue(testId, val, category, refLevel);
+        count++;
+      });
+      return count > 0 ? Math.round(sum / count) : null;
+    },
+
+    /**
+     * Axes du radar chart (5 qualités physiques).
+     */
+    _radarAxes: [
+      { id: 'vitesse',      label: 'Vitesse',    tests: ['sprint_20m', 'cmj', 'triple_saut'] },
+      { id: 'endurance',    label: 'Endurance',  tests: ['course_6min', 'ift_30_15', 'rsa_best'] },
+      { id: 'agilite',      label: 'Agilité',    tests: ['navette_5_10_15', 'illinois'] },
+      { id: 'force',        label: 'Force',      tests: ['equilibre_unipodal', 'gainage_ventral', 'squat_unipodal', 'force_squat_ratio'] },
+      { id: 'coordination', label: 'Coord.',     tests: ['parcours_coordination', 'rsa_fatigue', 'rsa_mean'] }
+    ],
+
+    /**
+     * Retourne les données pour le radar chart.
+     * @returns {Array} [{ id, label, value (0-100), hasData }]
+     */
+    getRadarData: function(session, category, refLevel) {
+      if (!session || !session.tests) return null;
+      var self = this;
+      refLevel = refLevel || 'regional';
+      var catTests = self.getTestsForCategory(category);
+      var result = [];
+
+      self._radarAxes.forEach(function(axis) {
+        var sum = 0, count = 0;
+        axis.tests.forEach(function(testId) {
+          if (catTests.indexOf(testId) === -1) return;
+          var val = session.tests[testId];
+          if (val == null || val === '') return;
+          var info = B.physical[testId];
+          if (!info) return;
+          var score;
+          if (info.direction === 'qualitative') {
+            score = typeof val === 'string' ? self.levelToScore(val) * 20 : 0;
+          } else {
+            score = self.normalizeTestValue(testId, val, category, refLevel);
+          }
+          sum += score; count++;
+        });
+        result.push({
+          id: axis.id,
+          label: axis.label,
+          value: count > 0 ? Math.round(sum / count) : 0,
+          hasData: count > 0
+        });
+      });
+
+      return result;
+    },
+
+    /**
+     * Retourne le label textuel d'un Fit Score.
+     */
+    fitScoreLabel: function(score) {
+      if (score == null) return '—';
+      if (score >= 90) return 'Elite';
+      if (score >= 75) return 'Performant';
+      if (score >= 60) return 'Compétitif';
+      if (score >= 40) return 'En progression';
+      return 'À développer';
     }
   };
 
