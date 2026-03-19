@@ -326,6 +326,17 @@
     },
 
     // ═══════════════════════════════════════════
+    // CRITÈRES MENTAUX
+    // ═══════════════════════════════════════════
+    mental: {
+      M1: { name: "Compétitivité",  availableFor: ["U11","U13","U15","U18"] },
+      M2: { name: "Coachabilité",   availableFor: ["U11","U13","U15","U18"] },
+      M3: { name: "Leadership",     availableFor: ["U11","U13","U15","U18"] },
+      M4: { name: "Résilience",     availableFor: ["U11","U13","U15","U18"] },
+      M5: { name: "Concentration",  availableFor: ["U11","U13","U15","U18"] }
+    },
+
+    // ═══════════════════════════════════════════
     // NIVEAUX (référence commune)
     // ═══════════════════════════════════════════
     levels: ["excellent", "tres_bien", "bien", "moyen", "insuffisant"],
@@ -335,6 +346,16 @@
       bien: "Bien",
       moyen: "Moyen",
       insuffisant: "Insuffisant"
+    },
+
+    // ═══════════════════════════════════════════
+    // PONDÉRATIONS SCORE GLOBAL
+    // ═══════════════════════════════════════════
+    globalScoreWeights: {
+      physical:  0.25,
+      technical: 0.20,
+      tactical:  0.25,
+      mental:    0.30
     }
   };
 

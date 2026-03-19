@@ -139,6 +139,14 @@ function scoreBarColor(score) {
   return 'bg-green-500';
 }
 
+function scoreTextColor(score) {
+  if (score === null || score === undefined) return 'text-slate-600';
+  if (score < 40) return 'text-red-400';
+  if (score < 60) return 'text-amber-400';
+  if (score < 80) return 'text-blue-400';
+  return 'text-green-400';
+}
+
 // ─── PlayerAvatar ─────────────────────────────────────────────────────────────
 
 function PlayerAvatar({ player, size }) {
@@ -418,33 +426,65 @@ function DetectionFilters({ filters, onFilterChange }) {
   );
 }
 
+// ─── ScoreBadge ───────────────────────────────────────────────────────────────
+
+function ScoreBadge({ score, size }) {
+  var isLarge = size === 'lg';
+  if (score == null) {
+    return (
+      <div
+        className={
+          'flex items-center justify-center rounded-full font-bold font-mono text-slate-500 ' +
+          (isLarge ? 'w-16 h-16 text-lg' : 'w-12 h-12 text-sm')
+        }
+        style={{ background: 'var(--bg-3)', border: '2px solid var(--border)' }}
+      >
+        —
+      </div>
+    );
+  }
+  var color =
+    score >= 80
+      ? '#22c55e'
+      : score >= 60
+      ? 'var(--accent)'
+      : score >= 40
+      ? '#f59e0b'
+      : '#ef4444';
+  var circumference = isLarge ? 2 * Math.PI * 26 : 2 * Math.PI * 18;
+  var dash = (score / 100) * circumference;
+  var svgSize = isLarge ? 72 : 50;
+  var r = isLarge ? 26 : 18;
+  var center = svgSize / 2;
+  var textSize = isLarge ? '14px' : '11px';
+
+  return (
+    <div className={'relative shrink-0'} style={{ width: svgSize, height: svgSize }}>
+      <svg width={svgSize} height={svgSize} style={{ transform: 'rotate(-90deg)' }}>
+        <circle cx={center} cy={center} r={r} fill="none" stroke="rgba(51,65,85,0.6)" strokeWidth="3" />
+        <circle
+          cx={center} cy={center} r={r} fill="none"
+          stroke={color} strokeWidth="3"
+          strokeDasharray={dash + ' ' + circumference}
+          strokeLinecap="round"
+        />
+      </svg>
+      <div
+        className="absolute inset-0 flex items-center justify-center font-bold font-mono"
+        style={{ fontSize: textSize, color: color }}
+      >
+        {score}
+      </div>
+    </div>
+  );
+}
+
 // ─── DetectionCard ────────────────────────────────────────────────────────────
 
-function DetectionCard({ player, onSelect, onDelete }) {
+function DetectionCard({ player, onSelect }) {
   var scores = window.DetectionEngine.computeOverallScores(player);
-  var sessions = player.physicalSessions || [];
-  var regScore =
-    sessions.length > 0
-      ? window.DetectionEngine.computeFitScore(sessions[0], player.category, 'regional')
-      : null;
-  var natScore =
-    sessions.length > 0
-      ? window.DetectionEngine.computeFitScore(sessions[0], player.category, 'national')
-      : null;
-
-  var [menuOpen, setMenuOpen] = React.useState(false);
-  var [hovered, setHovered] = React.useState(false);
-  var menuRef = React.useRef(null);
-
-  React.useEffect(function () {
-    function handler(e) {
-      if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false);
-    }
-    document.addEventListener('mousedown', handler);
-    return function () {
-      document.removeEventListener('mousedown', handler);
-    };
-  }, []);
+  var globalResult = window.DetectionEngine.computeGlobalScore(player);
+  var globalScore = globalResult.score;
 
   return (
     <div
@@ -460,24 +500,25 @@ function DetectionCard({ player, onSelect, onDelete }) {
         e.currentTarget.style.borderColor = 'var(--border)';
       }}
     >
-      {/* Header : avatar + nom */}
+      {/* Header : avatar + nom + score global */}
       <div className="flex items-center gap-3 mb-4">
-        <PlayerAvatar player={player} size="h-12 w-12" />
+        <PlayerAvatar player={player} size="h-10 w-10" />
         <div className="min-w-0 flex-1">
-          <h3 className="font-semibold text-white truncate">
+          <h3 className="font-semibold text-white truncate text-sm">
             {player.firstName + ' ' + player.lastName}
           </h3>
-          <p className="text-sm" style={{ color: 'var(--text-3)' }}>
+          <p className="text-xs" style={{ color: 'var(--text-3)' }}>
             {player.position || '—'}
           </p>
         </div>
+        <ScoreBadge score={globalScore} />
       </div>
 
       {/* Badges */}
-      <div className="flex flex-wrap gap-2 mb-4">
+      <div className="flex flex-wrap gap-1.5 mb-4">
         <span
           className={
-            'inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold ' +
+            'inline-flex items-center rounded-md px-1.5 py-0.5 text-xs font-semibold ' +
             (catBadge[player.category] || catBadge.U18)
           }
         >
@@ -485,7 +526,7 @@ function DetectionCard({ player, onSelect, onDelete }) {
         </span>
         <span
           className={
-            'inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold ' +
+            'inline-flex items-center rounded-md px-1.5 py-0.5 text-xs font-semibold ' +
             (srcBadge[player.source] || srcBadge.external)
           }
         >
@@ -493,16 +534,17 @@ function DetectionCard({ player, onSelect, onDelete }) {
         </span>
       </div>
 
-      {/* Barres de score */}
+      {/* 4 barres de domaine */}
       <div className="space-y-2 mb-4">
         {[
-          { label: 'Physique', score: scores.physical },
+          { label: 'Physique',  score: scores.physical },
           { label: 'Technique', score: scores.technical },
-          { label: 'Tactique', score: scores.tactical },
+          { label: 'Tactique',  score: scores.tactical },
+          { label: 'Mental',    score: scores.mental },
         ].map(function (item) {
           return (
-            <div key={item.label} className="flex items-center gap-3">
-              <span className="text-xs w-20 shrink-0" style={{ color: 'var(--text-3)' }}>
+            <div key={item.label} className="flex items-center gap-2">
+              <span className="text-xs w-16 shrink-0" style={{ color: 'var(--text-3)' }}>
                 {item.label}
               </span>
               <div
@@ -511,9 +553,7 @@ function DetectionCard({ player, onSelect, onDelete }) {
               >
                 {item.score != null && (
                   <div
-                    className={
-                      'h-full rounded-full transition-all duration-700 ' + scoreBarColor(item.score)
-                    }
+                    className={'h-full rounded-full transition-all duration-700 ' + scoreBarColor(item.score)}
                     style={{ width: item.score + '%' }}
                   />
                 )}
@@ -617,6 +657,7 @@ function CreatePlayerForm({ onClose, onPlayerCreated }) {
   var [birthDate, setBirthDate] = React.useState('');
   var [position, setPosition] = React.useState('Meneur');
   var [club, setClub] = React.useState('');
+  var [height, setHeight] = React.useState('');
   var [source, setSource] = React.useState('external');
   var [saving, setSaving] = React.useState(false);
   var [rosterPlayers, setRosterPlayers] = React.useState([]);
@@ -684,12 +725,15 @@ function CreatePlayerForm({ onClose, onPlayerCreated }) {
       club: club.trim(),
       source: source,
       rosterId: selectedRoster ? selectedRoster.id : null,
-      photo: null,
+      height: height !== '' ? parseInt(height, 10) : null,
+      photoUrl: null,
+      scoutNotes: '',
       createdAt: now,
       updatedAt: now,
       physicalSessions: [],
       technical: { date: null, evaluations: [], comment: '' },
       tactical: { date: null, evaluations: [], comment: '' },
+      mental: { date: null, evaluations: [], comment: '' },
       generalComment: '',
       _wk: wk,
     };
@@ -854,6 +898,26 @@ function CreatePlayerForm({ onClose, onPlayerCreated }) {
               className="w-full h-10 rounded-lg px-3 text-sm text-white placeholder-slate-600"
               style={{ background: 'var(--bg-3)', border: '1px solid var(--border)' }}
               placeholder="CABF"
+            />
+          </div>
+
+          {/* Taille */}
+          <div>
+            <label
+              className="block text-xs font-semibold uppercase tracking-wider mb-1.5"
+              style={{ color: 'var(--text-2)' }}
+            >
+              Taille (cm)
+            </label>
+            <input
+              type="number"
+              value={height}
+              onChange={function (e) { setHeight(e.target.value); }}
+              className="w-full h-10 rounded-lg px-3 text-sm text-white placeholder-slate-600"
+              style={{ background: 'var(--bg-3)', border: '1px solid var(--border)' }}
+              placeholder="175"
+              min="100"
+              max="220"
             />
           </div>
 
@@ -1248,130 +1312,177 @@ function FitScoreBadge({ session, category }) {
   );
 }
 
-// ─── PhysicalRadar ────────────────────────────────────────────────────────────
+// ─── RadarSVG (composant partagé) ─────────────────────────────────────────────
+// data: [{ id, label, value (0-100), hasData }]
+// fillColor/strokeColor optionnels (défaut : teal/cyan)
 
-function PhysicalRadar({ session, category, refLevel }) {
-  var data = window.DetectionEngine.getRadarData(session, category, refLevel);
-  if (!data) return null;
-
-  var cx = 90,
-    cy = 90,
-    R = 65;
+function RadarSVG({ data, fillColor, strokeColor, size }) {
+  if (!data || data.length === 0) return null;
   var N = data.length;
+  var viewSize = size || 200;
+  var cx = viewSize / 2;
+  var cy = viewSize / 2;
+  var R = viewSize * 0.33;       // rayon données
+  var labelR = viewSize * 0.46;  // rayon labels
+
+  var fill   = fillColor   || 'rgba(20,184,166,0.18)';  // teal-500 semi-transparent
+  var stroke = strokeColor || 'rgba(45,212,191,0.9)';   // teal-400
+
+  function angle(idx) {
+    return -Math.PI / 2 + (2 * Math.PI / N) * idx;
+  }
 
   function toPoint(idx, pct) {
-    var angle = -Math.PI / 2 + ((2 * Math.PI) / N) * idx;
+    var a = angle(idx);
     var r = R * (pct / 100);
-    return [cx + r * Math.cos(angle), cy + r * Math.sin(angle)];
+    return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
   }
 
   function toLabelPoint(idx) {
-    var angle = -Math.PI / 2 + ((2 * Math.PI) / N) * idx;
-    return [cx + (R + 16) * Math.cos(angle), cy + (R + 16) * Math.sin(angle)];
+    var a = angle(idx);
+    return [cx + labelR * Math.cos(a), cy + labelR * Math.sin(a)];
   }
 
   var gridLevels = [20, 40, 60, 80, 100];
-  var gridFills = ['var(--bg-2)', 'var(--bg-1)', 'var(--bg-2)', 'var(--bg-1)', 'var(--bg-2)'];
 
   var dataPoints = data.map(function (d, i) {
-    return toPoint(i, d.value);
+    return toPoint(i, d.value || 0);
   });
-  var dataPolyStr = dataPoints
-    .map(function (p) {
-      return p[0].toFixed(1) + ',' + p[1].toFixed(1);
-    })
-    .join(' ');
+  var dataPolyStr = dataPoints.map(function (p) {
+    return p[0].toFixed(1) + ',' + p[1].toFixed(1);
+  }).join(' ');
+
+  return (
+    <svg viewBox={'0 0 ' + viewSize + ' ' + viewSize} className="w-full" style={{ maxHeight: 230 }}>
+      {/* Cercles de grille concentriques */}
+      {gridLevels.map(function (pct, gi) {
+        var pts = data.map(function (_d, i) {
+          var p = toPoint(i, pct);
+          return p[0].toFixed(1) + ',' + p[1].toFixed(1);
+        }).join(' ');
+        return (
+          <polygon
+            key={gi}
+            points={pts}
+            fill="transparent"
+            stroke="rgba(51,65,85,0.55)"
+            strokeWidth="0.6"
+          />
+        );
+      })}
+
+      {/* Lignes des axes */}
+      {data.map(function (_d, i) {
+        var p = toPoint(i, 100);
+        return (
+          <line
+            key={i}
+            x1={cx.toFixed(1)} y1={cy.toFixed(1)}
+            x2={p[0].toFixed(1)} y2={p[1].toFixed(1)}
+            stroke="rgba(51,65,85,0.55)"
+            strokeWidth="0.6"
+          />
+        );
+      })}
+
+      {/* Remplissage données */}
+      <polygon
+        points={dataPolyStr}
+        fill={fill}
+        stroke={stroke}
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+
+      {/* Points sur les axes avec données */}
+      {dataPoints.map(function (p, i) {
+        return data[i].hasData ? (
+          <circle
+            key={i}
+            cx={p[0].toFixed(1)}
+            cy={p[1].toFixed(1)}
+            r="2.8"
+            fill={stroke}
+          />
+        ) : null;
+      })}
+
+      {/* Labels */}
+      {data.map(function (d, i) {
+        var lp = toLabelPoint(i);
+        return (
+          <text
+            key={i}
+            x={lp[0].toFixed(1)}
+            y={lp[1].toFixed(1)}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fill={d.hasData ? '#e2e8f0' : '#475569'}
+            fontSize={viewSize <= 200 ? '7.5' : '8'}
+            fontWeight="700"
+          >
+            {d.label}
+          </text>
+        );
+      })}
+    </svg>
+  );
+}
+
+// ─── PhysicalRadar ────────────────────────────────────────────────────────────
+
+function PhysicalRadar({ session, category, refLevel }) {
+  var data = window.DetectionEngine.getRadarData(session, category, refLevel || 'regional');
+  if (!data) return null;
+
+  var hasAnyData = data.some(function (d) { return d.hasData; });
 
   return (
     <div
       className="rounded-xl p-5"
       style={{ background: 'var(--bg-1)', border: '1px solid var(--border)' }}
     >
-      <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-4">
+      <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-3">
         Profil Physique
       </h3>
-      <svg viewBox="0 0 180 180" className="w-full max-w-[220px] mx-auto">
-        {/* Grilles de fond (polygones alternés) */}
-        {gridLevels
-          .slice()
-          .reverse()
-          .map(function (pct, gi) {
-            var pts = data
-              .map(function (_d, i) {
-                var p = toPoint(i, pct);
-                return p[0].toFixed(1) + ',' + p[1].toFixed(1);
-              })
-              .join(' ');
-            return (
-              <polygon
-                key={gi}
-                points={pts}
-                fill={gridFills[gi]}
-                stroke="var(--border)"
-                strokeWidth="0.75"
-              />
-            );
-          })}
-        {/* Lignes des axes */}
-        {data.map(function (_d, i) {
-          var p = toPoint(i, 100);
-          return (
-            <line
-              key={i}
-              x1={cx}
-              y1={cy}
-              x2={p[0].toFixed(1)}
-              y2={p[1].toFixed(1)}
-              stroke="var(--border)"
-              strokeWidth="0.75"
-            />
-          );
-        })}
-        {/* Polygone joueur */}
-        <polygon
-          points={dataPolyStr}
-          fill="rgba(255,107,53,0.2)"
-          stroke="var(--accent)"
-          strokeWidth="2"
-          strokeLinejoin="round"
-        />
-        {/* Points joueur */}
-        {dataPoints.map(function (p, i) {
-          return data[i].hasData ? (
-            <circle
-              key={i}
-              cx={p[0].toFixed(1)}
-              cy={p[1].toFixed(1)}
-              r="3.5"
-              fill="var(--accent)"
-            />
-          ) : null;
-        })}
-        {/* Labels axes */}
-        {data.map(function (d, i) {
-          var lp = toLabelPoint(i);
-          return (
-            <text
-              key={i}
-              x={lp[0].toFixed(1)}
-              y={lp[1].toFixed(1)}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fill="var(--text-2)"
-              fontSize="8.5"
-              fontWeight="700"
-            >
-              {d.label}
-            </text>
-          );
-        })}
-      </svg>
-      <div className="flex justify-center gap-6 mt-4">
-        <div className="flex items-center gap-2">
-          <div className="w-5 h-0.5 rounded" style={{ background: 'var(--accent)' }} />
-          <span className="text-[10px] text-slate-500">Joueuse</span>
+      {hasAnyData ? (
+        <RadarSVG data={data} />
+      ) : (
+        <div
+          className="flex items-center justify-center rounded-lg"
+          style={{ height: 180, background: 'var(--bg-2)', border: '1px dashed var(--border)' }}
+        >
+          <span className="text-xs text-slate-600">Aucun test renseigné</span>
         </div>
-      </div>
+      )}
+    </div>
+  );
+}
+
+// ─── GlobalRadar ──────────────────────────────────────────────────────────────
+
+function GlobalRadar({ player }) {
+  var data = window.DetectionEngine.getGlobalRadarData(player);
+  var hasAnyData = data.some(function (d) { return d.hasData; });
+
+  return (
+    <div
+      className="rounded-xl p-5"
+      style={{ background: 'var(--bg-1)', border: '1px solid var(--border)' }}
+    >
+      <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-3">
+        Radar Global
+      </h3>
+      {hasAnyData ? (
+        <RadarSVG data={data} />
+      ) : (
+        <div
+          className="flex items-center justify-center rounded-lg"
+          style={{ height: 180, background: 'var(--bg-2)', border: '1px dashed var(--border)' }}
+        >
+          <span className="text-xs text-slate-600">Aucune donnée disponible</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -2694,6 +2805,278 @@ function TacticalTab({ player }) {
   );
 }
 
+// ─── MentalTab ────────────────────────────────────────────────────────────────
+
+function MentalTab({ player }) {
+  var B = window.DETECTION_BAREMES;
+  var mentalCriteria = Object.keys(B.mental);
+
+  var [editing, setEditing] = React.useState(false);
+  var [evaluations, setEvaluations] = React.useState(function () {
+    return player.mental && player.mental.evaluations ? player.mental.evaluations : [];
+  });
+  var [globalComment, setGlobalComment] = React.useState(function () {
+    return (player.mental && player.mental.comment) || '';
+  });
+
+  function getEval(criterionId) {
+    return evaluations.find(function (e) { return e.criterionId === criterionId; }) || null;
+  }
+
+  function handleLevelChange(criterionId, level) {
+    setEvaluations(function (prev) {
+      var found = false;
+      var updated = prev.map(function (e) {
+        if (e.criterionId === criterionId) {
+          found = true;
+          return { criterionId: e.criterionId, level: level, comment: e.comment || '' };
+        }
+        return e;
+      });
+      if (!found) return updated.concat([{ criterionId: criterionId, level: level, comment: '' }]);
+      return updated;
+    });
+  }
+
+  function handleCommentChange(criterionId, comment) {
+    setEvaluations(function (prev) {
+      var found = false;
+      var updated = prev.map(function (e) {
+        if (e.criterionId === criterionId) {
+          found = true;
+          return { criterionId: e.criterionId, level: e.level || null, comment: comment };
+        }
+        return e;
+      });
+      if (!found) return updated.concat([{ criterionId: criterionId, level: null, comment: comment }]);
+      return updated;
+    });
+  }
+
+  function handleCancel() {
+    setEvaluations(player.mental && player.mental.evaluations ? player.mental.evaluations : []);
+    setGlobalComment((player.mental && player.mental.comment) || '');
+    setEditing(false);
+  }
+
+  function handleSave() {
+    var db = window.detectionDb;
+    if (!db) { alert('Firebase non connecté'); return; }
+    var wk = sessionStorage.getItem('statchamp_wk') || localStorage.getItem('statchamp_wk') || '';
+    db.collection('detection').doc(player.id).update({
+      mental: {
+        date: new Date().toISOString().split('T')[0],
+        evaluations: evaluations,
+        comment: globalComment.trim(),
+      },
+      updatedAt: new Date().toISOString(),
+      _wk: wk,
+    }).then(function () {
+      setEditing(false);
+    }).catch(function (err) {
+      console.error('[Detection] Save mental error:', err);
+      alert('Erreur de sauvegarde');
+    });
+  }
+
+  var scoreSum = 0, scoreCount = 0;
+  evaluations.forEach(function (ev) {
+    if (ev.level) { scoreSum += window.DetectionEngine.levelToScore(ev.level); scoreCount++; }
+  });
+  var score = scoreCount > 0 ? Math.round((scoreSum / scoreCount) * 20) : null;
+  var lastDate = player.mental && player.mental.date ? player.mental.date : null;
+
+  return (
+    <div>
+      <div className="px-4 py-3 flex items-center justify-between"
+           style={{ borderBottom: '1px solid var(--border)' }}>
+        <div>
+          <div className="text-sm font-semibold text-white">Évaluation mentale</div>
+          <div className="text-xs text-slate-500 mt-0.5">
+            {lastDate ? 'Dernière évaluation : ' + formatDateFr(lastDate) : 'Aucune évaluation enregistrée'}
+          </div>
+        </div>
+        {!editing && (
+          <button
+            onClick={function () { setEditing(true); }}
+            className="text-sm rounded-lg px-3 py-1.5 transition-colors text-slate-300 hover:text-white"
+            style={{ background: 'var(--bg-3)', border: '1px solid var(--border)' }}
+          >
+            Modifier
+          </button>
+        )}
+      </div>
+
+      <div className="px-4">
+        {mentalCriteria.map(function (cId) {
+          var ev = getEval(cId);
+          return (
+            <CriterionEval
+              key={cId}
+              criterionId={cId}
+              domain="mental"
+              category={player.category}
+              currentLevel={ev ? ev.level : null}
+              currentComment={ev ? ev.comment || '' : ''}
+              onLevelChange={handleLevelChange}
+              onCommentChange={handleCommentChange}
+              editing={editing}
+            />
+          );
+        })}
+      </div>
+
+      <div className="px-4 py-3" style={{ borderTop: '1px solid var(--border)' }}>
+        <div className="text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">
+          Commentaire global
+        </div>
+        {editing ? (
+          <textarea
+            value={globalComment}
+            onChange={function (e) { setGlobalComment(e.target.value); }}
+            rows={3}
+            placeholder="Synthèse mentale de la joueuse..."
+            className="w-full rounded-lg px-3 py-2 text-white text-sm resize-none focus:outline-none transition-colors"
+            style={{ background: 'var(--bg-2)', border: '1px solid var(--border)' }}
+          />
+        ) : globalComment ? (
+          <p className="text-sm text-slate-300 whitespace-pre-wrap">{globalComment}</p>
+        ) : (
+          <p className="text-xs text-slate-600">—</p>
+        )}
+      </div>
+
+      {score !== null && (
+        <div className="px-4 py-3" style={{ borderTop: '1px solid var(--border)' }}>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600">
+              Score mental
+            </span>
+            <span className="text-sm font-bold text-white font-mono">{score}/100</span>
+          </div>
+          <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--bg-3)' }}>
+            <div
+              className={scoreBarColor(score) + ' h-full rounded-full'}
+              style={{ width: score + '%', transition: 'width 700ms cubic-bezier(0.4,0,0.2,1)' }}
+            />
+          </div>
+        </div>
+      )}
+
+      {editing && (
+        <div className="px-4 pb-6 pt-3 flex gap-3 justify-end"
+             style={{ borderTop: '1px solid var(--border)' }}>
+          <button
+            onClick={handleCancel}
+            className="px-4 py-2 rounded-lg text-sm font-semibold text-slate-400 hover:text-white transition-colors"
+            style={{ background: 'var(--bg-3)' }}
+          >
+            Annuler
+          </button>
+          <button
+            onClick={handleSave}
+            className="px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+            style={{ background: 'var(--accent)', color: 'var(--bg-0)' }}
+          >
+            Enregistrer
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── ScoutNotesSection ────────────────────────────────────────────────────────
+
+function ScoutNotesSection({ player }) {
+  var [editing, setEditing] = React.useState(false);
+  var [notes, setNotes] = React.useState(function () {
+    return player.scoutNotes || '';
+  });
+  var [saving, setSaving] = React.useState(false);
+
+  function handleSave() {
+    var db = window.detectionDb;
+    if (!db) { alert('Firebase non connecté'); return; }
+    setSaving(true);
+    var wk = sessionStorage.getItem('statchamp_wk') || localStorage.getItem('statchamp_wk') || '';
+    db.collection('detection').doc(player.id).update({
+      scoutNotes: notes.trim(),
+      updatedAt: new Date().toISOString(),
+      _wk: wk,
+    }).then(function () {
+      setSaving(false);
+      setEditing(false);
+    }).catch(function (err) {
+      console.error('[Detection] Save scoutNotes error:', err);
+      setSaving(false);
+      alert('Erreur de sauvegarde');
+    });
+  }
+
+  function handleCancel() {
+    setNotes(player.scoutNotes || '');
+    setEditing(false);
+  }
+
+  return (
+    <div className="rounded-xl overflow-hidden"
+         style={{ background: 'var(--bg-1)', border: '1px solid var(--border)' }}>
+      <div className="flex items-center justify-between px-5 py-4"
+           style={{ borderBottom: '1px solid var(--border)' }}>
+        <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Notes Scout</span>
+        {!editing && (
+          <button
+            onClick={function () { setEditing(true); }}
+            className="text-xs rounded-lg px-3 py-1.5 transition-colors text-slate-400 hover:text-white"
+            style={{ background: 'var(--bg-3)', border: '1px solid var(--border)' }}
+          >
+            Éditer
+          </button>
+        )}
+      </div>
+      <div className="px-5 py-4">
+        {editing ? (
+          <div className="space-y-3">
+            <textarea
+              value={notes}
+              onChange={function (e) { setNotes(e.target.value); }}
+              rows={5}
+              placeholder="Observations, contexte du match, potentiel détecté..."
+              className="w-full rounded-lg px-3 py-2 text-white text-sm resize-none focus:outline-none transition-colors"
+              style={{ background: 'var(--bg-3)', border: '1px solid var(--border)' }}
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={handleCancel}
+                disabled={saving}
+                className="px-4 py-2 rounded-lg text-sm font-semibold text-slate-400 hover:text-white transition-colors"
+                style={{ background: 'var(--bg-3)' }}
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="px-4 py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-40"
+                style={{ background: 'var(--accent)', color: 'var(--bg-0)' }}
+              >
+                {saving ? 'Enregistrement...' : 'Enregistrer'}
+              </button>
+            </div>
+          </div>
+        ) : notes ? (
+          <p className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed">{notes}</p>
+        ) : (
+          <p className="text-sm text-slate-600 italic">
+            Aucune note scout. Cliquez sur Éditer pour ajouter des observations.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── ProfileTab ───────────────────────────────────────────────────────────────
 
 function ProfileTab({ player, onBack }) {
@@ -3085,38 +3468,31 @@ function ProfileTab({ player, onBack }) {
   );
 }
 
-// ─── DetectionDetail ──────────────────────────────────────────────────────────
+// ─── DetectionDashboard ───────────────────────────────────────────────────────
 
-function DetectionDetail({ player, onBack }) {
-  var [activeTab, setActiveTab] = React.useState('profile');
-
+function DetectionDashboard({ player, onBack }) {
   if (!player) {
     return (
-      <div
-        className="fixed inset-0 z-50 flex items-center justify-center"
-        style={{ background: 'var(--bg-0)' }}
-      >
+      <div className="flex-1 flex items-center justify-center" style={{ background: 'var(--bg-0)' }}>
         <div className="text-slate-500">Joueuse introuvable.</div>
       </div>
     );
   }
 
-  var tabs = [
-    { id: 'profile', label: 'Profil' },
-    { id: 'physical', label: 'Physique' },
-    { id: 'technical', label: 'Technique' },
-    { id: 'tactical', label: 'Tactique' },
-  ];
+  var E = window.DetectionEngine;
+  var scores = E.computeOverallScores(player);
+  var globalResult = E.computeGlobalScore(player);
+  var hasSessions = (player.physicalSessions || []).length > 0;
 
   return (
     <div className="flex flex-col h-full" style={{ background: 'var(--bg-0)' }}>
-      {/* Header sticky */}
+
+      {/* ─── Header sticky ─── */}
       <div
         className="sticky top-0 z-30 shrink-0"
         style={{ background: 'var(--bg-1)', borderBottom: '1px solid var(--border)' }}
       >
-        <div className="flex h-16 items-center gap-4 px-6">
-          {/* Retour */}
+        <div className="flex h-16 items-center gap-3 px-4 lg:px-6">
           <button
             onClick={onBack}
             className="text-slate-500 hover:text-white transition-colors shrink-0"
@@ -3124,55 +3500,137 @@ function DetectionDetail({ player, onBack }) {
             <DIcon d={DPaths.back} className="h-5 w-5" />
           </button>
 
-          {/* Avatar + identité */}
-          <div className="flex items-center gap-3 flex-1 min-w-0">
-            <PlayerAvatar player={player} size="h-9 w-9" />
-            <div className="min-w-0">
-              <h1 className="text-base font-bold text-white truncate leading-tight">
-                {player.firstName} {player.lastName}
-              </h1>
-              <div className="flex items-center gap-1.5 mt-0.5">
-                <span className={categoryBadgeClass(player.category)}>{player.category}</span>
-                {player.position && (
-                  <span className="text-xs text-slate-500">{player.position}</span>
-                )}
-                {player.club && (
-                  <span className="text-xs text-slate-600 truncate">· {player.club}</span>
-                )}
-              </div>
+          <PlayerAvatar player={player} size="h-9 w-9" />
+
+          <div className="flex-1 min-w-0">
+            <h1 className="text-base font-bold text-white truncate leading-tight">
+              {player.firstName} {player.lastName}
+            </h1>
+            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+              <span className={categoryBadgeClass(player.category)}>{player.category}</span>
+              {player.position && <span className="text-xs text-slate-500">{player.position}</span>}
+              {player.club && <span className="text-xs text-slate-600 truncate">· {player.club}</span>}
+              {player.height && <span className="text-xs text-slate-600">· {player.height} cm</span>}
             </div>
           </div>
-        </div>
 
-        {/* TabBar */}
-        <div className="flex gap-1 px-6 py-2" style={{ borderTop: '1px solid var(--border)' }}>
-          {tabs.map(function (tab) {
-            var isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={function () {
-                  setActiveTab(tab.id);
-                }}
-                className={
-                  'px-4 py-2.5 text-sm font-semibold rounded-lg transition-colors ' +
-                  (isActive ? 'text-orange-400' : 'text-slate-500 hover:text-slate-300')
-                }
-                style={isActive ? { background: 'var(--accent-ghost)' } : {}}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
+          <ScoreBadge score={globalResult.score} />
         </div>
       </div>
 
-      {/* Contenu onglet */}
+      {/* ─── Contenu scroll ─── */}
       <div className="flex-1 overflow-y-auto">
-        {activeTab === 'profile' && <ProfileTab player={player} onBack={onBack} />}
-        {activeTab === 'physical' && <PhysicalTab player={player} />}
-        {activeTab === 'technical' && <TechnicalTab player={player} />}
-        {activeTab === 'tactical' && <TacticalTab player={player} />}
+        <div className="max-w-4xl mx-auto px-4 lg:px-6 py-6 space-y-5">
+
+          {/* ─── Radars ─── */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <GlobalRadar player={player} />
+
+            {/* Radar physique */}
+            {hasSessions ? (
+              <PhysicalRadar
+                session={player.physicalSessions[0]}
+                category={player.category}
+                refLevel="regional"
+              />
+            ) : (
+              <div
+                className="rounded-xl p-5"
+                style={{ background: 'var(--bg-1)', border: '1px solid var(--border)' }}
+              >
+                <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-4">
+                  Profil Physique
+                </h3>
+                <div
+                  className="flex items-center justify-center rounded-lg"
+                  style={{ height: 180, background: 'var(--bg-2)', border: '1px dashed var(--border)' }}
+                >
+                  <span className="text-xs text-slate-600">Aucune session physique</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ─── Physique ─── */}
+          <div
+            className="rounded-xl overflow-hidden"
+            style={{ background: 'var(--bg-1)', border: '1px solid var(--border)' }}
+          >
+            <div
+              className="flex items-center gap-3 px-5 py-3"
+              style={{ borderBottom: '1px solid var(--border)' }}
+            >
+              <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Physique</span>
+              {scores.physical != null && (
+                <span className={'text-xs font-mono font-bold ' + scoreTextColor(scores.physical)}>
+                  {scores.physical}/100
+                </span>
+              )}
+            </div>
+            <PhysicalTab player={player} />
+          </div>
+
+          {/* ─── Technique ─── */}
+          <div
+            className="rounded-xl overflow-hidden"
+            style={{ background: 'var(--bg-1)', border: '1px solid var(--border)' }}
+          >
+            <div
+              className="flex items-center gap-3 px-5 py-3"
+              style={{ borderBottom: '1px solid var(--border)' }}
+            >
+              <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Technique</span>
+              {scores.technical != null && (
+                <span className={'text-xs font-mono font-bold ' + scoreTextColor(scores.technical)}>
+                  {scores.technical}/100
+                </span>
+              )}
+            </div>
+            <TechnicalTab player={player} />
+          </div>
+
+          {/* ─── Tactique ─── */}
+          <div
+            className="rounded-xl overflow-hidden"
+            style={{ background: 'var(--bg-1)', border: '1px solid var(--border)' }}
+          >
+            <div
+              className="flex items-center gap-3 px-5 py-3"
+              style={{ borderBottom: '1px solid var(--border)' }}
+            >
+              <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Tactique</span>
+              {scores.tactical != null && (
+                <span className={'text-xs font-mono font-bold ' + scoreTextColor(scores.tactical)}>
+                  {scores.tactical}/100
+                </span>
+              )}
+            </div>
+            <TacticalTab player={player} />
+          </div>
+
+          {/* ─── Mental ─── */}
+          <div
+            className="rounded-xl overflow-hidden"
+            style={{ background: 'var(--bg-1)', border: '1px solid var(--border)' }}
+          >
+            <div
+              className="flex items-center gap-3 px-5 py-3"
+              style={{ borderBottom: '1px solid var(--border)' }}
+            >
+              <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Mental</span>
+              {scores.mental != null && (
+                <span className={'text-xs font-mono font-bold ' + scoreTextColor(scores.mental)}>
+                  {scores.mental}/100
+                </span>
+              )}
+            </div>
+            <MentalTab player={player} />
+          </div>
+
+          {/* ─── Notes Scout ─── */}
+          <ScoutNotesSection player={player} />
+
+        </div>
       </div>
     </div>
   );
@@ -3560,7 +4018,7 @@ function DetectionApp() {
           }}
         />
         <div className="flex-1 flex flex-col overflow-hidden">
-          <DetectionDetail
+          <DetectionDashboard
             player={player}
             onBack={function () {
               setSelectedId(null);

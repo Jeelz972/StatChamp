@@ -111,7 +111,7 @@
      */
     computeOverallScores: function(player) {
       var self = this;
-      var result = { physical: null, technical: null, tactical: null };
+      var result = { physical: null, technical: null, tactical: null, mental: null };
 
       // --- PHYSIQUE (dernière session) ---
       if (player.physicalSessions && player.physicalSessions.length > 0) {
@@ -149,6 +149,17 @@
           kCount++;
         });
         if (kCount > 0) result.tactical = Math.round((kSum / kCount) * 20);
+      }
+
+      // --- MENTAL ---
+      if (player.mental && player.mental.evaluations && player.mental.evaluations.length > 0) {
+        var mSum = 0, mCount = 0;
+        player.mental.evaluations.forEach(function(ev) {
+          if (!ev.level) return;
+          mSum += self.levelToScore(ev.level);
+          mCount++;
+        });
+        if (mCount > 0) result.mental = Math.round((mSum / mCount) * 20);
       }
 
       return result;
@@ -309,6 +320,103 @@
       if (score >= 60) return 'Compétitif';
       if (score >= 40) return 'En progression';
       return 'À développer';
+    },
+
+    /**
+     * Score global pondéré /100.
+     * Pondération : physique 25%, technique 20%, tactique 25%, mental 30%.
+     * Ne prend en compte que les domaines renseignés.
+     * @returns {{ score: number|null, domains: number }}
+     */
+    computeGlobalScore: function(player) {
+      var W = window.DETECTION_BAREMES.globalScoreWeights;
+      var scores = this.computeOverallScores(player);
+      var totalWeight = 0;
+      var weightedSum = 0;
+
+      var mapping = [
+        { key: 'physical',  weight: W.physical },
+        { key: 'technical', weight: W.technical },
+        { key: 'tactical',  weight: W.tactical },
+        { key: 'mental',    weight: W.mental }
+      ];
+
+      mapping.forEach(function(m) {
+        if (scores[m.key] != null) {
+          weightedSum += scores[m.key] * m.weight;
+          totalWeight += m.weight;
+        }
+      });
+
+      if (totalWeight === 0) return { score: null, domains: 0 };
+      return {
+        score: Math.round(weightedSum / totalWeight),
+        domains: mapping.filter(function(m) { return scores[m.key] != null; }).length
+      };
+    },
+
+    /**
+     * Radar global 8 axes fusionnant les 4 domaines.
+     * @returns {Array} [{ id, label, value (0-100), hasData }]
+     */
+    getGlobalRadarData: function(player) {
+      var self = this;
+      var scores = self.computeOverallScores(player);
+
+      function avgCriteria(domain, criterionIds) {
+        var data = player[domain];
+        if (!data || !data.evaluations || data.evaluations.length === 0) return null;
+        var sum = 0, count = 0;
+        data.evaluations.forEach(function(ev) {
+          if (criterionIds.indexOf(ev.criterionId) === -1) return;
+          if (!ev.level) return;
+          sum += self.levelToScore(ev.level) * 20; // 1-5 → 20-100
+          count++;
+        });
+        return count > 0 ? Math.round(sum / count) : null;
+      }
+
+      var axes = [
+        { id: 'athletisme',  label: 'Athlétisme',         value: scores.physical },
+        { id: 'maniement',   label: 'Maniement/Finition',  value: avgCriteria('technical', ['T1','T5']) },
+        { id: 'tir',         label: 'Tir',                 value: avgCriteria('technical', ['T2','T6']) },
+        { id: 'passe',       label: 'Passe/Création',      value: avgCriteria('technical', ['T3','T4']) },
+        { id: 'lecture',     label: 'Lecture/QI',          value: avgCriteria('tactical',  ['K1','K2']) },
+        { id: 'defense',     label: 'Défense',             value: avgCriteria('tactical',  ['K3','K4']) },
+        { id: 'transition',  label: 'Transition/Collectif',value: avgCriteria('tactical',  ['K5','K6']) },
+        { id: 'mental',      label: 'Mental',              value: scores.mental }
+      ];
+
+      return axes.map(function(a) {
+        return {
+          id: a.id,
+          label: a.label,
+          value: a.value || 0,
+          hasData: a.value != null
+        };
+      });
+    },
+
+    /**
+     * Upload une photo dans Firebase Storage.
+     * @param {File} file
+     * @param {string} playerId
+     * @returns {Promise<string>} downloadURL
+     */
+    uploadPhoto: function(file, playerId) {
+      var maxSize = 2 * 1024 * 1024; // 2 Mo
+      var allowed = ['image/jpeg', 'image/png', 'image/webp'];
+
+      if (file.size > maxSize) return Promise.reject(new Error('Fichier trop lourd (max 2 Mo)'));
+      if (allowed.indexOf(file.type) === -1) return Promise.reject(new Error('Format non supporté (jpg, png, webp)'));
+
+      var storage = firebase.storage();
+      var path = 'detection-photos/' + playerId + '/' + Date.now() + '_' + file.name;
+      var ref = storage.ref(path);
+
+      return ref.put(file).then(function(snapshot) {
+        return snapshot.ref.getDownloadURL();
+      });
     }
   };
 

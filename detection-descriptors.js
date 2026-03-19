@@ -391,6 +391,168 @@
           insuffisant: "Aucune lecture PnR"
         }
       }
+    },
+
+    mental: {
+      M1: {
+        name: "Compétitivité",
+        U11: {
+          excellent: "Veut gagner chaque exercice, énergie constante",
+          tres_bien: "Compétitif en match, légèrement moins à l'entraînement",
+          bien: "Se motive pour les matchs importants",
+          moyen: "Engagement irrégulier, joue par à-coups",
+          insuffisant: "Indifférent au résultat"
+        },
+        U13: {
+          excellent: "Intensité maximale match et entraînement, tire l'équipe vers le haut",
+          tres_bien: "Compétitif constant, veut gagner chaque duel",
+          bien: "Compétitif en match, relâche à l'entraînement",
+          moyen: "Se contente du minimum, peu de combativité",
+          insuffisant: "Aucune envie de compétition"
+        },
+        U15: {
+          excellent: "Mentalité de compétiteur, élève le niveau de jeu collectif",
+          tres_bien: "Combatif dans les moments clés, moteur du groupe",
+          bien: "Compétitif mais irrégulier dans l'intensité",
+          moyen: "Se relâche quand le score est défavorable",
+          insuffisant: "Abandonne face à l'adversité"
+        },
+        U18: {
+          excellent: "Mentalité d'élite, performant sous pression, leader compétitif",
+          tres_bien: "Compétiteur fiable, maintient l'intensité en fin de match",
+          bien: "Compétitif en conditions normales, fléchit dans les moments chauds",
+          moyen: "Compétitivité sélective, disparaît dans les gros matchs",
+          insuffisant: "Ne supporte pas la pression compétitive"
+        }
+      },
+
+      M2: {
+        name: "Coachabilité",
+        U11: {
+          excellent: "Écoute attentivement, applique les consignes immédiatement",
+          tres_bien: "Réceptif, applique après rappel",
+          bien: "Écoute mais application inégale",
+          moyen: "Distrait, nécessite des rappels fréquents",
+          insuffisant: "N'écoute pas, refuse les consignes"
+        },
+        U13: {
+          excellent: "Intègre les corrections en cours de match, pose des questions",
+          tres_bien: "Applique les consignes, accepte la critique",
+          bien: "Réceptif mais lent à intégrer les ajustements",
+          moyen: "Accepte mal la critique, se renferme",
+          insuffisant: "Refuse les corrections, attitude négative"
+        },
+        U15: {
+          excellent: "Cherche activement le feedback, s'auto-corrige",
+          tres_bien: "Intègre les consignes rapidement, attitude positive",
+          bien: "Accepte le coaching, temps d'adaptation moyen",
+          moyen: "Résistant au changement, applique sous contrainte",
+          insuffisant: "Ingérable tactiquement, nie ses erreurs"
+        },
+        U18: {
+          excellent: "Auto-analyse poussée, dialogue constructif avec le staff",
+          tres_bien: "Intègre les ajustements tactiques entre les périodes",
+          bien: "Coachable en conditions calmes, plus dur sous pression",
+          moyen: "Écoute sélective, applique ce qui l'arrange",
+          insuffisant: "Pense tout savoir, imperméable au coaching"
+        }
+      },
+
+      M3: {
+        name: "Leadership",
+        U11: {
+          excellent: "Encourage ses coéquipiers, communique sur le terrain",
+          tres_bien: "Donne des consignes simples, montre l'exemple",
+          bien: "Communique par moments, discret mais positif",
+          moyen: "Silencieux, suit le groupe",
+          insuffisant: "Influence négative, râle ou se plaint"
+        },
+        U13: {
+          excellent: "Leader vocal et par l'exemple, organise la défense",
+          tres_bien: "Communique régulièrement, prend des responsabilités",
+          bien: "Leadership ponctuel, présent dans les bons moments",
+          moyen: "Suiveur, aucune prise d'initiative collective",
+          insuffisant: "Toxique pour le groupe, individualiste négatif"
+        },
+        U15: {
+          excellent: "Capitaine naturel, gère les temps forts/faibles, fédère",
+          tres_bien: "Voix dans le vestiaire et sur le terrain",
+          bien: "Lead par l'exemple silencieusement",
+          moyen: "Absent du leadership, pas d'impact collectif",
+          insuffisant: "Crée des tensions, divise le groupe"
+        },
+        U18: {
+          excellent: "Leader complet : vocal, émotionnel, tactique. Élève tout le monde",
+          tres_bien: "Leadership situationnel, prend le relais dans les moments clés",
+          bien: "Respecté mais pas moteur, leadership passif",
+          moyen: "Aucune influence sur le groupe, transparent",
+          insuffisant: "Impact négatif sur la dynamique d'équipe"
+        }
+      },
+
+      M4: {
+        name: "Résilience",
+        U11: {
+          excellent: "Rebondit immédiatement après une erreur",
+          tres_bien: "Affecté brièvement mais se reprend vite",
+          bien: "Besoin d'encouragement pour se relancer",
+          moyen: "Reste affecté plusieurs minutes après un échec",
+          insuffisant: "S'effondre après une erreur, pleure ou se bloque"
+        },
+        U13: {
+          excellent: "Utilise l'échec comme motivation, réponse immédiate",
+          tres_bien: "Gère la frustration, revient au jeu rapidement",
+          bien: "Encaisse mais perd en intensité temporairement",
+          moyen: "Affecté durablement, baisse de régime visible",
+          insuffisant: "Décroche complètement après un échec"
+        },
+        U15: {
+          excellent: "Mémoire courte, transforme les erreurs en agressivité positive",
+          tres_bien: "Gère les passages difficiles, reste fiable",
+          bien: "Résilient en conditions normales, fragile en fin de match",
+          moyen: "Cycle négatif après une série d'erreurs",
+          insuffisant: "Incapable de gérer la pression négative"
+        },
+        U18: {
+          excellent: "Anti-fragile, meilleur dans l'adversité, clutch mentality",
+          tres_bien: "Stable émotionnellement, ne transmet pas le stress",
+          bien: "Résilient mais perd en lucidité sous pression extrême",
+          moyen: "Performance dégradée dans les moments critiques",
+          insuffisant: "S'effondre dans les situations à enjeux"
+        }
+      },
+
+      M5: {
+        name: "Concentration",
+        U11: {
+          excellent: "Attentif du début à la fin, suit le jeu même sans ballon",
+          tres_bien: "Concentré la majorité du temps, rares décrochages",
+          bien: "Concentré par séquences, perd le fil sur les temps morts",
+          moyen: "Décroche fréquemment, regarde ailleurs",
+          insuffisant: "Incapable de maintenir l'attention plus de 2 minutes"
+        },
+        U13: {
+          excellent: "Focus constant, lit le jeu en avance, jamais surpris",
+          tres_bien: "Bonne concentration, légers décrochages en fin de quart",
+          bien: "Concentré sur les actions directes, perd le hors-ballon",
+          moyen: "Décroche en défense, réactif uniquement sur la balle",
+          insuffisant: "Mentalement absent la moitié du match"
+        },
+        U15: {
+          excellent: "Concentration d'élite, anticipe 2 actions à l'avance",
+          tres_bien: "Maintient le focus sur 4 quart-temps, rare relâchement",
+          bien: "Bon focus offensif, concentration défensive inégale",
+          moyen: "Pics de concentration alternés avec des absences",
+          insuffisant: "Inconstant, joue un quart-temps sur quatre"
+        },
+        U18: {
+          excellent: "Focus total 40 minutes, ajuste son effort tactiquement",
+          tres_bien: "Concentration fiable, gère son énergie mentale",
+          bien: "Concentré 75% du match, décroche dans le garbage time",
+          moyen: "Concentration aléatoire, dépend de l'adversité",
+          insuffisant: "Absent mentalement, coûte des points par inattention"
+        }
+      }
     }
   };
 
