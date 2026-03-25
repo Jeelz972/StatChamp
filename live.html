@@ -11,8 +11,6 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="design-tokens.css" />
-    <link rel="stylesheet" href="live.css" />
     <style>
       .p-card.foul-warn { border-color: #f59e0b !important; box-shadow: 0 0 6px rgba(245,158,11,0.35) !important; }
       .p-card.foul-danger { border-color: #ef4444 !important; box-shadow: 0 0 8px rgba(239,68,68,0.45) !important; animation: foul-pulse 1.4s ease-in-out infinite; }
@@ -36,7 +34,11 @@
     </style>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-    <script src="db-layer.js"></script>
+    <script type="module" crossorigin src="/assets/live-BVFT3-dO.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/modulepreload-polyfill-CSRv37U6.js">
+    <link rel="modulepreload" crossorigin href="/assets/firebase-1GQsVVa1.js">
+    <link rel="stylesheet" crossorigin href="/assets/firebase-CofiM4Gn.css">
+    <link rel="stylesheet" crossorigin href="/assets/live-vsIiD9bP.css">
   </head>
   <body>
     <div id="app-container">
@@ -514,8 +516,12 @@
           { num: '12', name: 'J12' },
         ],
       };
+      // Expose l'objet State avant que le module Vite ne s'execute
+      // (les module scripts sont differés — le script inline s'execute en premier)
+      window.LiveState = State;
 
       const SWIPE_CONFIG = { threshold: 50, maxDuration: 500, doubleTapDelay: 300 };
+      window.SWIPE_CONFIG = SWIPE_CONFIG;
 
       // ===== CONTEXT MANAGER =====
       const ContextManager = {
@@ -1387,7 +1393,7 @@
             const idx = State.onCourt.home.indexOf(s.out);
             if (idx >= 0) {
               State.onCourt.home[idx] = s.in;
-              GameEngine.log('SUB', s.out, { inId: s.in });
+              GameEngine.log('SUB', s.out, { inId: s.in, subOut: s.out });
               count++;
             }
           });
@@ -1397,7 +1403,7 @@
             const idx = State.onCourt.away.indexOf(s.out);
             if (idx >= 0) {
               State.onCourt.away[idx] = s.in;
-              GameEngine.log('SUB', s.out, { inId: s.in });
+              GameEngine.log('SUB', s.out, { inId: s.in, subOut: s.out });
               count++;
             }
           });
@@ -2348,11 +2354,14 @@
           State.actions
             .filter((a) => a.type === 'SUB' && (a.q || 1) === currentQ)
             .forEach((a) => {
-              const pid = a.pid;
-              const subOut = a.subOut;
-              if (subOut && homeOnCourt.includes(subOut)) {
-                homeOnCourt = homeOnCourt.filter((id) => id !== subOut);
-                if (!homeOnCourt.includes(pid)) homeOnCourt.push(pid);
+              // Convention canonique : pid = SORTANT, inId = ENTRANT
+              // Rétrocompat : si inId absent (ancien format PBP Editor), pid = ENTRANT, subOut = SORTANT
+              const playerOut = (a.inId != null && a.inId !== '') ? a.pid : a.subOut;
+              const playerIn  = (a.inId != null && a.inId !== '') ? a.inId : a.pid;
+
+              if (playerOut && homeOnCourt.includes(playerOut)) {
+                homeOnCourt = homeOnCourt.filter((id) => id !== playerOut);
+                if (playerIn && !homeOnCourt.includes(playerIn)) homeOnCourt.push(playerIn);
               }
             });
 
@@ -2749,9 +2758,9 @@
           if (made) {
             UI.animScore(p.team);
             this.updatePlusMinus(p.team, val);
-            this.addScorePoint(p.team, val);
             ContextManager.update('SHOT_MADE', p.team);
             this.log('SHOT', pid, { val, made, x, y, astId });
+            this.addScorePoint(p.team, val);
             UI.renderRoster();
             UI.updateHeader();
             UI.renderPBP();
@@ -4377,6 +4386,33 @@
         hide() {
           document.getElementById('matchReport').classList.remove('show');
         },
+      };
+
+      // Registre global : expose tous les modules aux fichiers extraits (src/live/*)
+      // Doit etre place apres la definition de tous les modules du script inline.
+      window._live = {
+        State,
+        GameEngine,
+        Court,
+        UI,
+        WormChart,
+        PlaySelector,
+        FoulPanel,
+        SubsModal,
+        StartersModal,
+        ContextManager,
+        OfflineManager,
+        TimelineFloat,
+        StatsModal,
+        MatchReport,
+        QuickStats,
+        TimeoutManager,
+        ReboundBanner,
+        KeyboardShortcuts,
+        CourtFirst,
+        PendingAction,
+        SwipeManager,
+        Setup,
       };
 
       window.onload = initFirebase;

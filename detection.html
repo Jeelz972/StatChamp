@@ -1,77 +1,17 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" class="dark">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>StatChamp — Détection</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@3.4/dist/tailwind.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="design-tokens.css">
-  <style>
-    body {
-      background: var(--bg-0);
-      color: var(--text-1);
-      font-family: 'Inter', system-ui, -apple-system, sans-serif;
-      margin: 0;
-    }
-    /* Focus styles globaux */
-    input:focus, select:focus, textarea:focus {
-      border-color: var(--accent) !important;
-      box-shadow: 0 0 0 3px var(--accent-ghost) !important;
-      outline: none;
-    }
-    /* Scrollbar custom */
-    ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-track { background: var(--bg-1); }
-    ::-webkit-scrollbar-thumb { background: var(--bg-3); border-radius: 3px; }
-    ::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
-    /* Mono font */
-    .font-mono { font-family: 'JetBrains Mono', 'Courier New', monospace; }
-  </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StatChamp - Detection</title>
+  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+  <script type="module" crossorigin src="/assets/detection-DsSAdHVz.js"></script>
+  <link rel="modulepreload" crossorigin href="/assets/chunk-Bni-sYT0.js">
+  <link rel="modulepreload" crossorigin href="/assets/modulepreload-polyfill-CSRv37U6.js">
+  <link rel="modulepreload" crossorigin href="/assets/react-BUJfSxnv.js">
+  <link rel="stylesheet" crossorigin href="/assets/detection-C07bTkUE.css">
 </head>
-<body>
+<body class="font-sans antialiased bg-background text-foreground">
   <div id="root"></div>
-
-  <!-- 1. Firebase SDK -->
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
-
-  <!-- 2. Firebase init — DOIT être AVANT tout code applicatif -->
-  <script>
-    (function() {
-      var PRECONFIGURED_FIREBASE = {
-        apiKey: "AIzaSyDiJhCMRoHRksgihMmBxkDnOagMOisFJMk",
-        authDomain: "statc-30921.firebaseapp.com",
-        projectId: "statc-30921",
-        storageBucket: "statc-30921.firebasestorage.app",
-        messagingSenderId: "762498605407",
-        appId: "1:762498605407:web:3e53d87ee57e4be72ef498"
-      };
-      try {
-        if (window.firebase && !firebase.apps.length) {
-          firebase.initializeApp(PRECONFIGURED_FIREBASE);
-        }
-        window.detectionDb = firebase.firestore();
-        console.log('[Detection] Firebase initialized');
-      } catch(e) {
-        console.warn('[Detection] Firebase init failed:', e.message);
-        window.detectionDb = null;
-      }
-    })();
-  </script>
-
-  <!-- 3. Modules métier -->
-  <script src="detection-baremes.js"></script>
-  <script src="detection-engine.js"></script>
-  <script src="detection-descriptors.js"></script>
-
-  <!-- 4. React 18 + Babel standalone -->
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-  <!-- 5. App React -->
-  <script type="text/babel" src="detection-app.js"></script>
 </body>
 </html>
