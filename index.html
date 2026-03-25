@@ -12,18 +12,8 @@
       rel="stylesheet"
     />
 
-    <link rel="stylesheet" href="design-tokens.css" />
-    <link rel="stylesheet" href="app.css" />
 
     <script src="https://cdn.tailwindcss.com"></script>
-
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-    <script src="https://unpkg.com/prop-types/prop-types.min.js"></script>
-    <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
 
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
@@ -79,41 +69,16 @@
         },
       };
     </script>
+    <script type="module" crossorigin src="/assets/main-DJF2sXmz.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/chunk-Bni-sYT0.js">
+    <link rel="modulepreload" crossorigin href="/assets/modulepreload-polyfill-CSRv37U6.js">
+    <link rel="modulepreload" crossorigin href="/assets/firebase-1GQsVVa1.js">
+    <link rel="modulepreload" crossorigin href="/assets/react-BUJfSxnv.js">
+    <link rel="stylesheet" crossorigin href="/assets/firebase-CofiM4Gn.css">
+    <link rel="stylesheet" crossorigin href="/assets/main-BANMAyJi.css">
   </head>
   <body>
     <div id="root"></div>
 
-    <script>
-      (async function loadApp() {
-        const loadJS = async (file, useBabel = false) => {
-          const resp = await fetch(file);
-          if (!resp.ok) throw new Error(`${file}: ${resp.status}`);
-          let code = await resp.text();
-          if (useBabel) code = Babel.transform(code, { presets: ['react'] }).code;
-          const s = document.createElement('script');
-          s.textContent = code;
-          document.body.appendChild(s);
-        };
-        try {
-          await loadJS('stat-engine.js', false);
-          await loadJS('PlayByPlayEditor.js', true);
-          await loadJS('ShotChart.js', true);
-          await loadJS('AssistNetwork.js', true);
-          await loadJS('nba-profiles.js', true);
-          await loadJS('ReportPlayer.js', true);
-          await loadJS('RotationChart.js', true);
-          await loadJS('GlobalStats.js', true);
-          await loadJS('SeasonDashboard.js', true);
-          await loadJS('OpponentScouting.js', true);
-          await loadJS('GamePrep.js', true);
-          await loadJS('db-layer.js', false);
-          await loadJS('app.js', true);
-        } catch (err) {
-          console.error('Erreur chargement:', err);
-          document.getElementById('root').innerHTML =
-            '<div style="color:red;padding:20px;">Erreur: ' + err.message + '</div>';
-        }
-      })();
-    </script>
   </body>
 </html>
