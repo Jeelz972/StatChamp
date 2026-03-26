@@ -4471,11 +4471,6 @@ function LoginModal({ isOpen, onLogin, onClose }) {
   );
 }
 
-const LOCAL_CREDS = {
-  coach: { password: 'MotDePasseCoach2026', role: 'coach' },
-  root: { password: 'MotDePasseRoot2026', role: 'root' },
-};
-
 // --- MAIN APP ---
 function App() {
   const mainContentRef = useRef(null);
@@ -4485,7 +4480,8 @@ function App() {
   const isRoot = useAuthStore((s) => s.isRoot);
   const currentTeamId = useAuthStore((s) => s.currentTeamId);
   const isPlayerMode = useAuthStore((s) => s.isPlayerMode);
-  const loginWithCredentials = useAuthStore((s) => s.loginWithCredentials);
+  const login = useAuthStore((s) => s.login);
+  const restoreSession = useAuthStore((s) => s.restoreSession);
   const logout = useAuthStore((s) => s.logout);
 
   const { players, games, phases, seasons, playTypes, activeSeason } = useDataStore();
@@ -4531,6 +4527,9 @@ function App() {
   // Init Firebase + localStorage sync
   useFirebaseSync();
 
+  // Restore session from localStorage on mount
+  useEffect(() => { restoreSession(); }, []);
+
   // Scroll reset when report opens
   useEffect(() => {
     if (showReport && mainContentRef.current) mainContentRef.current.scrollTop = 0;
@@ -4566,24 +4565,9 @@ function App() {
     if (window.db && !isPlayerMode) DB.saveRoster(newPlayers);
   };
   const performLogin = async (identifier, password) => {
-    const local = LOCAL_CREDS[identifier.toLowerCase()];
-    if (local && local.password === password) {
-      loginWithCredentials(identifier.toLowerCase(), local.role, null);
-      sessionStorage.setItem('statchamp_wk', password);
-      if (local.role !== 'root') setView('live');
-      return;
-    }
-    const msgBuffer = new TextEncoder().encode(password);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-    if (!window.db) throw new Error('Identifiants invalides');
-    const credDoc = await DB.getCredentials();
-    const accounts = credDoc.exists ? credDoc.data()?.accounts : null;
-    const account = accounts?.[identifier];
-    if (!account || account.hash !== hashHex) throw new Error('Identifiants invalides');
-    loginWithCredentials(identifier, account.role, account.teamId ?? null);
-    if (account.role !== 'root') setView('live');
+    const ok = await login(identifier, password);
+    if (!ok) throw new Error('Identifiants invalides');
+    if (!useAuthStore.getState().isRoot) setView('home');
   };
   const performLogout = () => {
     logout();

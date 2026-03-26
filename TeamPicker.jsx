@@ -19,11 +19,45 @@ export default function TeamPicker() {
   const ref = useRef(null);
 
   useEffect(() => {
+    // Si on n'est pas root ou que les équipes sont déjà chargées, on ignore
     if (!isRoot || availableTeams.length > 0) return;
-    DB.getTeams()
-      .then((teams) => setAvailableTeams(teams))
-      .catch(console.error);
-  }, [isRoot]);
+
+    const initTeams = async () => {
+      try {
+        let teams = [];
+        // On tente de récupérer les équipes depuis Firebase (si implémenté)
+        if (DB && typeof DB.getTeams === 'function') {
+          teams = await DB.getTeams();
+        }
+
+        // SYSTÈME DE MERGE / BACKWARD COMPATIBILITY
+        // Si aucune équipe n'existe, on crée des équipes virtuelles pour la transition
+        if (!teams || teams.length === 0) {
+          teams = [
+            { id: 'legacy_team', name: 'Équipe Principale (Anciennes données)' },
+            { id: 'test_team', name: 'Équipe B (Test Supabase)' },
+          ];
+        }
+        setAvailableTeams(teams);
+
+        // Auto-sélection de l'ancienne base pour débloquer l'UI immédiatement
+        const current = useAuthStore.getState().currentTeamId;
+        if (!current) {
+          setTeam('legacy_team');
+        }
+      } catch (error) {
+        console.error('Erreur chargement équipes, fallback sur le mode legacy:', error);
+        // Fallback de sécurité strict en cas d'erreur de permissions Firebase
+        const fallbackTeams = [
+          { id: 'legacy_team', name: 'Équipe Principale (Anciennes données)' },
+        ];
+        setAvailableTeams(fallbackTeams);
+        setTeam('legacy_team');
+      }
+    };
+
+    initTeams();
+  }, [isRoot]); // On enlève les dépendances non nécessaires pour éviter les boucles
 
   useEffect(() => {
     const handler = (e) => {
@@ -40,7 +74,7 @@ export default function TeamPicker() {
 
   const handleSelect = (teamId) => {
     setOpen(false);
-    // Reset stores avant de changer d'équipe
+    // Reset stores avant de changer d'équipe pour ne pas polluer le state
     setPlayers([]);
     setGames([]);
     setPhases([]);
@@ -52,22 +86,39 @@ export default function TeamPicker() {
     <div
       ref={ref}
       style={{
-        position: 'fixed', top: '0.75rem', right: '0.75rem',
-        zIndex: 200, userSelect: 'none',
+        position: 'fixed',
+        top: '0.75rem',
+        right: '0.75rem',
+        zIndex: 200,
+        userSelect: 'none',
       }}
     >
       <button
         onClick={() => setOpen((v) => !v)}
         style={{
-          display: 'flex', alignItems: 'center', gap: '0.5rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
           padding: '0.375rem 0.75rem',
-          background: 'var(--bg-3)', border: '1px solid var(--border-accent)',
-          borderRadius: '0.5rem', color: 'var(--accent)',
-          fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer',
+          background: 'var(--bg-3)',
+          border: '1px solid var(--border-accent)',
+          borderRadius: '0.5rem',
+          color: 'var(--accent)',
+          fontSize: '0.75rem',
+          fontWeight: 700,
+          cursor: 'pointer',
           letterSpacing: '0.04em',
         }}
       >
-        <span style={{ width: '0.5rem', height: '0.5rem', borderRadius: '50%', background: currentTeamId ? '#22c55e' : '#ef4444', flexShrink: 0 }} />
+        <span
+          style={{
+            width: '0.5rem',
+            height: '0.5rem',
+            borderRadius: '50%',
+            background: currentTeamId ? '#22c55e' : '#ef4444',
+            flexShrink: 0,
+          }}
+        />
         {label}
         <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ flexShrink: 0 }}>
           <path d="M2 4l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -77,9 +128,14 @@ export default function TeamPicker() {
       {open && (
         <div
           style={{
-            position: 'absolute', top: 'calc(100% + 0.375rem)', right: 0,
-            background: 'var(--bg-2)', border: '1px solid var(--border)',
-            borderRadius: '0.5rem', minWidth: '12rem', overflow: 'hidden',
+            position: 'absolute',
+            top: 'calc(100% + 0.375rem)',
+            right: 0,
+            background: 'var(--bg-2)',
+            border: '1px solid var(--border)',
+            borderRadius: '0.5rem',
+            minWidth: '16rem',
+            overflow: 'hidden',
             boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
           }}
         >
@@ -93,19 +149,29 @@ export default function TeamPicker() {
                 key={team.id}
                 onClick={() => handleSelect(team.id)}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: '0.5rem',
-                  width: '100%', padding: '0.625rem 1rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  width: '100%',
+                  padding: '0.625rem 1rem',
                   background: team.id === currentTeamId ? 'var(--accent-ghost)' : 'transparent',
-                  border: 'none', cursor: 'pointer',
+                  border: 'none',
+                  cursor: 'pointer',
                   color: team.id === currentTeamId ? 'var(--accent)' : 'var(--text-1)',
-                  fontSize: '0.8125rem', fontWeight: team.id === currentTeamId ? 700 : 400,
+                  fontSize: '0.8125rem',
+                  fontWeight: team.id === currentTeamId ? 700 : 400,
                   textAlign: 'left',
                 }}
               >
-                <span style={{
-                  width: '0.5rem', height: '0.5rem', borderRadius: '50%', flexShrink: 0,
-                  background: team.id === currentTeamId ? 'var(--accent)' : 'var(--text-3)',
-                }} />
+                <span
+                  style={{
+                    width: '0.5rem',
+                    height: '0.5rem',
+                    borderRadius: '50%',
+                    flexShrink: 0,
+                    background: team.id === currentTeamId ? 'var(--accent)' : 'var(--text-3)',
+                  }}
+                />
                 {team.name}
               </button>
             ))
