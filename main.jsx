@@ -23,5 +23,6 @@ import './GlobalStats.jsx';
 import './SeasonDashboard.jsx';
 import './OpponentScouting.jsx';
 import './GamePrep.jsx';
+import './TrainingShooter.jsx';
 import './src/db/firebase';
 import './app.jsx';

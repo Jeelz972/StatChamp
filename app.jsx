@@ -1253,6 +1253,7 @@ const Icons = {
     'M12.22 2h-.44a2 2 0 0 1-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
   Clipboard:
     'M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2 M15 2H9a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1z',
+  Activity: 'M22 12h-4l-3 9L9 3l-3 9H2',
 };
 
 // --- UI COMPONENTS ---
@@ -4471,11 +4472,6 @@ function LoginModal({ isOpen, onLogin, onClose }) {
   );
 }
 
-const LOCAL_CREDS = {
-  coach: { password: 'MotDePasseCoach2026', role: 'coach' },
-  root: { password: 'MotDePasseRoot2026', role: 'root' },
-};
-
 // --- MAIN APP ---
 function App() {
   const mainContentRef = useRef(null);
@@ -4485,7 +4481,8 @@ function App() {
   const isRoot = useAuthStore((s) => s.isRoot);
   const currentTeamId = useAuthStore((s) => s.currentTeamId);
   const isPlayerMode = useAuthStore((s) => s.isPlayerMode);
-  const loginWithCredentials = useAuthStore((s) => s.loginWithCredentials);
+  const login = useAuthStore((s) => s.login);
+  const restoreSession = useAuthStore((s) => s.restoreSession);
   const logout = useAuthStore((s) => s.logout);
 
   const { players, games, phases, seasons, playTypes, activeSeason } = useDataStore();
@@ -4531,6 +4528,9 @@ function App() {
   // Init Firebase + localStorage sync
   useFirebaseSync();
 
+  // Restore session from localStorage on mount
+  useEffect(() => { restoreSession(); }, []);
+
   // Scroll reset when report opens
   useEffect(() => {
     if (showReport && mainContentRef.current) mainContentRef.current.scrollTop = 0;
@@ -4566,24 +4566,9 @@ function App() {
     if (window.db && !isPlayerMode) DB.saveRoster(newPlayers);
   };
   const performLogin = async (identifier, password) => {
-    const local = LOCAL_CREDS[identifier.toLowerCase()];
-    if (local && local.password === password) {
-      loginWithCredentials(identifier.toLowerCase(), local.role, null);
-      sessionStorage.setItem('statchamp_wk', password);
-      if (local.role !== 'root') setView('live');
-      return;
-    }
-    const msgBuffer = new TextEncoder().encode(password);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-    if (!window.db) throw new Error('Identifiants invalides');
-    const credDoc = await DB.getCredentials();
-    const accounts = credDoc.exists ? credDoc.data()?.accounts : null;
-    const account = accounts?.[identifier];
-    if (!account || account.hash !== hashHex) throw new Error('Identifiants invalides');
-    loginWithCredentials(identifier, account.role, account.teamId ?? null);
-    if (account.role !== 'root') setView('live');
+    const ok = await login(identifier, password);
+    if (!ok) throw new Error('Identifiants invalides');
+    if (!useAuthStore.getState().isRoot) setView('home');
   };
   const performLogout = () => {
     logout();
@@ -4892,6 +4877,18 @@ function App() {
             <span className="sc-nav-item__label hidden md:block">Adv.</span>
           </button>
 
+          {/* Entrainement Tir */}
+          {isAdmin && (
+            <button
+              onClick={() => setView('training')}
+              className={`sc-nav-item w-full ${view === 'training' ? 'active' : ''}`}
+              title="Entrainement Tir"
+            >
+              <Icon path={Icons.Activity} />
+              <span className="sc-nav-item__label hidden md:block">Tir</span>
+            </button>
+          )}
+
           {/* Settings */}
           {isAdmin && (
             <button
@@ -4961,6 +4958,7 @@ function App() {
             {!showReport && view === 'scouting' && 'Scouting'}
             {!showReport && view === 'gameprep' && 'Préparation'}
             {!showReport && view === 'settings' && 'Paramètres'}
+            {!showReport && view === 'training' && 'Entrainement'}
           </h1>
           <div className="ml-auto flex items-center gap-3">
             {!isAdmin && (
@@ -5040,6 +5038,10 @@ function App() {
                 setView('scouting');
               }}
             />
+          )}
+
+          {!showReport && view === 'training' && window.TrainingShooter && (
+            <window.TrainingShooter players={players} />
           )}
 
           {!showReport && !isAdmin && (view === 'live' || view === 'settings') && (
