@@ -83,9 +83,8 @@ export default function Home() {
     () => gamesForActiveSeason(),
     [gamesForActiveSeason, games, phases, activeSeason]
   );
-  console.log('Games for active season:', games);
   const seasonStats = useMemo(() => {
-    const n = games.length;
+    const n = seasonGames.length;
     if (!n)
       return {
         wins: 0,
@@ -132,16 +131,15 @@ export default function Home() {
         // playerStats étant un Object (ex: { "playerId1": {...}, "playerId2": {...} }),
         // on utilise Object.values() pour boucler sur les stats individuelles
         Object.values(g.playerStats).forEach((pStat) => {
-          fgM += pStat.fgM || pStat.fgm || 0;
-          fgA += pStat.fgA || pStat.fga || 0;
-          fg3M += pStat.fg3M || pStat.fg3m || 0;
-          fg3A += pStat.fg3A || pStat.fg3a || 0;
-          ftM += pStat.ftM || pStat.ftm || 0;
-          ftA += pStat.ftA || pStat.fta || 0;
-
-          tov += pStat.tov || pStat.turnovers || 0;
-          orb += pStat.orb || pStat.offReb || 0;
-          drb += pStat.drb || pStat.defReb || 0;
+          fgM += pStat.fgm || 0;
+          fgA += pStat.fga || 0;
+          fg3M += pStat.threePM || 0;
+          fg3A += pStat.threePA || 0;
+          ftM += pStat.ftm || 0;
+          ftA += pStat.fta || 0;
+          tov += pStat.tov || 0;
+          orb += pStat.oreb || 0;
+          drb += pStat.dreb || 0;
         });
       }
     });
@@ -160,7 +158,7 @@ export default function Home() {
       ptsFor,
       ptsAgainst,
       diff,
-      fgPct: calcPct(fgM, fgA),
+      fgPct: calcPct(fgM + fg3M, fgA + fg3A),
       fg3Pct: calcPct(fg3M, fg3A),
       ftPct: calcPct(ftM, ftA),
       tov: (tov / n).toFixed(1),

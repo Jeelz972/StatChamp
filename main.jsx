@@ -25,4 +25,5 @@ import './OpponentScouting.jsx';
 import './GamePrep.jsx';
 import './TrainingShooter.jsx';
 import './src/db/firebase';
+import './GameDetailsModal.jsx';
 import './app.jsx';

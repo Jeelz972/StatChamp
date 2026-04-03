@@ -27,8 +27,8 @@
       .lineup-pm.pos { background:rgba(34,197,94,0.2); color:#4ade80; }
       .lineup-pm.neg { background:rgba(239,68,68,0.2); color:#f87171; }
       .lineup-pm.neu { background:rgba(100,116,139,0.2); color:#94a3b8; }
-      #matchReport { position:fixed; inset:0; z-index:200; background:var(--bg-0); overflow-y:auto; display:none; padding:24px 16px 60px; font-family:'Inter',sans-serif; }
-      #matchReport.show { display:block; }
+      #coachReport { position:fixed; inset:0; z-index:200; background:var(--bg-0); overflow-y:auto; display:none; padding:24px 16px 60px; font-family:'Inter',sans-serif; }
+      #coachReport.show { display:block; }
       .report-section { background:var(--bg-2); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:14px; }
       .report-title { font-size:0.65rem; font-weight:800; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-muted); margin-bottom:10px; }
       #toastTimeout { position:fixed; left:50%; transform:translateX(-50%); top:80px; z-index:150; background:var(--bg-3); border:1px solid var(--border); border-radius:10px; padding:14px 18px; min-width:260px; max-width:340px; display:none; font-size:0.75rem; box-shadow:0 8px 32px rgba(0,0,0,0.5); }
@@ -415,16 +415,16 @@
       <div id="conflictAlert" class="conflict-alert">⚠️ Trop rapide !</div>
       <div id="toastBox"></div>
       <div id="toastTimeout"></div>
-      <div id="matchReport">
+      <div id="coachReport">
         <div style="max-width:640px;margin:0 auto;">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-            <h2 style="font-size:1.2rem;font-weight:900;text-transform:uppercase;letter-spacing:0.05em;">Rapport de match</h2>
+            <h2 style="font-size:1.2rem;font-weight:900;text-transform:uppercase;letter-spacing:0.05em;">Rapport Coach</h2>
             <div style="display:flex;gap:8px;">
               <button onclick="window.print()" style="background:var(--bg-4);border:1px solid var(--border);color:var(--text-secondary);padding:6px 14px;border-radius:6px;font-size:0.72rem;font-weight:700;cursor:pointer;">Imprimer</button>
-              <button onclick="MatchReport.hide()" style="background:var(--accent);border:none;color:white;padding:6px 14px;border-radius:6px;font-size:0.72rem;font-weight:700;cursor:pointer;">Fermer</button>
+              <button onclick="CoachReport.hide()" style="background:var(--accent);border:none;color:white;padding:6px 14px;border-radius:6px;font-size:0.72rem;font-weight:700;cursor:pointer;">Fermer</button>
             </div>
           </div>
-          <div id="matchReportBody"></div>
+          <div id="coachReportBody"></div>
         </div>
       </div>
       <div id="statsModal" class="stats-modal">
@@ -2595,10 +2595,17 @@
         endQuarter() {
           clearInterval(this.timer);
           State.match.running = false;
-          const nextQ = State.match.quarter + 1;
-          if (nextQ <= 4) {
+          const q = State.match.quarter;
+          const nextQ = q + 1;
+          const live = window._live || {};
+
+          if (q === 2) {
+            // Mi-temps — show coach report
+            if (live.CoachReport) live.CoachReport.show('halftime');
+          } else if (nextQ <= 4) {
+            // Fin Q1 ou Q3 — simple modal
             UI.showModal(
-              `Fin Q${State.match.quarter}`,
+              `Fin Q${q}`,
               `<p style="text-align:center;">Score: ${this.getScore().home} - ${this.getScore().away}</p>`,
               [
                 {
@@ -2610,19 +2617,8 @@
               'g-2'
             );
           } else {
-            const sc = this.getScore();
-            const body = `<p style="text-align:center;font-size:1.2rem;margin-bottom:12px;">Score Final: <strong>${sc.home} - ${sc.away}</strong></p>` +
-              (sc.home === sc.away ? `<p style="text-align:center;font-size:0.8rem;color:var(--warning);margin-bottom:8px;">Egalité — Prolongation disponible</p>` : '');
-            UI.showModal(
-              'Fin du match',
-              body,
-              [
-                { text: 'Rapport', action: 'MatchReport.show()', class: '' },
-                { text: 'Prolongation (5 min)', action: 'GameEngine.startOT()', class: '' },
-                { text: 'Sauvegarder', action: 'GameEngine.saveToFirebase()', class: 'success' },
-              ],
-              'g-2'
-            );
+            // Fin Q4+ — show coach report final
+            if (live.CoachReport) live.CoachReport.show('final');
           }
         },
         startAutoSave() {
@@ -3386,6 +3382,10 @@
             actions: State.actions,
             specialFouls: State.specialFouls,
           };
+          const live = window._live || {};
+          if (live.CoachReport && live.CoachReport.getLastReport()) {
+            game.coachReport = live.CoachReport.getLastReport();
+          }
           const idx = firebaseGames.findIndex(function (g) {
             return g.id === game.id;
           });
@@ -4252,140 +4252,6 @@
         },
       };
 
-      // ===== MATCH REPORT =====
-      const MatchReport = {
-        show() {
-          UI.closeModal();
-          const sc = GameEngine.getScore();
-          const homePlayers = Object.values(State.players).filter(function(p){ return p.team === 'home'; });
-          const awayPlayers = Object.values(State.players).filter(function(p){ return p.team === 'away'; });
-
-          // EFF = pts + reb + ast + stl + blk - tov - (fga - fgm) - (fta - ftm)
-          const eff = function(s) {
-            return s.pts + (s.oreb + s.dreb) + s.ast + s.stl + s.blk - s.tov
-              - ((s.fga + s.fg3a) - (s.fgm + s.fg3m)) - (s.fta - s.ftm);
-          };
-
-          // MVP
-          const mvp = homePlayers.slice().sort(function(a,b){ return eff(b.stats) - eff(a.stats); })[0];
-
-          // Top scorer adverse
-          const topAdv = awayPlayers.slice().sort(function(a,b){ return b.stats.pts - a.stats.pts; })[0];
-
-          // Runs résumé
-          const runs = [];
-          const recent = State.scoreHistory;
-          for (let i = 1; i < recent.length; i++) {
-            const prev = recent[i-1], cur = recent[i];
-            const hg = cur.home - prev.home, ag = cur.away - prev.away;
-            if (ag === 0 && hg >= 8) runs.push('Nous ' + hg + '-0');
-            if (hg === 0 && ag >= 8) runs.push('Eux ' + ag + '-0');
-          }
-
-          // Scores par QT
-          const maxQ = Math.max(4, State.match.quarter);
-          const qPts = {};
-          for (let q = 1; q <= maxQ; q++) qPts[q] = { home: 0, away: 0 };
-          State.actions.forEach(function(a) {
-            const p = State.players[a.pid]; if (!p) return;
-            const q = a.q || 1;
-            if (!qPts[q]) qPts[q] = { home: 0, away: 0 };
-            if (a.type === 'SHOT' && a.made) qPts[q][p.team] += a.val;
-            if (a.type === 'FT' && (a.ftMade||0) > 0) qPts[q][p.team] += a.ftMade;
-          });
-
-          const qLabels = [];
-          for (let q = 1; q <= maxQ; q++) qLabels.push(q <= 4 ? 'Q' + q : 'OT' + (q-4));
-
-          const fmtPct = function(m,a){ return a > 0 ? Math.round(m/a*100) + '%' : '--'; };
-
-          let html = '';
-
-          // Score final + QT
-          html += '<div class="report-section">';
-          html += '<div class="report-title">Score final — ' + State.match.date + ' vs ' + State.match.opponent + '</div>';
-          html += '<div style="display:flex;gap:6px;margin-bottom:10px;">';
-          qLabels.forEach(function(lbl, i) {
-            const q = i + 1, d = qPts[q] || {home:0,away:0};
-            html += '<div style="flex:1;text-align:center;background:var(--bg-4);border-radius:6px;padding:6px 4px;">' +
-              '<div style="font-size:0.55rem;color:var(--text-muted);font-weight:700;">' + lbl + '</div>' +
-              '<div style="font-size:0.9rem;font-weight:900;color:var(--home-color);">' + d.home + '</div>' +
-              '<div style="font-size:0.9rem;font-weight:900;color:var(--away-color);">' + d.away + '</div></div>';
-          });
-          html += '<div style="flex:1;text-align:center;background:var(--bg-3);border:1px solid var(--accent);border-radius:6px;padding:6px 4px;">' +
-            '<div style="font-size:0.55rem;color:var(--accent);font-weight:700;">TOTAL</div>' +
-            '<div style="font-size:0.9rem;font-weight:900;color:var(--home-color);">' + sc.home + '</div>' +
-            '<div style="font-size:0.9rem;font-weight:900;color:var(--away-color);">' + sc.away + '</div></div>';
-          html += '</div>';
-          html += (sc.home > sc.away
-            ? '<div style="text-align:center;font-size:0.75rem;color:#4ade80;font-weight:800;">VICTOIRE +' + (sc.home - sc.away) + '</div>'
-            : sc.away > sc.home
-              ? '<div style="text-align:center;font-size:0.75rem;color:#f87171;font-weight:800;">DEFAITE -' + (sc.away - sc.home) + '</div>'
-              : '<div style="text-align:center;font-size:0.75rem;color:var(--warning);font-weight:800;">EGALITE</div>');
-          html += '</div>';
-
-          // MVP
-          if (mvp) {
-            const s = mvp.stats, e = eff(s), fgm = s.fgm + s.fg3m, fga = s.fga + s.fg3a;
-            html += '<div class="report-section">';
-            html += '<div class="report-title">MVP du match</div>';
-            html += '<div style="display:flex;align-items:center;gap:12px;">';
-            html += '<div style="font-size:2rem;font-weight:900;color:var(--accent);">#' + mvp.number + '</div>';
-            html += '<div><div style="font-size:1rem;font-weight:800;">' + mvp.name + '</div>';
-            html += '<div style="font-size:0.7rem;color:var(--text-muted);">' + s.pts + ' pts — ' + (s.oreb+s.dreb) + ' reb — ' + s.ast + ' pd — ' + fmtPct(fgm, fga) + ' FG — EFF ' + (e>0?'+':'') + e + '</div></div>';
-            html += '</div></div>';
-          }
-
-          // Box score Nous
-          html += '<div class="report-section">';
-          html += '<div class="report-title">Box Score — Nous</div>';
-          html += '<table style="width:100%;border-collapse:collapse;font-size:0.65rem;">';
-          html += '<thead><tr style="color:var(--text-muted);border-bottom:1px solid var(--border);">' +
-            '<th style="text-align:left;padding:3px 4px;">Joueur</th><th>MIN</th><th>PTS</th><th>FG</th><th>3P</th><th>LF</th><th>REB</th><th>PD</th><th>BP</th><th>INT</th><th>+/-</th>' +
-            '</tr></thead><tbody>';
-          homePlayers.slice().sort(function(a,b){ return b.stats.pts - a.stats.pts; }).forEach(function(p) {
-            const s = p.stats, fgm = s.fgm+s.fg3m, fga = s.fga+s.fg3a;
-            const pm = s.plusMinus;
-            html += '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">' +
-              '<td style="padding:3px 4px;font-weight:700;">#' + p.number + ' ' + p.name.substring(0,8) + '</td>' +
-              '<td style="text-align:center;">' + Math.round(s.min/60) + '</td>' +
-              '<td style="text-align:center;font-weight:800;color:var(--text-1);">' + s.pts + '</td>' +
-              '<td style="text-align:center;">' + fmtPct(fgm,fga) + '</td>' +
-              '<td style="text-align:center;">' + fmtPct(s.fg3m,s.fg3a) + '</td>' +
-              '<td style="text-align:center;">' + fmtPct(s.ftm,s.fta) + '</td>' +
-              '<td style="text-align:center;">' + (s.oreb+s.dreb) + '</td>' +
-              '<td style="text-align:center;">' + s.ast + '</td>' +
-              '<td style="text-align:center;color:#f87171;">' + s.tov + '</td>' +
-              '<td style="text-align:center;">' + s.stl + '</td>' +
-              '<td style="text-align:center;color:' + (pm>0?'#4ade80':pm<0?'#f87171':'var(--text-muted)') + ';font-weight:800;">' + (pm>0?'+':'') + pm + '</td>' +
-              '</tr>';
-          });
-          html += '</tbody></table></div>';
-
-          // Runs
-          if (runs.length) {
-            html += '<div class="report-section"><div class="report-title">Runs du match (8-0 et +)</div>';
-            html += '<div style="display:flex;flex-wrap:wrap;gap:6px;">';
-            runs.forEach(function(r){ html += '<span style="background:var(--bg-4);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:0.7rem;font-weight:700;">' + r + '</span>'; });
-            html += '</div></div>';
-          }
-
-          // Top adverse
-          if (topAdv) {
-            const s = topAdv.stats, fgm = s.fgm+s.fg3m, fga = s.fga+s.fg3a;
-            html += '<div class="report-section"><div class="report-title">Meilleur marqueur adverse</div>';
-            html += '<div style="font-size:0.75rem;">#' + topAdv.number + ' ' + topAdv.name + ' — ' + s.pts + ' pts — ' + fmtPct(fgm,fga) + ' FG — ' + s.ast + ' pd</div>';
-            html += '</div>';
-          }
-
-          document.getElementById('matchReportBody').innerHTML = html;
-          document.getElementById('matchReport').classList.add('show');
-        },
-        hide() {
-          document.getElementById('matchReport').classList.remove('show');
-        },
-      };
-
       // Registre global : expose tous les modules aux fichiers extraits (src/live/*)
       // Doit etre place apres la definition de tous les modules du script inline.
       window._live = {
@@ -4402,7 +4268,7 @@
         OfflineManager,
         TimelineFloat,
         StatsModal,
-        MatchReport,
+        CoachReport: null, // instantiated from Vite module below
         QuickStats,
         TimeoutManager,
         ReboundBanner,
@@ -4412,6 +4278,16 @@
         SwipeManager,
         Setup,
       };
+
+      // Wire Vite-imported CoachReport once module script executes
+      requestAnimationFrame(function wireFactories() {
+        if (window._liveFactories && window._liveFactories.createCoachReport) {
+          window._live.CoachReport = window._liveFactories.createCoachReport();
+          window.CoachReport = window._live.CoachReport;
+        } else {
+          requestAnimationFrame(wireFactories);
+        }
+      });
 
       window.onload = initFirebase;
       window.addEventListener('beforeunload', () => {

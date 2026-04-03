@@ -22,7 +22,7 @@ import { createTimelineFloat } from './src/live/timeline-float';
 import { createQuickStats } from './src/live/quick-stats';
 import { createWormChart } from './src/live/worm-chart';
 import { createStatsModal } from './src/live/stats-modal';
-import { createMatchReport } from './src/live/match-report';
+import { createCoachReport } from './src/live/coach-report';
 
 // Phase 4.4 : modules interactifs
 import { createFoulPanel } from './src/live/foul-panel';
@@ -54,7 +54,7 @@ window._liveFactories = {
   createQuickStats,
   createWormChart,
   createStatsModal,
-  createMatchReport,
+  createCoachReport,
   createFoulPanel,
   createSubsModal,
   createStartersModal,
