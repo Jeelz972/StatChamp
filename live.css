@@ -127,7 +127,7 @@ body {
 }
 .setup-inner {
     padding: 20px;
-    max-width: 500px;
+    max-width: 640px;
     margin: 0 auto;
     width: 100%;
     display: flex;
@@ -439,7 +439,7 @@ body {
     display: flex;
     align-items: center;
     gap: 3px;
-    font-size: 0.55rem;
+    font-size: 0.625rem;
     color: var(--text-muted);
     margin-left: 5px;
 }
@@ -1936,5 +1936,17 @@ canvas {
     }
     .pbp-panel {
         order: 1;
+    }
+}
+
+/* --- Reduced Motion --- */
+@media (prefers-reduced-motion: reduce) {
+    .spinner,
+    .sync-dot.syncing,
+    .foul-dot.bonus,
+    .pending-action.show,
+    .p-card.foul-danger {
+        animation: none !important;
+        transition-duration: 0.01ms !important;
     }
 }

@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>StatChamp — Migration mono → multi-équipe</title>
+    <link rel="stylesheet" href="design-tokens.css" />
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <style>
+      body {
+        font-family: 'Inter', sans-serif;
+        background: var(--bg-0);
+        color: var(--text-1);
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 2rem 1.5rem;
+        font-size: 14px;
+        line-height: 1.6;
+      }
+      h1 { font-size: 1.25rem; font-weight: 800; margin-bottom: 0.25rem; }
+      h2 { font-size: 0.875rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.08em; margin: 1.5rem 0 0.5rem; }
+      .card { background: var(--bg-2); border: 1px solid var(--border); border-radius: 0.75rem; padding: 1rem; margin-bottom: 1rem; }
+      .log { background: var(--bg-3); border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.75rem; font-family: monospace; font-size: 0.75rem; max-height: 400px; overflow-y: auto; white-space: pre-wrap; }
+      .log-ok { color: #22c55e; }
+      .log-err { color: #ef4444; }
+      .log-info { color: #94a3b8; }
+      .log-warn { color: #f97316; }
+      input[type=text], input[type=password] {
+        width: 100%; padding: 0.5rem 0.75rem;
+        background: var(--bg-3); border: 1px solid var(--border);
+        border-radius: 0.375rem; color: var(--text-1); font-size: 0.875rem;
+        outline: none; box-sizing: border-box; margin-bottom: 0.5rem;
+      }
+      input:focus { border-color: var(--accent); }
+      .row { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; }
+      .row label { width: 140px; font-size: 0.8125rem; color: var(--text-3); flex-shrink: 0; padding-top: 0.5rem; }
+      .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 18px; background: var(--accent); color: #fff; border: none; border-radius: 0.375rem; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; cursor: pointer; }
+      .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+      .btn-ghost { background: transparent; color: var(--text-2); border: 1px solid var(--border); }
+      .summary { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+      .stat-box { background: var(--bg-3); border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.75rem; text-align: center; }
+      .stat-num { font-size: 1.5rem; font-weight: 900; color: var(--accent); font-variant-numeric: tabular-nums; }
+      .stat-lbl { font-size: 0.6875rem; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.08em; }
+      .warning { background: rgba(249,115,22,0.1); border: 1px solid rgba(249,115,22,0.3); border-radius: 0.5rem; padding: 0.75rem; font-size: 0.8125rem; color: #f97316; margin-bottom: 1rem; }
+    </style>
+  </head>
+  <body>
+    <h1>Migration mono → multi-équipe</h1>
+    <p style="color: var(--text-3); font-size: 0.875rem; margin-bottom: 1.5rem;">
+      Ce script migre les données de l'ancienne structure plate vers la nouvelle structure multi-équipe.
+      Les anciennes collections ne sont <strong>pas supprimées</strong>.
+    </p>
+
+    <div class="warning">
+      ⚠️ Exécutez ce script UNE SEULE FOIS. Il est idempotent (réexécutable sans risque) mais
+      n'opère aucune suppression. Vérifiez les données dans Firebase après migration.
+    </div>
+
+    <div class="card">
+      <h2>Configuration Firebase</h2>
+      <div class="row"><label>API Key</label><input type="text" id="apiKey" placeholder="AIzaSy..." /></div>
+      <div class="row"><label>Auth Domain</label><input type="text" id="authDomain" placeholder="xxx.firebaseapp.com" /></div>
+      <div class="row"><label>Project ID</label><input type="text" id="projectId" placeholder="mon-projet" /></div>
+      <button class="btn btn-ghost" onclick="connectFirebase()">Connecter Firebase</button>
+      <span id="fbStatus" style="margin-left: 0.75rem; font-size: 0.75rem; color: var(--text-3);"></span>
+    </div>
+
+    <div class="card">
+      <h2>Identifiants des équipes</h2>
+      <div class="row"><label>TeamId équipe 1</label><input type="text" id="team1Id" value="u18" /></div>
+      <div class="row"><label>Nom équipe 1</label><input type="text" id="team1Name" value="Équipe U18" /></div>
+      <div class="row"><label>TeamId équipe 2</label><input type="text" id="team2Id" value="u21" /></div>
+      <div class="row"><label>Nom équipe 2</label><input type="text" id="team2Name" value="Équipe U21" /></div>
+    </div>
+
+    <div class="card">
+      <h2>Comptes utilisateurs</h2>
+      <p style="font-size: 0.8125rem; color: var(--text-3); margin-bottom: 0.75rem;">
+        Les mots de passe seront hashés SHA-256 côté client avant écriture dans Firestore.
+      </p>
+      <div class="row"><label>Identifiant coach1</label><input type="text" id="user1Id" value="coach18" /></div>
+      <div class="row"><label>Mot de passe coach1</label><input type="password" id="user1Pwd" /></div>
+      <div class="row"><label>Identifiant coach2</label><input type="text" id="user2Id" value="coach21" /></div>
+      <div class="row"><label>Mot de passe coach2</label><input type="password" id="user2Pwd" /></div>
+      <div class="row"><label>Identifiant root</label><input type="text" id="rootId" value="root" /></div>
+      <div class="row"><label>Mot de passe root</label><input type="password" id="rootPwd" /></div>
+    </div>
+
+    <div style="display: flex; gap: 0.75rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
+      <button class="btn" id="btnMigrate" onclick="runMigration()" disabled>Lancer la migration</button>
+      <button class="btn btn-ghost" onclick="clearLog()">Vider le log</button>
+    </div>
+
+    <div id="summaryDiv" style="display: none; margin-bottom: 1rem;">
+      <h2>Résumé</h2>
+      <div class="summary" id="summaryGrid"></div>
+    </div>
+
+    <h2>Log</h2>
+    <div class="log" id="logDiv">En attente de connexion Firebase…</div>
+
+    <script>
+      var db = null;
+
+      async function sha256(str) {
+        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+        return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+      }
+
+      function log(msg, type) {
+        var div = document.getElementById('logDiv');
+        var cls = type === 'ok' ? 'log-ok' : type === 'err' ? 'log-err' : type === 'warn' ? 'log-warn' : 'log-info';
+        div.innerHTML += '<span class="' + cls + '">' + escapeHtml(msg) + '</span>\n';
+        div.scrollTop = div.scrollHeight;
+      }
+
+      function escapeHtml(s) {
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }
+
+      function clearLog() {
+        document.getElementById('logDiv').textContent = '';
+      }
+
+      function connectFirebase() {
+        var cfg = {
+          apiKey: document.getElementById('apiKey').value.trim(),
+          authDomain: document.getElementById('authDomain').value.trim(),
+          projectId: document.getElementById('projectId').value.trim(),
+        };
+        if (!cfg.apiKey || !cfg.projectId) {
+          alert('API Key et Project ID requis');
+          return;
+        }
+        try {
+          if (!firebase.apps.length) {
+            firebase.initializeApp(cfg);
+          }
+          db = firebase.firestore();
+          document.getElementById('fbStatus').textContent = '✓ Connecté';
+          document.getElementById('fbStatus').style.color = '#22c55e';
+          document.getElementById('btnMigrate').disabled = false;
+          log('Firebase connecté au projet : ' + cfg.projectId, 'ok');
+        } catch (e) {
+          document.getElementById('fbStatus').textContent = '✗ Erreur';
+          document.getElementById('fbStatus').style.color = '#ef4444';
+          log('Erreur Firebase : ' + e.message, 'err');
+        }
+      }
+
+      async function runMigration() {
+        if (!db) { alert('Connectez Firebase d\'abord'); return; }
+        document.getElementById('btnMigrate').disabled = true;
+
+        var team1Id = document.getElementById('team1Id').value.trim();
+        var team1Name = document.getElementById('team1Name').value.trim();
+        var team2Id = document.getElementById('team2Id').value.trim();
+        var team2Name = document.getElementById('team2Name').value.trim();
+
+        var counters = { teams: 0, games: 0, preps: 0, docs: 0, errors: 0 };
+
+        try {
+          // ── 1. Lire les données existantes ──
+          log('\n── LECTURE DES DONNÉES EXISTANTES ──', 'info');
+          var rosterDoc, phasesDoc, configDoc, seasonsDoc;
+
+          try { rosterDoc = await db.collection('team_data').doc('roster').get(); log('✓ roster lu', 'ok'); }
+          catch (e) { log('⚠ roster absent : ' + e.message, 'warn'); }
+
+          try { phasesDoc = await db.collection('team_data').doc('phases').get(); log('✓ phases lu', 'ok'); }
+          catch (e) { log('⚠ phases absent : ' + e.message, 'warn'); }
+
+          try { configDoc = await db.collection('team_data').doc('config').get(); log('✓ config lu', 'ok'); }
+          catch (e) { log('⚠ config absent : ' + e.message, 'warn'); }
+
+          try { seasonsDoc = await db.collection('team_data').doc('seasons').get(); log('✓ seasons lu', 'ok'); }
+          catch (e) { log('⚠ seasons absent : ' + e.message, 'warn'); }
+
+          var gamesSnap, prepsSnap;
+          try { gamesSnap = await db.collection('games').get(); log('✓ ' + gamesSnap.size + ' game(s) lu(s)', 'ok'); }
+          catch (e) { log('⚠ games absent : ' + e.message, 'warn'); gamesSnap = { docs: [], size: 0 }; }
+
+          try { prepsSnap = await db.collection('gamePreps').get(); log('✓ ' + prepsSnap.size + ' prep(s) lu(s)', 'ok'); }
+          catch (e) { log('⚠ gamePreps absent : ' + e.message, 'warn'); prepsSnap = { docs: [], size: 0 }; }
+
+          // ── 2. Créer les documents teams/ ──
+          log('\n── CRÉATION DES ÉQUIPES ──', 'info');
+          var now = new Date().toISOString();
+
+          await db.collection('teams').doc(team1Id).set({ name: team1Name, createdAt: now }, { merge: true });
+          log('✓ teams/' + team1Id + ' créé', 'ok'); counters.teams++;
+
+          await db.collection('teams').doc(team2Id).set({ name: team2Name, createdAt: now }, { merge: true });
+          log('✓ teams/' + team2Id + ' créé', 'ok'); counters.teams++;
+
+          // ── 3. Migrer les données de team_data → teams/{team1Id}/data ──
+          log('\n── MIGRATION DES DONNÉES → teams/' + team1Id + ' ──', 'info');
+          var base1 = db.collection('teams').doc(team1Id).collection('data');
+
+          if (rosterDoc && rosterDoc.exists) {
+            await base1.doc('roster').set(rosterDoc.data(), { merge: true });
+            log('✓ roster → teams/' + team1Id + '/data/roster', 'ok'); counters.docs++;
+          }
+          if (phasesDoc && phasesDoc.exists) {
+            await base1.doc('phases').set(phasesDoc.data(), { merge: true });
+            log('✓ phases → teams/' + team1Id + '/data/phases', 'ok'); counters.docs++;
+          }
+          if (configDoc && configDoc.exists) {
+            await base1.doc('config').set(configDoc.data(), { merge: true });
+            log('✓ config → teams/' + team1Id + '/data/config', 'ok'); counters.docs++;
+          }
+          if (seasonsDoc && seasonsDoc.exists) {
+            await base1.doc('seasons').set(seasonsDoc.data(), { merge: true });
+            log('✓ seasons → teams/' + team1Id + '/data/seasons', 'ok'); counters.docs++;
+          }
+
+          // ── 4. Migrer les games ──
+          log('\n── MIGRATION DES GAMES → teams/' + team1Id + ' ──', 'info');
+          var batch = db.batch();
+          var batchCount = 0;
+
+          for (var i = 0; i < gamesSnap.docs.length; i++) {
+            var gDoc = gamesSnap.docs[i];
+            var ref = db.collection('teams').doc(team1Id).collection('games').doc(gDoc.id);
+            batch.set(ref, gDoc.data(), { merge: true });
+            batchCount++;
+            counters.games++;
+            if (batchCount >= 400) {
+              await batch.commit();
+              log('✓ batch ' + counters.games + ' games écrit', 'ok');
+              batch = db.batch();
+              batchCount = 0;
+            }
+          }
+          if (batchCount > 0) {
+            await batch.commit();
+            log('✓ ' + counters.games + ' game(s) migré(s)', 'ok');
+          }
+
+          // ── 5. Migrer les preps ──
+          log('\n── MIGRATION DES PREPS → teams/' + team1Id + ' ──', 'info');
+          batch = db.batch();
+          batchCount = 0;
+          for (var j = 0; j < prepsSnap.docs.length; j++) {
+            var pDoc = prepsSnap.docs[j];
+            var pRef = db.collection('teams').doc(team1Id).collection('gamePreps').doc(pDoc.id);
+            batch.set(pRef, pDoc.data(), { merge: true });
+            batchCount++;
+            counters.preps++;
+            if (batchCount >= 400) {
+              await batch.commit();
+              batch = db.batch();
+              batchCount = 0;
+            }
+          }
+          if (batchCount > 0) await batch.commit();
+          if (counters.preps > 0) log('✓ ' + counters.preps + ' prep(s) migré(s)', 'ok');
+
+          // ── 6. Créer l'équipe 2 vide ──
+          log('\n── INITIALISATION ' + team2Id + ' (vide) ──', 'info');
+          var base2 = db.collection('teams').doc(team2Id).collection('data');
+          await base2.doc('roster').set({ list: [] }, { merge: true });
+          await base2.doc('phases').set({ list: [] }, { merge: true });
+          await base2.doc('config').set({ playTypes: [] }, { merge: true });
+          await base2.doc('seasons').set({ list: [] }, { merge: true });
+          log('✓ structures vides créées pour ' + team2Id, 'ok');
+
+          // ── 7. Créer les credentials ──
+          log('\n── CRÉATION DES CREDENTIALS ──', 'info');
+          var accounts = {};
+
+          var u1 = document.getElementById('user1Id').value.trim();
+          var p1 = document.getElementById('user1Pwd').value;
+          var u2 = document.getElementById('user2Id').value.trim();
+          var p2 = document.getElementById('user2Pwd').value;
+          var ur = document.getElementById('rootId').value.trim();
+          var pr = document.getElementById('rootPwd').value;
+
+          if (u1 && p1) { accounts[u1] = { teamId: team1Id, role: 'coach', hash: await sha256(p1) }; log('✓ compte ' + u1 + ' créé', 'ok'); }
+          if (u2 && p2) { accounts[u2] = { teamId: team2Id, role: 'coach', hash: await sha256(p2) }; log('✓ compte ' + u2 + ' créé', 'ok'); }
+          if (ur && pr) { accounts[ur] = { teamId: null, role: 'root', hash: await sha256(pr) }; log('✓ compte root créé', 'ok'); }
+
+          if (Object.keys(accounts).length > 0) {
+            await db.collection('app_config').doc('credentials').set({ accounts }, { merge: true });
+            log('✓ app_config/credentials écrit', 'ok');
+          } else {
+            log('⚠ Aucun credential écrit (champs vides)', 'warn');
+          }
+
+          // ── Résumé ──
+          log('\n═══ MIGRATION TERMINÉE ═══', 'ok');
+          log('Équipes : ' + counters.teams + ' | Docs : ' + counters.docs + ' | Games : ' + counters.games + ' | Preps : ' + counters.preps + ' | Erreurs : ' + counters.errors, 'ok');
+          log('Les anciennes collections (team_data/, games/, gamePreps/) sont CONSERVÉES.', 'warn');
+
+          document.getElementById('summaryDiv').style.display = 'block';
+          document.getElementById('summaryGrid').innerHTML =
+            stat('Équipes créées', counters.teams) +
+            stat('Documents migrés', counters.docs) +
+            stat('Matchs migrés', counters.games) +
+            stat('Erreurs', counters.errors);
+
+        } catch (e) {
+          counters.errors++;
+          log('ERREUR FATALE : ' + e.message, 'err');
+          log(e.stack || '', 'err');
+        }
+
+        document.getElementById('btnMigrate').disabled = false;
+      }
+
+      function stat(label, val) {
+        return '<div class="stat-box"><div class="stat-num">' + val + '</div><div class="stat-lbl">' + label + '</div></div>';
+      }
+    </script>
+  </body>
+</html>
