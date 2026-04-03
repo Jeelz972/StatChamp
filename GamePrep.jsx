@@ -3,7 +3,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 
 (function () {
-
   function GamePrep({ opponentName, games, players, onBack }) {
     const [coachNotes, setCoachNotes] = useState('');
     const [saving, setSaving] = useState(false);
@@ -170,6 +169,7 @@ import React, { useState, useMemo, useEffect } from 'react';
             <h3 className="text-xs font-bold text-orange-400 uppercase mb-3">
               Bilan des confrontations ({bilan.matches} matchs)
             </h3>
+
             <div className="grid grid-cols-3 md:grid-cols-6 gap-2 text-center">
               <div className="bg-slate-900/50 rounded p-2 border border-slate-700/30">
                 <div

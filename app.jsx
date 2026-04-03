@@ -1253,6 +1253,7 @@ const Icons = {
     'M12.22 2h-.44a2 2 0 0 1-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
   Clipboard:
     'M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2 M15 2H9a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1z',
+  Activity: 'M22 12h-4l-3 9L9 3l-3 9H2',
 };
 
 // --- UI COMPONENTS ---
@@ -4876,6 +4877,18 @@ function App() {
             <span className="sc-nav-item__label hidden md:block">Adv.</span>
           </button>
 
+          {/* Entrainement Tir */}
+          {isAdmin && (
+            <button
+              onClick={() => setView('training')}
+              className={`sc-nav-item w-full ${view === 'training' ? 'active' : ''}`}
+              title="Entrainement Tir"
+            >
+              <Icon path={Icons.Activity} />
+              <span className="sc-nav-item__label hidden md:block">Tir</span>
+            </button>
+          )}
+
           {/* Settings */}
           {isAdmin && (
             <button
@@ -4945,6 +4958,7 @@ function App() {
             {!showReport && view === 'scouting' && 'Scouting'}
             {!showReport && view === 'gameprep' && 'Préparation'}
             {!showReport && view === 'settings' && 'Paramètres'}
+            {!showReport && view === 'training' && 'Entrainement'}
           </h1>
           <div className="ml-auto flex items-center gap-3">
             {!isAdmin && (
@@ -5024,6 +5038,10 @@ function App() {
                 setView('scouting');
               }}
             />
+          )}
+
+          {!showReport && view === 'training' && window.TrainingShooter && (
+            <window.TrainingShooter players={players} />
           )}
 
           {!showReport && !isAdmin && (view === 'live' || view === 'settings') && (
