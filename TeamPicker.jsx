@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuthStore } from './src/stores/auth-store';
 import { useDataStore } from './src/stores/data-store';
-import { DB } from './src/db/firebase';
+import { DB } from './src/db';
 
 export default function TeamPicker() {
   const isRoot = useAuthStore((s) => s.isRoot);
@@ -30,30 +30,14 @@ export default function TeamPicker() {
           teams = await DB.getTeams();
         }
 
-        // SYSTÈME DE MERGE / BACKWARD COMPATIBILITY
-        // Si aucune équipe n'existe, on crée des équipes virtuelles pour la transition
-        if (!teams || teams.length === 0) {
-          teams = [
-            { id: 'legacy_team', name: 'Équipe Principale (Anciennes données)' },
-            { id: 'test_team', name: 'Équipe B (Test Supabase)' },
-          ];
-        }
+        if (!teams || teams.length === 0) return;
         setAvailableTeams(teams);
 
-        // Auto-sélection de l'ancienne base pour débloquer l'UI immédiatement
         const current = useAuthStore.getState().currentTeamId;
-        if (!current) {
-          setTeam('legacy_team');
+        if (!current || !teams.find((t) => t.id === current)) {
+          setTeam(teams[0].id);
         }
-      } catch (error) {
-        console.error('Erreur chargement équipes, fallback sur le mode legacy:', error);
-        // Fallback de sécurité strict en cas d'erreur de permissions Firebase
-        const fallbackTeams = [
-          { id: 'legacy_team', name: 'Équipe Principale (Anciennes données)' },
-        ];
-        setAvailableTeams(fallbackTeams);
-        setTeam('legacy_team');
-      }
+      } catch (_) {}
     };
 
     initTeams();

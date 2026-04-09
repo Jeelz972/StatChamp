@@ -57,8 +57,8 @@ import React, { useState, useMemo, useEffect } from 'react';
       let pts = 0,
         conceded = 0,
         wins = 0,
-        fgm = 0,
-        fga = 0,
+        totalFgm = 0,
+        totalFga = 0,
         reb = 0,
         ast = 0,
         tov = 0;
@@ -67,8 +67,8 @@ import React, { useState, useMemo, useEffect } from 'react';
         conceded += g.awayScore || 0;
         if ((g.homeScore || 0) > (g.awayScore || 0)) wins++;
         Object.values(g.playerStats || {}).forEach((s) => {
-          fgm += (s.fgm || 0) + (s.threePM || 0);
-          fga += (s.fga || 0) + (s.threePA || 0);
+          totalFgm += (s.fgm || 0) + (s.threePM || 0);
+          totalFga += (s.fga || 0) + (s.threePA || 0);
           reb += (s.oreb || 0) + (s.dreb || 0);
           ast += s.ast || 0;
           tov += s.tov || 0;
@@ -81,7 +81,7 @@ import React, { useState, useMemo, useEffect } from 'react';
         losses: n - wins,
         avgPts: (pts / n).toFixed(1),
         avgConceded: (conceded / n).toFixed(1),
-        fgPct: fga > 0 ? ((fgm / fga) * 100).toFixed(1) : '0',
+        fgPct: totalFga > 0 ? ((totalFgm / totalFga) * 100).toFixed(1) : '0',
         avgReb: (reb / n).toFixed(1),
         avgAst: (ast / n).toFixed(1),
         avgTov: (tov / n).toFixed(1),

@@ -2619,6 +2619,13 @@
           } else {
             // Fin Q4+ — show coach report final
             if (live.CoachReport) live.CoachReport.show('final');
+            // Migration panel
+            if (window._liveFactories?.createMigrationManager && State.match.id) {
+              const mgr = window._liveFactories.createMigrationManager();
+              const container = document.getElementById('coachReportBody');
+              if (container) mgr.attach(State.match.id.toString(36), container);
+              window.MigrationManager = mgr;
+            }
           }
         },
         startAutoSave() {

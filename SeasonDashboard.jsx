@@ -32,8 +32,8 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
         if (fg.length === 0) return null;
         let pts = 0,
           conc = 0,
-          fgm = 0,
-          fga = 0,
+          totalFgm = 0,
+          totalFga = 0,
           tpm = 0,
           tpa = 0,
           ftm = 0,
@@ -50,8 +50,8 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
           if ((g.homeScore || 0) > (g.awayScore || 0)) wins++;
           Object.values(g.playerStats || {}).forEach((s) => {
             pts += s.pts || 0;
-            fgm += (s.fgm || 0) + (s.threePM || 0);
-            fga += (s.fga || 0) + (s.threePA || 0);
+            totalFgm += (s.fgm || 0) + (s.threePM || 0);
+            totalFga += (s.fga || 0) + (s.threePA || 0);
             tpm += s.threePM || 0;
             tpa += s.threePA || 0;
             ftm += s.ftm || 0;
@@ -65,14 +65,14 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
           });
         });
         const n = fg.length;
-        const eFG = window.StatsEngine.eFG(fgm, tpm, fga);
+        const eFG = window.StatsEngine.eFG(totalFgm, tpm, totalFga);
         return {
           gp: n,
           wins,
           losses: n - wins,
           ppg: (pts / n).toFixed(1),
           cpg: (conc / n).toFixed(1),
-          fgPct: fga > 0 ? ((fgm / fga) * 100).toFixed(1) : '0.0',
+          fgPct: totalFga > 0 ? ((totalFgm / totalFga) * 100).toFixed(1) : '0.0',
           tpPct: tpa > 0 ? ((tpm / tpa) * 100).toFixed(1) : '0.0',
           ftPct: fta > 0 ? ((ftm / fta) * 100).toFixed(1) : '0.0',
           rpg: (reb / n).toFixed(1),
@@ -100,8 +100,8 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
                 blk: 0,
                 tov: 0,
                 min: 0,
-                fgm: 0,
-                fga: 0,
+                totalFgm: 0,
+                totalFga: 0,
                 tpm: 0,
                 tpa: 0,
                 ftm: 0,
@@ -118,8 +118,8 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
             m.blk += s.blk || 0;
             m.tov += s.tov || 0;
             m.min += s.minutes || 0;
-            m.fgm += (s.fgm || 0) + (s.threePM || 0);
-            m.fga += (s.fga || 0) + (s.threePA || 0);
+            m.totalFgm += (s.fgm || 0) + (s.threePM || 0);
+            m.totalFga += (s.fga || 0) + (s.threePA || 0);
             m.tpm += s.threePM || 0;
             m.tpa += s.threePA || 0;
             m.ftm += s.ftm || 0;
@@ -154,7 +154,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
             tovPg: (m.tov / n).toFixed(1),
             mpg: (m.min / n).toFixed(1),
             effPg: (m.eff / n).toFixed(1),
-            fgPct: m.fga > 0 ? ((m.fgm / m.fga) * 100).toFixed(1) : '0.0',
+            fgPct: m.totalFga > 0 ? ((m.totalFgm / m.totalFga) * 100).toFixed(1) : '0.0',
             tpPct: m.tpa > 0 ? ((m.tpm / m.tpa) * 100).toFixed(1) : '0.0',
             ftPct: m.fta > 0 ? ((m.ftm / m.fta) * 100).toFixed(1) : '0.0',
           };
@@ -216,23 +216,23 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
       const base = filteredGames.map((g, i) => {
         let pts = 0,
           conceded = g.awayScore || 0,
-          fgm = 0,
-          fga = 0,
+          totalFgm = 0,
+          totalFga = 0,
           threePM = 0,
           threePA = 0,
           tov = 0,
           fta = 0;
         Object.values(g.playerStats || {}).forEach((s) => {
           pts += s.pts || 0;
-          fgm += (s.fgm || 0) + (s.threePM || 0);
-          fga += (s.fga || 0) + (s.threePA || 0);
+          totalFgm += (s.fgm || 0) + (s.threePM || 0);
+          totalFga += (s.fga || 0) + (s.threePA || 0);
           threePM += s.threePM || 0;
           threePA += s.threePA || 0;
           tov += s.tov || 0;
           fta += s.fta || 0;
         });
-        const eFG = window.StatsEngine.eFG(fgm, threePM, fga);
-        const tovPct = window.StatsEngine.tovPct(tov, fga, fta);
+        const eFG = window.StatsEngine.eFG(totalFgm, threePM, totalFga);
+        const tovPct = window.StatsEngine.tovPct(tov, totalFga, fta);
         return {
           label: g.opponent ? `vs ${g.opponent}` : `M${i + 1}`,
           date: g.date,
@@ -361,8 +361,8 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
         if (pg.length === 0) return;
         let pts = 0,
           conceded = 0,
-          fgm = 0,
-          fga = 0,
+          totalFgm = 0,
+          totalFga = 0,
           tov = 0,
           reb = 0,
           ast = 0,
@@ -372,8 +372,8 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
           if ((g.homeScore || 0) > (g.awayScore || 0)) wins++;
           Object.values(g.playerStats || {}).forEach((s) => {
             pts += s.pts || 0;
-            fgm += (s.fgm || 0) + (s.threePM || 0);
-            fga += (s.fga || 0) + (s.threePA || 0);
+            totalFgm += (s.fgm || 0) + (s.threePM || 0);
+            totalFga += (s.fga || 0) + (s.threePA || 0);
             tov += s.tov || 0;
             reb += (s.oreb || 0) + (s.dreb || 0);
             ast += s.ast || 0;
@@ -387,7 +387,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
           losses: n - wins,
           avgPts: (pts / n).toFixed(1),
           avgConceded: (conceded / n).toFixed(1),
-          fgPct: fga > 0 ? ((fgm / fga) * 100).toFixed(1) : '0',
+          fgPct: totalFga > 0 ? ((totalFgm / totalFga) * 100).toFixed(1) : '0',
           avgReb: (reb / n).toFixed(1),
           avgAst: (ast / n).toFixed(1),
           avgTov: (tov / n).toFixed(1),

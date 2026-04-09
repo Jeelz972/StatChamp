@@ -42,6 +42,7 @@ import { createCourt } from './src/live/court';
 import { createUI } from './src/live/ui';
 import { createGameEngine } from './src/live/game-engine';
 import { createSetupManager } from './src/live/setup-manager';
+import { createMigrationManager } from './src/live/migration-manager';
 
 // Expose les factories sur window pour que le script inline les utilise.
 // Note : les module scripts sont differés -- window._liveFactories sera
@@ -70,6 +71,7 @@ window._liveFactories = {
   createUI,
   createGameEngine,
   createSetupManager,
+  createMigrationManager,
 };
 
 console.log('[Live] Vite entry loaded');

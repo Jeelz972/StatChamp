@@ -52,8 +52,8 @@ function OpponentScouting({ games, onPrepare }) {
     );
 
     // Stats agregees equipe contre cet adversaire
-    let fgm = 0,
-      fga = 0,
+    let totalFgm = 0,
+      totalFga = 0,
       threePM = 0,
       threePA = 0,
       reb = 0,
@@ -63,8 +63,8 @@ function OpponentScouting({ games, onPrepare }) {
       blk = 0;
     opp.games.forEach((g) => {
       Object.values(g.playerStats || {}).forEach((s) => {
-        fgm += (s.fgm || 0) + (s.threePM || 0);
-        fga += (s.fga || 0) + (s.threePA || 0);
+        totalFgm += (s.fgm || 0) + (s.threePM || 0);
+        totalFga += (s.fga || 0) + (s.threePA || 0);
         threePM += s.threePM || 0;
         threePA += s.threePA || 0;
         reb += (s.oreb || 0) + (s.dreb || 0);
@@ -98,7 +98,7 @@ function OpponentScouting({ games, onPrepare }) {
       ...opp,
       sorted,
       aggr: {
-        fgPct: fga > 0 ? ((fgm / fga) * 100).toFixed(1) : '0',
+        fgPct: totalFga > 0 ? ((totalFgm / totalFga) * 100).toFixed(1) : '0',
         threePct: threePA > 0 ? ((threePM / threePA) * 100).toFixed(1) : '0',
         avgReb: (reb / n).toFixed(1),
         avgAst: (ast / n).toFixed(1),

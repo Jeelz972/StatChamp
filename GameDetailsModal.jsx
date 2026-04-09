@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useUIStore } from './src/stores/ui-store';
 import {
   AreaChart,
   Area,
@@ -720,8 +721,8 @@ const calcClutchStats = (clutchActions, playerId) => {
   if (!pa.length) return null;
 
   let pts = 0,
-    fga = 0,
-    fgm = 0,
+    totalFga = 0,
+    totalFgm = 0,
     fta = 0,
     ftm = 0,
     tov = 0,
@@ -731,10 +732,10 @@ const calcClutchStats = (clutchActions, playerId) => {
 
   pa.forEach((a) => {
     if (_isFieldGoalAttempt(a)) {
-      fga++;
+      totalFga++;
       if (_isThreePointAttempt(a)) threePA++;
       if (_isFieldGoalMade(a)) {
-        fgm++;
+        totalFgm++;
         pts += a.val;
         if (_isThreePointMade(a)) threePM++;
       }
@@ -760,9 +761,9 @@ const calcClutchStats = (clutchActions, playerId) => {
 
   return {
     pts,
-    fga,
-    fgm,
-    fgPct: fga > 0 ? Math.round((fgm / fga) * 100) : 0,
+    fga: totalFga,
+    fgm: totalFgm,
+    fgPct: totalFga > 0 ? Math.round((totalFgm / totalFga) * 100) : 0,
     threePA,
     threePM,
     threePct: threePA > 0 ? Math.round((threePM / threePA) * 100) : 0,
@@ -810,8 +811,8 @@ const calcOnOffImpact = (actions, playerId, homePlayers) => {
   const calcSegment = (segActions) => {
     let pts = 0,
       ptsConceded = 0;
-    let fga = 0,
-      fgm = 0,
+    let totalFga = 0,
+      totalFgm = 0,
       fta = 0,
       tov = 0,
       orb = 0;
@@ -836,9 +837,9 @@ const calcOnOffImpact = (actions, playerId, homePlayers) => {
 
       if (a.type === 'SHOT') {
         if (isHome) {
-          fga++;
+          totalFga++;
           if (a.made) {
-            fgm++;
+            totalFgm++;
             pts += a.val;
           }
           if (isPlayer) {
@@ -888,7 +889,7 @@ const calcOnOffImpact = (actions, playerId, homePlayers) => {
       if (a.astId === playerId && a.type === 'SHOT' && a.made) playerAst++;
     });
 
-    const poss = Math.max(window.StatsEngine.possSimple(fga, fta, tov, orb), 1);
+    const poss = Math.max(window.StatsEngine.possSimple(totalFga, fta, tov, orb), 1);
     const oppPoss = Math.max(window.StatsEngine.possSimple(oppFga, oppFta, oppTov, oppOrb), 1);
     const avgPoss = (poss + oppPoss) / 2 || 1;
 
@@ -2630,6 +2631,7 @@ function OnOffPanel({ game, players }) {
 }
 function GameDetailsModal({ game, isOpen, onClose, players, isAdmin }) {
   if (!game) return null;
+  const debugMode = useUIStore((s) => s.debugMode);
   const [viewMode, setViewMode] = useState('classic');
   const [showMinutesDebug, setShowMinutesDebug] = useState(false);
   const [quarterFilter, setQuarterFilter] = useState('TOTAL');
@@ -3388,7 +3390,7 @@ function GameDetailsModal({ game, isOpen, onClose, players, isAdmin }) {
       {game.actions?.length > 0 &&
         game.starters &&
         Object.keys(game.starters).length > 0 &&
-        window.RotationChart && <window.RotationChart game={game} players={players} />}
+        debugMode && window.RotationChart && <window.RotationChart game={game} players={players} />}
 
       {/* 9 — Clutch Performance */}
       <ClutchPanel game={game} players={players} />

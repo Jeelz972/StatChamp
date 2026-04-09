@@ -14,7 +14,9 @@ import {
 } from 'recharts';
 import { useAuthStore, useDataStore, useUIStore } from './src/stores';
 import { useFirebaseSync } from './src/db/use-firebase-sync';
-import { DB } from './src/db/firebase';
+import { useDbSync } from './src/db/use-db-sync';
+import { DB } from './src/db';
+import { DebugOverlay } from './src/debug/DebugOverlay';
 import Home from './Home.jsx';
 import Settings from './Settings.jsx';
 import SeasonSetup from './SeasonSetup.jsx';
@@ -1410,6 +1412,7 @@ function History({
         <PlayByPlayEditor
           game={editingPBP}
           players={players}
+          phases={phases}
           onSave={async (updatedGame) => {
             const idx = games.findIndex((g) => g.id === updatedGame.id);
             if (idx < 0) return;
@@ -1544,8 +1547,10 @@ function App() {
     setActiveGame,
   } = useUIStore();
 
-  // Init Firebase + localStorage sync
+  // Init DB sync — Firebase par défaut, Supabase si VITE_DB_BACKEND=supabase
+  const _isSupabase = import.meta.env.VITE_DB_BACKEND === 'supabase';
   useFirebaseSync();
+  useDbSync();
 
   // Restore session from localStorage on mount
   useEffect(() => {
@@ -2086,6 +2091,7 @@ function App() {
           )}
         </div>
       </main>
+      <DebugOverlay />
     </div>
   );
 }

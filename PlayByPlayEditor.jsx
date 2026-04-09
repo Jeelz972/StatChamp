@@ -2074,7 +2074,7 @@ const normalizeSub = window.normalizeSub || function(action) {
   // ========================================================
   // COMPOSANT PRINCIPAL
   // ========================================================
-  function PlayByPlayEditor({ game, players, onSave, onClose }) {
+  function PlayByPlayEditor({ game, players, phases = [], onSave, onClose }) {
     const [actions, setActions] = useState([]);
     const [currentStarters, setCurrentStarters] = useState({});
     const [currentOppStarters, setCurrentOppStarters] = useState({});
@@ -2084,6 +2084,7 @@ const normalizeSub = window.normalizeSub || function(action) {
     const [filterType, setFilterType] = useState('all');
     const [editingAction, setEditingAction] = useState(null);
     const [editDate, setEditDate] = useState('');
+    const [editPhase, setEditPhase] = useState('');
     const [dirty, setDirty] = useState(false);
     const [saving, setSaving] = useState(false);
     const [toast, setToast] = useState(null);
@@ -2100,7 +2101,7 @@ const normalizeSub = window.normalizeSub || function(action) {
 
       setCurrentStarters(game?.starters || {});
       setCurrentOppStarters(game?.opponentStarters || {});
-
+      setEditPhase(game?.phase || '');
       setDirty(false);
       if (game?.date) {
         const parts = game.date.split('/');
@@ -2712,6 +2713,7 @@ const normalizeSub = window.normalizeSub || function(action) {
         const updatedGame = {
           ...game,
           date: formattedDate,
+          phase: editPhase,
           actions: cleanActions,
           starters: currentStarters,
           opponentStarters: currentOppStarters,
@@ -2798,6 +2800,18 @@ const normalizeSub = window.normalizeSub || function(action) {
                 }}
                 className="bg-slate-800 border border-slate-600 text-white text-xs rounded px-2 py-1 font-mono cursor-pointer"
               />
+              {phases.length > 0 && (
+                <select
+                  value={editPhase}
+                  onChange={(e) => { setEditPhase(e.target.value); setDirty(true); }}
+                  className="bg-slate-800 border border-slate-600 text-white text-xs rounded px-2 py-1 cursor-pointer"
+                >
+                  <option value="">— Phase —</option>
+                  {phases.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              )}
               <span className="text-slate-400 text-sm font-bold">{`vs ${game?.opponent || 'Match'}`}</span>
             </div>
             {dirty && (
