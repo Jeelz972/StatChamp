@@ -10,8 +10,7 @@ import './app.css';
 
 // Modules metier (ordre identique a l'ancien loadJS)
 import './src/engine/stats';
-import { normalizeSub } from './src/utils/normalize-sub';
-window.normalizeSub = normalizeSub;
+import './src/utils/normalize-sub';
 import './PlayByPlayEditor.jsx';
 import './ShotChart.js';
 import './AssistNetwork.jsx';

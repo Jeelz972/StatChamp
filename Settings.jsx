@@ -55,9 +55,7 @@ function RosterTab() {
 
   const saveRoster = (updatedPlayers) => {
     setPlayers(updatedPlayers);
-    if ((window).db) {
-      (window).DB?.saveRoster(updatedPlayers);
-    }
+    (window).DB?.saveRoster(updatedPlayers);
   };
 
   const seasonRoster = useMemo(
@@ -307,9 +305,7 @@ function PlaysTab() {
 
   const savePlayTypes = (updated) => {
     setPlayTypes(updated);
-    if ((window).db) {
-      (window).DB?.saveConfig({ playTypes: updated });
-    }
+    (window).DB?.saveConfig({ playTypes: updated });
     localStorage.setItem('basket_play_types', JSON.stringify(updated));
   };
 
@@ -392,9 +388,7 @@ function SeasonsTab() {
 
   const saveSeasons = (updated) => {
     setSeasons(updated);
-    if ((window).db) {
-      (window).DB?.saveSeasons(updated);
-    }
+    (window).DB?.saveSeasons(updated);
   };
 
   const createSeason = () => {
@@ -440,7 +434,7 @@ function SeasonsTab() {
     saveSeasons(updatedSeasons);
     const updatedPhases = phases.filter((p) => p.seasonId !== season.id);
     setPhases(updatedPhases);
-    if ((window).db) (window).DB?.savePhases(updatedPhases);
+    (window).DB?.savePhases(updatedPhases);
   };
 
   // ── Phases de la saison sélectionnée ──
@@ -461,7 +455,7 @@ function SeasonsTab() {
     // Add to global flat phases store
     const updatedPhases = [...phases, newPhase];
     setPhases(updatedPhases);
-    if ((window).db) (window).DB?.savePhases(updatedPhases);
+    (window).DB?.savePhases(updatedPhases);
     setNewPhaseName('');
   };
 
@@ -476,7 +470,7 @@ function SeasonsTab() {
     // Remove from global flat phases store
     const updatedPhases = phases.filter((p) => p.id !== phaseId);
     setPhases(updatedPhases);
-    if ((window).db) (window).DB?.savePhases(updatedPhases);
+    (window).DB?.savePhases(updatedPhases);
   };
 
   return (

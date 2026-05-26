@@ -123,6 +123,7 @@
               </button>
 
               <span id="lineupPM" style="display:none;font-size:0.55rem;font-family:'JetBrains Mono',monospace;font-weight:800;padding:2px 6px;border-radius:4px;"></span>
+              <span id="paceWrap" style="font-size:0.55rem;font-family:'JetBrains Mono',monospace;font-weight:700;padding:2px 6px;border-radius:4px;color:var(--text-muted);">PACE <span id="paceDisplay" style="color:var(--accent);font-weight:800;">--</span></span>
               <span class="context-badge attack" id="contextBadge" onclick="ContextManager.toggle()"
                 >🏀 ATT</span
               >
@@ -278,18 +279,8 @@
                 <button class="btn-act c-orange" onclick="GameEngine.action('STL')">
                   <span class="icon">⚡</span>Int
                 </button>
-                <button class="btn-act c-red" onclick="GameEngine.startFoul('personal')">
+                <button id="btnFoul" class="btn-act c-red" onclick="GameEngine.startFoul()">
                   <span class="icon">🚨</span>Faute
-                </button>
-                <button class="btn-act c-yellow" onclick="GameEngine.startFoul('technical')">
-                  <span class="icon">🟡</span>Tech
-                </button>
-                <button
-                  class="btn-act c-red"
-                  onclick="GameEngine.startFoul('unsportsmanlike')"
-                  style="background: linear-gradient(135deg, #dc2626, #7f1d1d)"
-                >
-                  <span class="icon">🟥</span>Anti
                 </button>
                 <button class="btn-act c-orange" onclick="GameEngine.action('TOV')">
                   <span class="icon">💨</span>BP
@@ -307,7 +298,7 @@
                   class="btn-act c-teal"
                   onclick="PlaySelector.show()"
                   id="btnPlay"
-                  style="background: linear-gradient(145deg, #0d9488, #0f766e)"
+                  style="background: linear-gradient(145deg, #0d9488, #0f766e); display: none;"
                 >
                   <span class="icon">📋</span>Play
                 </button>
@@ -488,7 +479,7 @@
         opponentStarters: { 1: [], 2: [], 3: [], 4: [] },
         teamFouls: { home: [0, 0, 0, 0], away: [0, 0, 0, 0] },
         scoreHistory: [],
-        specialFouls: { technical: [], unsportsmanlike: [], offensive: [] },
+        specialFouls: { technical: [], unsportsmanlike: [], offensive: [], disqualifying: [] },
         playTypes: [
           'Transition',
           'Pick & Roll',
@@ -884,78 +875,132 @@
       // ===== FOUL PANEL =====
       const FoulPanel = {
         ctx: {},
-        show(foulerId, victimId) {
-          const presetType = State.ui.ctx.foulType || null;
+        askType(foulerId) {
+          const fouler = State.players[foulerId];
           this.ctx = {
             foulerId,
-            victimId,
-            foulType: presetType,
+            victimId: null,
+            foulType: null,
             ftResults: [],
             ftCount: 0,
             currentFt: 0,
           };
-          const fouler = State.players[foulerId],
-            victim = State.players[victimId];
-          const typeLabel =
-            presetType === 'technical'
-              ? '🟡 Tech'
-              : presetType === 'unsportsmanlike'
-                ? '🟥 Anti'
-                : null;
-          if (presetType && presetType !== 'personal') {
-            // Type déjà choisi via bouton dédié → skip le choix, aller direct au flow
-            document.getElementById('foulTitle').textContent =
-              `${typeLabel} #${fouler.number} sur #${victim.number}`;
-            document.getElementById('foulTypes').style.display = 'flex';
-            // Tech = 1 LF + possession, Anti = 2 LF + possession
-            if (presetType === 'technical') {
-              document.getElementById('foulTypes').innerHTML = `
-                    <button class="foul-type-btn" onclick="FoulPanel.selectType('technical')">🎯 1 Lancer + Possession</button>
-                `;
-            } else {
-              document.getElementById('foulTypes').innerHTML = `
-                    <button class="foul-type-btn shooting" onclick="FoulPanel.selectType('unsportsmanlike')">🎯 2 Lancers + Possession</button>
-                `;
-            }
-            document.getElementById('ftSequence').innerHTML = '';
-            document.getElementById('foulPanel').classList.add('show');
-          } else {
-            // Flow classique : choix du type
-            document.getElementById('foulTitle').textContent =
-              `Faute #${fouler.number} sur #${victim.number}`;
-            document.getElementById('foulTypes').innerHTML = `
-                <button class="foul-type-btn" onclick="FoulPanel.selectType('normal')">🏃 Normale</button>
-                <button class="foul-type-btn shooting" onclick="FoulPanel.selectType('shooting')">🎯 Sur Tir</button>
-                <button class="foul-type-btn tech" onclick="FoulPanel.selectType('technical')">📋 Technique</button>
-                <button class="foul-type-btn unsport" onclick="FoulPanel.selectType('unsportsmanlike')">⚠️ Antisportive</button>
-                <button class="foul-type-btn offensive" onclick="FoulPanel.selectType('offensive')">🔄 Offensive</button>
-            `;
-            document.getElementById('foulTypes').style.display = 'flex';
-            document.getElementById('ftSequence').innerHTML = '';
-            document.getElementById('foulPanel').classList.add('show');
-          }
+          document.getElementById('foulTitle').textContent = `Faute #${fouler.number} — Type ?`;
+          document.getElementById('foulTypes').innerHTML = `
+            <button class="foul-type-btn" onclick="FoulPanel.selectType('normal')">🏃 Normale</button>
+            <button class="foul-type-btn shooting" onclick="FoulPanel.selectType('shooting')">🎯 Sur Tir</button>
+            <button class="foul-type-btn offensive" onclick="FoulPanel.selectType('offensive')">🔄 Offensive</button>
+            <button class="foul-type-btn tech" onclick="FoulPanel.selectType('technical')">🟡 Technique</button>
+            <button class="foul-type-btn unsport" onclick="FoulPanel.selectType('unsportsmanlike')">🟥 Antisportive</button>
+            <button class="foul-type-btn disq" onclick="FoulPanel.selectType('disqualifying')">🚫 Disqualifiante</button>
+          `;
+          document.getElementById('foulTypes').style.display = 'flex';
+          document.getElementById('ftSequence').innerHTML = '';
+          document.getElementById('foulPanel').classList.add('show');
+        },
+        show(foulerId, victimId) {
+          const fouler = State.players[foulerId];
+          const victim = State.players[victimId];
+          this.ctx = {
+            foulerId,
+            victimId,
+            foulType: null,
+            ftResults: [],
+            ftCount: 0,
+            currentFt: 0,
+          };
+          document.getElementById('foulTitle').textContent =
+            `Faute #${fouler.number} sur #${victim.number}`;
+          document.getElementById('foulTypes').innerHTML = `
+            <button class="foul-type-btn" onclick="FoulPanel.selectType('normal')">🏃 Normale</button>
+            <button class="foul-type-btn shooting" onclick="FoulPanel.selectType('shooting')">🎯 Sur Tir</button>
+          `;
+          document.getElementById('foulTypes').style.display = 'flex';
+          document.getElementById('ftSequence').innerHTML = '';
+          document.getElementById('foulPanel').classList.add('show');
         },
         selectType(type) {
-          if (!this.ctx.foulType) this.ctx.foulType = type;
+          this.ctx.foulType = type;
           document.getElementById('foulTypes').style.display = 'none';
-
-          if (type === 'technical') {
-            this.ctx.ftCount = 1;
-            this.showFtSequence();
-          } else if (type === 'unsportsmanlike') {
-            this.ctx.ftCount = 2;
-            this.showFtSequence();
+          if (type === 'technical' || type === 'unsportsmanlike' || type === 'disqualifying') {
+            this.askVictim(type, this.ctx.foulerId);
           } else if (type === 'offensive') {
             this.finalize();
           } else if (type === 'normal') {
-            document.getElementById('foulTitle').textContent = 'Lancers francs ?';
-            document.getElementById('ftSequence').innerHTML =
-              `<div style="display:flex;gap:10px;"><button class="btn-mod" onclick="FoulPanel.setFtCount(0)">0 LF</button><button class="btn-mod" onclick="FoulPanel.setFtCount(2)">2 LF</button></div>`;
+            if (this.ctx.victimId) {
+              document.getElementById('foulTitle').textContent = 'Lancers francs ?';
+              document.getElementById('ftSequence').innerHTML =
+                `<div style="display:flex;gap:10px;"><button class="btn-mod" onclick="FoulPanel.setFtCount(0)">0 LF</button><button class="btn-mod" onclick="FoulPanel.setFtCount(2)">2 LF</button></div>`;
+            } else {
+              State.ui.pending = 'FOUL_VICTIM';
+              State.ui.ctx = { fouler: this.ctx.foulerId, foulType: type };
+              document.getElementById('foulPanel').classList.remove('show');
+              UI.toast('Qui subit ?');
+            }
           } else if (type === 'shooting') {
-            document.getElementById('foulTitle').textContent = 'Tir marqué (And-1) ?';
-            document.getElementById('ftSequence').innerHTML =
-              `<div style="display:flex;gap:10px;"><button class="btn-mod success" onclick="FoulPanel.and1(true)">✓ Marqué (1 LF)</button><button class="btn-mod danger" onclick="FoulPanel.and1(false)">✗ Raté</button></div>`;
+            if (this.ctx.victimId) {
+              document.getElementById('foulTitle').textContent = 'Tir marqué (And-1) ?';
+              document.getElementById('ftSequence').innerHTML =
+                `<div style="display:flex;gap:10px;"><button class="btn-mod success" onclick="FoulPanel.and1(true)">✓ Marqué (1 LF)</button><button class="btn-mod danger" onclick="FoulPanel.and1(false)">✗ Raté</button></div>`;
+            } else {
+              State.ui.pending = 'FOUL_VICTIM';
+              State.ui.ctx = { fouler: this.ctx.foulerId, foulType: type };
+              document.getElementById('foulPanel').classList.remove('show');
+              UI.toast('Qui subit ?');
+            }
           }
+        },
+        askVictim(type, foulerId) {
+          const typeLabel =
+            type === 'technical'
+              ? '🟡 Tech'
+              : type === 'unsportsmanlike'
+                ? '🟥 Anti'
+                : '🚫 Disq';
+          document.getElementById('foulTitle').textContent = `${typeLabel} — Qui subit ?`;
+          const allPlayers = Object.values(State.players).filter((p) => p.id !== foulerId);
+          let html = '<div class="foul-victim-grid" style="display:flex;flex-wrap:wrap;gap:8px;">';
+          allPlayers.forEach((p) => {
+            const label = p.isPseudo ? p.name : `#${p.number} ${p.name}`;
+            html += `<button class="foul-type-btn" style="font-size:0.75rem;" onclick="FoulPanel.setVictim('${p.id}')">${label}</button>`;
+          });
+          html += '<button class="foul-type-btn" style="font-size:0.75rem;" onclick="FoulPanel.setVictim(null)">Aucune victime</button>';
+          html += '</div>';
+          document.getElementById('ftSequence').innerHTML = html;
+          document.getElementById('foulTypes').style.display = 'none';
+        },
+        setVictim(victimId) {
+          this.ctx.victimId = victimId;
+          document.getElementById('ftSequence').innerHTML = '';
+          const type = this.ctx.foulType;
+          if (type === 'technical') {
+            this.ctx.ftCount = 1;
+            this.askFtShooter();
+          } else if (type === 'unsportsmanlike') {
+            this.ctx.ftCount = 2;
+            this.showFtSequence();
+          } else if (type === 'disqualifying') {
+            this.finalize();
+          }
+        },
+        askFtShooter() {
+          const fouler = State.players[this.ctx.foulerId];
+          const oppTeam = fouler.team === 'home' ? 'away' : 'home';
+          const candidates = Object.values(State.players).filter(
+            (p) => p.team === oppTeam && !p.isPseudo
+          );
+          document.getElementById('foulTitle').textContent = '🟡 Tech — Qui tire le LF ?';
+          let html = '<div class="foul-victim-grid" style="display:flex;flex-wrap:wrap;gap:8px;">';
+          candidates.forEach((p) => {
+            html += `<button class="foul-type-btn" style="font-size:0.75rem;" onclick="FoulPanel.confirmFtShooter(${p.id})">#${p.number} ${p.name}</button>`;
+          });
+          html += '</div>';
+          document.getElementById('ftSequence').innerHTML = html;
+        },
+        confirmFtShooter(ftShooterId) {
+          this.ctx.ftShooterId = ftShooterId;
+          document.getElementById('ftSequence').innerHTML = '';
+          this.showFtSequence();
         },
         and1(made) {
           if (made) {
@@ -997,58 +1042,30 @@
             this.finalize();
           }
         },
-        showTech(foulerId, ftShooterId) {
-          var fouler = State.players[foulerId];
-          this.ctx = {
-            foulerId: foulerId,
-            victimId: null,
-            ftShooterId: ftShooterId,
-            foulType: 'technical',
-            ftResults: [],
-            ftCount: 1,
-            currentFt: 0,
-          };
-          document.getElementById('foulTitle').textContent = '🟡 Tech #' + fouler.number + ' — LF: #' + State.players[ftShooterId].number;
-          document.getElementById('foulTypes').style.display = 'none';
-          document.getElementById('ftSequence').innerHTML = '';
-          document.getElementById('foulPanel').classList.add('show');
-          this.showFtSequence();
-        },
         finalize() {
           const { foulerId, victimId, foulType, ftResults, and1, ftShooterId } = this.ctx;
           const fouler = State.players[foulerId];
-          const victim = victimId ? State.players[victimId] : null;
+          const victim = victimId != null ? State.players[victimId] : null;
 
-          fouler.stats.fouls++;
-          if (victim) victim.stats.foulDrawn++;
+          if (!fouler.isPseudo) fouler.stats.fouls++;
+          if (victim && !victim.isPseudo) victim.stats.foulDrawn++;
           State.teamFouls[fouler.team][State.match.quarter - 1]++;
 
           if (foulType === 'technical')
-            State.specialFouls.technical.push({
-              playerId: foulerId,
-              quarter: State.match.quarter,
-              time: State.match.time,
-            });
+            State.specialFouls.technical.push({ playerId: foulerId, quarter: State.match.quarter, time: State.match.time });
           else if (foulType === 'unsportsmanlike')
-            State.specialFouls.unsportsmanlike.push({
-              playerId: foulerId,
-              quarter: State.match.quarter,
-              time: State.match.time,
-              victimId,
-            });
+            State.specialFouls.unsportsmanlike.push({ playerId: foulerId, quarter: State.match.quarter, time: State.match.time, victimId });
           else if (foulType === 'offensive')
-            State.specialFouls.offensive.push({
-              playerId: foulerId,
-              quarter: State.match.quarter,
-              time: State.match.time,
-            });
+            State.specialFouls.offensive.push({ playerId: foulerId, quarter: State.match.quarter, time: State.match.time });
+          else if (foulType === 'disqualifying')
+            State.specialFouls.disqualifying.push({ playerId: foulerId, quarter: State.match.quarter, time: State.match.time, victimId });
 
-          var logData = { foulType: foulType || 'personal' };
-          if (victimId) logData.victim = victimId;
+          var logData = { foulType: foulType || 'normal' };
+          if (victimId != null) { logData.victim = victimId; logData.victimId = victimId; }
           if (ftShooterId) logData.ftShooterId = ftShooterId;
           GameEngine.log('FOUL', this.ctx.foulerId, logData);
 
-          if (and1 && victim) {
+          if (and1 && victim && !victim.isPseudo) {
             const x = victim.team === 'home' ? 26.425 : 1.575;
             victim.stats.fgm++;
             victim.stats.fga++;
@@ -1061,8 +1078,7 @@
           const ftMade = ftResults.filter((r) => r).length,
             ftAtt = ftResults.length;
           if (ftAtt > 0) {
-            // Pour tech : le tireur est ftShooterId, sinon la victime
-            var ftShooter = ftShooterId ? State.players[ftShooterId] : victim;
+            const ftShooter = ftShooterId ? State.players[ftShooterId] : (victim && !victim.isPseudo ? victim : null);
             if (ftShooter) {
               ftShooter.stats.ftm += ftMade;
               ftShooter.stats.fta += ftAtt;
@@ -1134,7 +1150,7 @@
         render() {
           const isHome = this.tab === 'home';
           const players = Object.values(State.players).filter(
-            (p) => p.team === (isHome ? 'home' : 'away')
+            (p) => p.team === (isHome ? 'home' : 'away') && !p.isPseudo
           );
 
           document.getElementById('startersTitle').innerHTML =
@@ -1419,7 +1435,7 @@
       };
       const HomeRosterEditor = {
         show() {
-          const homePlayers = Object.values(State.players).filter((p) => p.team === 'home');
+          const homePlayers = Object.values(State.players).filter((p) => p.team === 'home' && !p.isPseudo);
           homePlayers.sort((a, b) => parseInt(a.number) - parseInt(b.number));
 
           let html = `<div style="text-align:center;margin-bottom:12px;color:var(--text-muted);font-size:0.75rem;">
@@ -1485,7 +1501,7 @@
       };
       const OppLineupEditor = {
         show() {
-          const awayPlayers = Object.values(State.players).filter((p) => p.team === 'away');
+          const awayPlayers = Object.values(State.players).filter((p) => p.team === 'away' && !p.isPseudo);
           const onCourt = awayPlayers.filter((p) => State.onCourt.away.includes(p.id));
           const bench = awayPlayers.filter((p) => !State.onCourt.away.includes(p.id));
 
@@ -1519,7 +1535,7 @@
         },
 
         apply() {
-          const awayPlayers = Object.values(State.players).filter((p) => p.team === 'away');
+          const awayPlayers = Object.values(State.players).filter((p) => p.team === 'away' && !p.isPseudo);
           const onCourt = awayPlayers.filter((p) => State.onCourt.away.includes(p.id));
           let changed = 0;
 
@@ -1548,7 +1564,7 @@
       const OppRosterEditor = {
         show() {
           const awayPlayers = Object.values(State.players)
-            .filter((p) => p.team === 'away')
+            .filter((p) => p.team === 'away' && !p.isPseudo)
             .sort((a, b) => parseInt(a.number) - parseInt(b.number));
 
           let html = `<div style="text-align:center;margin-bottom:12px;color:var(--text-muted);font-size:0.75rem;">
@@ -1652,7 +1668,7 @@
         },
 
         apply() {
-          const awayPlayers = Object.values(State.players).filter((p) => p.team === 'away');
+          const awayPlayers = Object.values(State.players).filter((p) => p.team === 'away' && !p.isPseudo);
           let changed = 0;
 
           awayPlayers.forEach((p) => {
@@ -2111,28 +2127,48 @@
         },
       };
 
-      // ===== FIREBASE INIT =====
-      async function initFirebase() {
+      // ===== LIVE BACKEND INIT (chantier 6.B) =====
+      async function initLiveBackend() {
         try {
           firebase.initializeApp(FIREBASE_CONFIG);
           db = firebase.firestore();
-          const [rosterDoc, phasesDoc, gamesSnap] = await Promise.all([
-            db.collection('team_data').doc('roster').get(),
-            db.collection('team_data').doc('phases').get(),
-            db.collection('games').get(),
+
+          var teamId = new URLSearchParams(window.location.search).get('team')
+            || localStorage.getItem('statchamp_team')
+            || 'champagne_u18';
+
+          if (window._liveReady && typeof window._liveReady.then === 'function') {
+            await window._liveReady;
+          }
+          if (!window.LiveDB || typeof window.LiveDB.init !== 'function') {
+            console.warn('[Live] window.LiveDB pas encore prêt — boot interrompu (probable redirect auth en cours).');
+            return;
+          }
+
+          try {
+            await window.LiveDB.init(teamId);
+          } catch (e) {
+            console.error('[Live] LiveDB init failed, fallback firebase:', e);
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('Backend Supabase KO → Firebase', 'error');
+            localStorage.removeItem('statchamp_live_db');
+            var url = new URL(window.location.href);
+            url.searchParams.set('db', 'firebase');
+            window.location.href = url.toString();
+            return;
+          }
+
+          var results = await Promise.all([
+            window.LiveDB.loadRoster(),
+            window.LiveDB.loadPhases(),
+            window.LiveDB.loadGames(),
+            window.LiveDB.loadConfig(),
           ]);
-          const configDoc = await db.collection('team_data').doc('config').get();
-          if (configDoc.exists && configDoc.data().playTypes)
-            State.playTypes = configDoc.data().playTypes;
-          if (rosterDoc.exists && rosterDoc.data().list) firebaseRoster = rosterDoc.data().list;
-          if (phasesDoc.exists && phasesDoc.data().list) firebasePhases = phasesDoc.data().list;
-          firebaseGames = gamesSnap.docs
-            .map(function (doc) {
-              return doc.data();
-            })
-            .filter(function (g) {
-              return !g._deleted;
-            });
+
+          if (results[3] && results[3].playTypes) State.playTypes = results[3].playTypes;
+          if (results[0] && results[0].list) firebaseRoster = results[0].list;
+          if (results[1] && results[1].list) firebasePhases = results[1].list;
+          firebaseGames = results[2] || [];
+
           document.getElementById('loadingScreen').classList.add('hidden');
           document.getElementById('setupScreen').classList.remove('hidden');
           Setup.init();
@@ -2197,6 +2233,8 @@
               document.getElementById('lblAway').textContent = State.match.opponent;
               Court.init();
               UI.init();
+              State.currentPlay = null;
+              if (PlaySelector) PlaySelector.renderBadge();
               WormChart.init();
               ContextManager.render();
               TimelineFloat.render();
@@ -2453,7 +2491,9 @@
         },
         startMatch() {
           const customDate = document.getElementById('matchDate').value;
-          State.match.id = Date.now();
+          State.match.id = (window.LiveDB && window.LiveDB.backend() === 'supabase')
+            ? crypto.randomUUID()
+            : Date.now().toString(36);
           localStorage.setItem('liveMatchActive', Date.now().toString());
           // Formatage de la date saisie (AAAA-MM-JJ -> JJ/MM/AAAA)
           const dateParts = customDate.split('-');
@@ -2623,7 +2663,7 @@
             if (window._liveFactories?.createMigrationManager && State.match.id) {
               const mgr = window._liveFactories.createMigrationManager();
               const container = document.getElementById('coachReportBody');
-              if (container) mgr.attach(State.match.id.toString(36), container);
+              if (container) mgr.attach(String(State.match.id), container);
               window.MigrationManager = mgr;
             }
           }
@@ -2635,12 +2675,12 @@
             try {
               const scores = this.getScore();
               const playerStats = {};
-              Object.values(State.players).filter((p) => p.team === 'home').forEach((p) => {
+              Object.values(State.players).filter((p) => p.team === 'home' && !p.isPseudo).forEach((p) => {
                 playerStats[p.id] = { pts: p.stats.pts, reb: p.stats.oreb + p.stats.dreb, oreb: p.stats.oreb, dreb: p.stats.dreb, ast: p.stats.ast, stl: p.stats.stl, blk: p.stats.blk, tov: p.stats.tov, fga: p.stats.fga, fgm: p.stats.fgm, threePA: p.stats.fg3a, threePM: p.stats.fg3m, fta: p.stats.fta, ftm: p.stats.ftm, pf: p.stats.fouls, minutes: Math.round(p.stats.min / 60), plusMinus: p.stats.plusMinus, foulDrawn: p.stats.foulDrawn || 0 };
               });
               const opponentPlayerStats = {};
               const opponentStats = { pts: scores.away, reb: 0, oreb: 0, tov: 0, fouls: 0, fga: 0, fgm: 0 };
-              Object.values(State.players).filter((p) => p.team === 'away').forEach((p) => {
+              Object.values(State.players).filter((p) => p.team === 'away' && !p.isPseudo).forEach((p) => {
                 opponentStats.reb += p.stats.oreb + p.stats.dreb;
                 opponentStats.oreb += p.stats.oreb;
                 opponentStats.tov += p.stats.tov;
@@ -2649,9 +2689,9 @@
                 opponentStats.fgm += p.stats.fgm + p.stats.fg3m;
                 opponentPlayerStats[p.id] = { pts: p.stats.pts, oreb: p.stats.oreb, dreb: p.stats.dreb, ast: p.stats.ast, stl: p.stats.stl, blk: p.stats.blk, tov: p.stats.tov, fga: p.stats.fga, fgm: p.stats.fgm, threePA: p.stats.fg3a, threePM: p.stats.fg3m, fta: p.stats.fta, ftm: p.stats.ftm, pf: p.stats.fouls, minutes: Math.round(p.stats.min / 60), plusMinus: p.stats.plusMinus, number: p.number, name: p.name, foulDrawn: p.stats.foulDrawn || 0 };
               });
-              const game = { id: State.match.id.toString(36), date: State.match.date, opponent: State.match.opponent, homeScore: scores.home, awayScore: scores.away, phase: State.match.phase, playerStats, opponentStats, opponentPlayerStats, opponentStarters: State.opponentStarters, actions: State.actions, starters: State.starters, specialFouls: State.specialFouls, scoreHistory: State.scoreHistory };
+              const game = { id: String(State.match.id), date: State.match.date, opponent: State.match.opponent, homeScore: scores.home, awayScore: scores.away, phase: State.match.phase, playerStats, opponentStats, opponentPlayerStats, opponentStarters: State.opponentStarters, actions: State.actions, starters: State.starters, specialFouls: State.specialFouls, scoreHistory: State.scoreHistory };
               var wk = sessionStorage.getItem('statchamp_wk') || '';
-              await db.collection('games').doc(game.id).set(Object.assign({}, game, { _wk: wk, updatedAt: new Date().toISOString() }));
+              await window.LiveDB.saveGame(Object.assign({}, game, { _wk: wk, updatedAt: new Date().toISOString() }));
               const now = new Date();
               const hhmm = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
               const dot = document.getElementById('syncDot'), txt = document.getElementById('syncStatus');
@@ -2690,23 +2730,11 @@
         handlePlayerClick(id) {
           const p = State.players[id];
           if (State.ui.pending === 'FOUL_WHO') {
-            State.ui.ctx.fouler = id;
-            State.ui.pending = 'FOUL_VICTIM';
-            if (State.ui.ctx.foulType === 'technical') {
-              UI.toast('Qui tire les LF ?');
-            } else {
-              UI.toast('Qui subit ?');
-            }
+            FoulPanel.askType(id);
+            State.ui.pending = null;
             return;
           }
           if (State.ui.pending === 'FOUL_VICTIM') {
-            var foulType = State.ui.ctx.foulType;
-            if (foulType === 'technical') {
-              State.ui.ctx.ftShooterId = id;
-              FoulPanel.showTech(State.ui.ctx.fouler, id);
-              State.ui.pending = null;
-              return;
-            }
             if (p.team === State.players[State.ui.ctx.fouler]?.team)
               return UI.toast('Autre équipe !', 'error');
             FoulPanel.show(State.ui.ctx.fouler, id);
@@ -2883,20 +2911,14 @@
           UI.renderRoster();
           UI.toast(type + ' #' + p.number);
         },
-        startFoul(foulType = 'personal') {
+        startFoul() {
           if (State.match.running) {
             this.toggleTimer();
             UI.toast('⏸️ Timer stoppé');
           }
           State.ui.pending = 'FOUL_WHO';
-          State.ui.ctx = { foulType };
-          UI.toast(
-            foulType === 'technical'
-              ? 'Qui fait la tech ?'
-              : foulType === 'unsportsmanlike'
-                ? "Qui fait l'anti ?"
-                : 'Qui fait la faute ?'
-          );
+          State.ui.ctx = {};
+          UI.toast('Qui fait la faute ?');
         },
         startBlock() {
           UI.toast('Qui a contré ?');
@@ -3307,7 +3329,7 @@
           const scores = this.getScore();
           const playerStats = {};
           Object.values(State.players)
-            .filter((p) => p.team === 'home')
+            .filter((p) => p.team === 'home' && !p.isPseudo)
             .forEach((p) => {
               playerStats[p.id] = {
                 pts: p.stats.pts,
@@ -3342,7 +3364,7 @@
           };
           const opponentPlayerStats = {};
           Object.values(State.players)
-            .filter((p) => p.team === 'away')
+            .filter((p) => p.team === 'away' && !p.isPseudo)
             .forEach((p) => {
               opponentStats.reb += p.stats.oreb + p.stats.dreb;
               opponentStats.oreb += p.stats.oreb;
@@ -3375,7 +3397,7 @@
               };
             });
           const game = {
-            id: State.match.id.toString(36),
+            id: String(State.match.id),
             date: State.match.date,
             opponent: State.match.opponent,
             homeScore: scores.home,
@@ -3400,11 +3422,8 @@
           else firebaseGames.unshift(game);
           try {
             var wk = sessionStorage.getItem('statchamp_wk') || '';
-            console.log('wk au moment du save:', JSON.stringify(wk));
-            await db
-              .collection('games')
-              .doc(game.id)
-              .set(Object.assign({}, game, { _wk: wk, updatedAt: new Date().toISOString() }));
+            if (window.__DEBUG__) console.log('wk au moment du save:', JSON.stringify(wk));
+            await window.LiveDB.saveGame(Object.assign({}, game, { _wk: wk, updatedAt: new Date().toISOString() }));
             UI.toast('✅ Sauvegardé !');
             UI.setSyncStatus('online');
             OfflineManager.clear();
@@ -3748,6 +3767,11 @@
           const btn = document.getElementById('timerBtn');
           btn.textContent = `${m}:${s < 10 ? '0' + s : s}`;
           btn.classList.toggle('running', State.match.running);
+          const paceEl = document.getElementById('paceDisplay');
+          if (paceEl && window._computePace && window.StatsEngine) {
+            const pace = window._computePace(State, window.StatsEngine);
+            paceEl.textContent = pace > 0 ? pace.toFixed(1) : '--';
+          }
           this.updateQuarterScores();
           LineupTracker.render();
         },
@@ -4296,7 +4320,7 @@
         }
       });
 
-      window.onload = initFirebase;
+      window.onload = initLiveBackend;
       window.addEventListener('beforeunload', () => {
         if (State.match.id && State.actions.length > 0) OfflineManager.save();
       });

@@ -16,7 +16,159 @@ var DetectionIcons = {
   User: 'M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2 M12 3a4 4 0 100 8 4 4 0 000-8z',
   Check: 'M20 6L9 17l-5-5',
 };
+var SettingsPage = function() {
+  const [baremes, setBaremes] = React.useState(window.DETECTION_BAREMES);
+  const categories = ['U11','U13','U15','U18'];
 
+  const saveAll = () => {
+    window.saveBaremes(baremes);
+    alert('Barèmes sauvegardés ✅');
+  };
+
+  return (
+    <div className="p-8 max-w-5xl mx-auto">
+      <h1 className="text-3xl font-bold mb-8">⚙️ Paramètres – Barèmes & Tests</h1>
+      
+      {/* Tests par catégorie */}
+      <div className="mb-12">
+        <h2 className="text-xl font-semibold mb-4">Tests physiques activés par catégorie</h2>
+        {categories.map(cat => (
+          <div key={cat} className="mb-8">
+            <h3 className="font-bold text-lg mb-3">{cat}</h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {Object.keys(window.DETECTION_BAREMES.physical).map(testId => {
+                const active = window.DetectionEngine.getActiveTestsForCategory(cat).includes(testId);
+                return (
+                  <label key={testId} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={active}
+                      onChange={e => {
+                        let list = window.DetectionEngine.getActiveTestsForCategory(cat);
+                        if (e.target.checked) list.push(testId);
+                        else list = list.filter(t => t !== testId);
+                        window.DetectionEngine.setActiveTestsForCategory(cat, list);
+                        // refresh
+                        setBaremes({...baremes});
+                      }}
+                    />
+                    <span>{window.DETECTION_BAREMES.physical[testId].name}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Éditeur barèmes simplifié (tableau) */}
+      <div className="bg-zinc-900 rounded-2xl p-6">
+        <h2 className="text-xl font-semibold mb-6">Modifier les seuils (barèmes)</h2>
+        {/* Pour simplifier, on montre un éditeur JSON éditable */}
+        <textarea
+          value={JSON.stringify(baremes, null, 2)}
+          onChange={e => setBaremes(JSON.parse(e.target.value))}
+          className="w-full h-96 font-mono text-sm bg-black text-emerald-300 p-4 rounded-xl"
+        />
+        <div className="flex gap-4 mt-6">
+          <button onClick={saveAll} className="px-6 py-3 bg-orange-500 text-white rounded-xl font-semibold">Sauvegarder tous les barèmes</button>
+          <button onClick={() => { window.resetBaremes(); setBaremes(window.DETECTION_BAREMES); }} className="px-6 py-3 border border-zinc-700 rounded-xl">Réinitialiser par défaut</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+var ScoutReport = function({ player }) {
+  const scores = window.DetectionEngine.computeOverallScores(player);
+  const global = window.DetectionEngine.computeGlobalScore(player);
+  const radar = window.DetectionEngine.getGlobalRadarData(player);
+
+  const getDescriptor = (domain, criterionId, level) => {
+    if (!window.DETECTION_DESCRIPTORS[domain] || !window.DETECTION_DESCRIPTORS[domain][criterionId]) return '';
+    return window.DETECTION_DESCRIPTORS[domain][criterionId][player.category]?.[level] || '';
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto p-8 bg-white text-black dark:bg-zinc-950 dark:text-white rounded-3xl shadow-2xl print:shadow-none" style={{fontFamily:'system-ui'}}>
+      <div className="flex justify-between border-b pb-6 mb-8">
+        <div>
+          <h1 className="text-4xl font-bold">{player.firstName} {player.lastName}</h1>
+          <p className="text-2xl text-orange-500">{player.category} • {player.position || '—'}</p>
+        </div>
+        <div className="text-right">
+          <div className="text-7xl font-bold text-orange-500">{global.score || '—'}</div>
+          <div className="text-sm tracking-widest">OVERALL GRADE</div>
+        </div>
+      </div>
+
+      {/* Radar global */}
+      <div className="mb-12">
+        <h2 className="text-xl font-semibold mb-4">Profil Athlétique &amp; Skills</h2>
+        {/* Tu peux réutiliser ton radar existant ou laisser un placeholder SVG simple */}
+        <div className="grid grid-cols-4 gap-4 text-center">
+          {radar.map(ax => (
+            <div key={ax.id}>
+              <div className="text-4xl font-bold text-orange-500">{ax.value}</div>
+              <div className="text-xs uppercase">{ax.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Sections avec descriptors */}
+      {['physical','technical','tactical','mental'].map(domain => (
+        <div key={domain} className="mb-10">
+          <h3 className="uppercase text-sm font-bold tracking-widest mb-3 border-l-4 border-orange-500 pl-3">
+            {domain.toUpperCase()}
+          </h3>
+          <div className="pl-6 space-y-4">
+            {player[domain]?.evaluations?.map(ev => (
+              <div key={ev.criterionId}>
+                <div className="flex justify-between">
+                  <span className="font-medium">{ev.criterionId}</span>
+                  <span className={window.DetectionEngine.levelColor(ev.level)}>{ev.level}</span>
+                </div>
+                <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">
+                  {getDescriptor(domain, ev.criterionId, ev.level)}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {/* Scout Summary */}
+      <div className="mt-12 p-6 bg-orange-50 dark:bg-orange-950/30 rounded-2xl">
+        <h3 className="font-bold mb-3">SCOUT SUMMARY – NBA PROJECTION</h3>
+        <p className="text-lg leading-relaxed">
+          {global.score >= 80 
+            ? `${player.firstName} est un prospect élite avec un plafond très élevé.` 
+            : global.score >= 65 
+            ? `Joueuse solide avec un très bon potentiel de rotation.` 
+            : `Prospect intéressant à développer, surtout sur le plan physique et mental.`}
+        </p>
+      </div>
+
+      <div className="text-center text-xs mt-12 text-zinc-500 print:hidden">
+        Rapport généré le {new Date().toLocaleDateString('fr-FR')} • StatChamp Detection
+      </div>
+    </div>
+  );
+};
+
+// Dans DetectionDashboard, ajoute l’onglet "Rapport Scout"
+const tabs = ['Overview', 'Physique', 'Technique', 'Tactique', 'Mental', 'Rapport Scout'];
+
+// Dans le rendu du player detail :
+{activeTab === 'Rapport Scout' && <ScoutReport player={player} />}
+
+// Dans DetectionList, remplace Firebase par :
+React.useEffect(() => {
+  const players = window.DetectionEngine.getAllPlayers();
+  setPlayers(players);
+  setLoading(false);
+}, []);
 function DIcon({ d, path, className, style }) {
   // Extraction robuste de la taille pour contrer le comportement flexbox
   var w = '20px'; // h-5 w-5 par défaut

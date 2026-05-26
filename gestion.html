@@ -1,0 +1,2904 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>FFBB Licence Manager - V4</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script
+      src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"
+      crossorigin
+    ></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #0a0e17;
+        color: #e2e8f0;
+        font-family:
+          'Inter',
+          -apple-system,
+          sans-serif;
+      }
+      input,
+      select {
+        font-family: inherit;
+      }
+      .btn-primary {
+        background: linear-gradient(135deg, #f59e0b, #f97316);
+        color: white;
+        border: none;
+        padding: 10px 18px;
+        border-radius: 10px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: opacity 0.2s;
+      }
+      .btn-primary:hover {
+        opacity: 0.9;
+      }
+      .btn-secondary {
+        background: #1e293b;
+        color: white;
+        border: 1px solid #334155;
+        padding: 10px 18px;
+        border-radius: 10px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+      .btn-secondary:hover {
+        background: #334155;
+      }
+
+      @media screen {
+        .print-only {
+          display: none !important;
+        }
+      }
+
+      @media print {
+        .no-print {
+          display: none !important;
+        }
+        .print-only {
+          display: block !important;
+        }
+        body {
+          background: white !important;
+          color: black !important;
+        }
+        .print-card {
+          border: 1px solid #ccc !important;
+          color: black !important;
+          background: white !important;
+          page-break-inside: avoid;
+        }
+        h2,
+        h3,
+        th,
+        td {
+          color: black !important;
+        }
+        table {
+          border-collapse: collapse;
+          width: 100%;
+        }
+        th,
+        td {
+          border: 1px solid #ddd;
+          padding: 8px;
+          text-align: left;
+        }
+        th {
+          background-color: #f2f2f2 !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+      const { useState, useMemo, useCallback, useEffect } = React;
+
+      // --- CONFIGURATION FFBB ---
+      const TEAM_CONFIGS = {
+        U11: {
+          label: 'U11',
+          desc: 'U9 à U11',
+          baseCategories: ['U9', 'U10', 'U11'],
+          surclassementFrom: [],
+          color: '#06b6d4',
+          minRoster: 8,
+          maxRoster: 10,
+        },
+        U13: {
+          label: 'U13',
+          desc: 'U12 à U13',
+          baseCategories: ['U12', 'U13'],
+          surclassementFrom: ['U11'],
+          color: '#8b5cf6',
+          minRoster: 8,
+          maxRoster: 12,
+        },
+        U14: {
+          label: 'U14',
+          desc: 'U14 à U15',
+          baseCategories: ['U14', 'U15'],
+          surclassementFrom: ['U13'],
+          color: '#f59e0b',
+          minRoster: 8,
+          maxRoster: 12,
+        },
+        U18: {
+          label: 'U18',
+          desc: 'U16 à U18',
+          baseCategories: ['U16', 'U17', 'U18'],
+          surclassementFrom: ['U15', 'U14'],
+          color: '#ef4444',
+          minRoster: 8,
+          maxRoster: 12,
+        },
+      };
+
+      const ALL_CATEGORIES = [
+        'U7',
+        'U8',
+        'U9',
+        'U10',
+        'U11',
+        'U12',
+        'U13',
+        'U14',
+        'U15',
+        'U16',
+        'U17',
+        'U18',
+        'U20',
+        'U21',
+        'S',
+      ];
+
+      // --- DONNÉES DE DÉMO ---
+      const PRELOADED_DATA = [
+        {
+          nom: 'ADEGOKE',
+          prenom: 'Wendy',
+          dateNaissance: '2011-10-09',
+          categorie: 'U15',
+          licence: 'BC117311',
+          taille: 170,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'AOUTA',
+          prenom: 'Ayline',
+          dateNaissance: '2016-07-11',
+          categorie: 'U10',
+          licence: 'BC168606',
+          taille: 135,
+          typeLicence: '2C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'APRILE',
+          prenom: 'Gisele',
+          dateNaissance: '1963-05-29',
+          categorie: 'S',
+          licence: 'VT630014',
+          taille: 163,
+          typeLicence: '0',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'ARTAUX',
+          prenom: 'Julie',
+          dateNaissance: '1988-08-27',
+          categorie: 'S',
+          licence: 'JH882435',
+          taille: 162,
+          typeLicence: '0',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'BARUFFALDI',
+          prenom: 'Eva',
+          dateNaissance: '2016-03-30',
+          categorie: 'U10',
+          licence: 'BC168772',
+          taille: 125,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'BEN SASSI',
+          prenom: 'Hanna',
+          dateNaissance: '2015-06-04',
+          categorie: 'U11',
+          licence: 'BC156692',
+          taille: 150,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'BENLAREDJ',
+          prenom: 'Nesrine',
+          dateNaissance: '2010-06-04',
+          categorie: 'U16',
+          licence: 'BC105719',
+          taille: 168,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'BOTTAGISI',
+          prenom: 'Tiana',
+          dateNaissance: '2015-06-06',
+          categorie: 'U11',
+          licence: 'BC151482',
+          taille: 145,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'BOURE',
+          prenom: 'Myla',
+          dateNaissance: '2017-03-01',
+          categorie: 'U9',
+          licence: 'BC175007',
+          taille: 127,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'BOURÉ',
+          prenom: 'Louna',
+          dateNaissance: '2013-07-08',
+          categorie: 'U13',
+          licence: 'BC134357',
+          taille: 158,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'BRANDAO',
+          prenom: 'Isabelle',
+          dateNaissance: '1979-08-07',
+          categorie: 'S',
+          licence: 'VT798595',
+          taille: 163,
+          typeLicence: '0',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'BRANDAO',
+          prenom: 'Jade',
+          dateNaissance: '2014-07-16',
+          categorie: 'U12',
+          licence: 'BC142542',
+          taille: 150,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'BRENIERE',
+          prenom: 'Mila',
+          dateNaissance: '2016-06-29',
+          categorie: 'U10',
+          licence: 'BC163692',
+          taille: 135,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'BRIMSHAM',
+          prenom: 'Siësa',
+          dateNaissance: '2010-01-07',
+          categorie: 'U16',
+          licence: 'BC104325',
+          taille: 170,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'CARRINHO',
+          prenom: 'Louise',
+          dateNaissance: '2018-02-20',
+          categorie: 'U8',
+          licence: 'BC186686',
+          taille: 127,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'CARTEL',
+          prenom: 'Annick',
+          dateNaissance: '1953-05-26',
+          categorie: 'S',
+          licence: 'VT530084',
+          taille: 170,
+          typeLicence: '0',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'CHAILI',
+          prenom: 'Nessayem',
+          dateNaissance: '2015-07-02',
+          categorie: 'U11',
+          licence: 'BC150337',
+          taille: 145,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'CHARLIER',
+          prenom: 'Clara',
+          dateNaissance: '2012-07-26',
+          categorie: 'U14',
+          licence: 'BC125384',
+          taille: 155,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'COINTRE',
+          prenom: 'Keyssie',
+          dateNaissance: '2012-07-03',
+          categorie: 'U14',
+          licence: 'BC127864',
+          taille: 154,
+          typeLicence: '2C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'COMARLOT',
+          prenom: 'Inès',
+          dateNaissance: '2012-06-02',
+          categorie: 'U14',
+          licence: 'BC122966',
+          taille: 165,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'DA SILVA GOMES',
+          prenom: 'Bela',
+          dateNaissance: '2014-08-29',
+          categorie: 'U12',
+          licence: 'BC149313',
+          taille: 150,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'DALIGAULT',
+          prenom: 'Oriel',
+          dateNaissance: '2016-08-20',
+          categorie: 'U10',
+          licence: 'BC161897',
+          taille: 134,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'DE JESUS MANCO',
+          prenom: 'Liana',
+          dateNaissance: '2016-03-09',
+          categorie: 'U10',
+          licence: 'BC163233',
+          taille: 142,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'DECARREAUX',
+          prenom: 'Ambre',
+          dateNaissance: '2013-02-11',
+          categorie: 'U13',
+          licence: 'BC136499',
+          taille: 170,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'DIAKITE',
+          prenom: 'Maïmouna',
+          dateNaissance: '2019-11-14',
+          categorie: 'U7',
+          licence: 'BC196052',
+          taille: null,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'DIONGUE',
+          prenom: 'Marieme',
+          dateNaissance: '2017-01-31',
+          categorie: 'U9',
+          licence: 'BC179083',
+          taille: 135,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'ELISABETH-DORVILMA',
+          prenom: 'Mélissa',
+          dateNaissance: '2010-05-03',
+          categorie: 'U16',
+          licence: 'BC101986',
+          taille: 170,
+          typeLicence: '2C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'ELISABETH-DORVILMA',
+          prenom: 'Maélie',
+          dateNaissance: '2012-03-04',
+          categorie: 'U14',
+          licence: 'BC127017',
+          taille: 168,
+          typeLicence: '2C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'FENOT',
+          prenom: 'Léna',
+          dateNaissance: '2014-06-22',
+          categorie: 'U12',
+          licence: 'BC147219',
+          taille: 148,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'GAMBI',
+          prenom: 'Maholy',
+          dateNaissance: '2015-09-07',
+          categorie: 'U11',
+          licence: 'BC151815',
+          taille: 170,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'GILLET',
+          prenom: 'Fanny',
+          dateNaissance: '1984-06-08',
+          categorie: 'S',
+          licence: 'JH841367',
+          taille: 162,
+          typeLicence: '0',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'GLELE',
+          prenom: 'Eunice',
+          dateNaissance: '2011-07-07',
+          categorie: 'U15',
+          licence: 'BC118298',
+          taille: 158,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'GODART',
+          prenom: 'Opaline',
+          dateNaissance: '2016-07-13',
+          categorie: 'U10',
+          licence: 'BC167365',
+          taille: 139,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'HAUTION',
+          prenom: 'Mélinda',
+          dateNaissance: '1985-06-07',
+          categorie: 'S',
+          licence: 'JH853333',
+          taille: 162,
+          typeLicence: '0',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'HAUTION',
+          prenom: 'Clara',
+          dateNaissance: '2013-01-07',
+          categorie: 'U13',
+          licence: 'BC138931',
+          taille: 157,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'HIBOUR',
+          prenom: 'Jannah',
+          dateNaissance: '2016-11-04',
+          categorie: 'U10',
+          licence: 'BC165173',
+          taille: null,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'HISTE',
+          prenom: 'Lola',
+          dateNaissance: '2014-07-27',
+          categorie: 'U12',
+          licence: 'BC147876',
+          taille: 142,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'HMIDDOUCH',
+          prenom: 'Safa',
+          dateNaissance: '2013-04-08',
+          categorie: 'U13',
+          licence: 'BC137399',
+          taille: 158,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'IBRAIMA',
+          prenom: 'Meïsha',
+          dateNaissance: '2014-02-22',
+          categorie: 'U12',
+          licence: 'BC148887',
+          taille: 162,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'JONA',
+          prenom: 'Beraisha',
+          dateNaissance: '2011-06-28',
+          categorie: 'U15',
+          licence: 'BC119711',
+          taille: 168,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'JOURDAIN',
+          prenom: 'Calie',
+          dateNaissance: '2014-02-26',
+          categorie: 'U12',
+          licence: 'BC141048',
+          taille: 140,
+          typeLicence: '2C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'KANDJI',
+          prenom: 'Sokhna',
+          dateNaissance: '2016-01-30',
+          categorie: 'U10',
+          licence: 'BC165898',
+          taille: 157,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'KEZADRI',
+          prenom: 'Iliana',
+          dateNaissance: '2014-01-30',
+          categorie: 'U12',
+          licence: 'BC148563',
+          taille: 159,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'KEZADRI',
+          prenom: 'Shéryne',
+          dateNaissance: '2014-01-30',
+          categorie: 'U12',
+          licence: 'BC140493',
+          taille: 158,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'KLEIN',
+          prenom: 'Julia',
+          dateNaissance: '2019-07-11',
+          categorie: 'U7',
+          licence: 'BC191266',
+          taille: 120,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'LABOIS',
+          prenom: 'Orlana',
+          dateNaissance: '2013-02-06',
+          categorie: 'U13',
+          licence: 'BC135622',
+          taille: 163,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'LAPLACE',
+          prenom: 'Pascale',
+          dateNaissance: '1975-04-26',
+          categorie: 'S',
+          licence: 'JH752169',
+          taille: 158,
+          typeLicence: '0',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'LAUER',
+          prenom: 'Julie',
+          dateNaissance: '1985-04-29',
+          categorie: 'S',
+          licence: 'JH852086',
+          taille: 178,
+          typeLicence: '0',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'LAURENT',
+          prenom: 'Manon',
+          dateNaissance: '2011-10-12',
+          categorie: 'U15',
+          licence: 'BC115173',
+          taille: 167,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'LEBLANC',
+          prenom: 'Danie',
+          dateNaissance: '2017-08-15',
+          categorie: 'U9',
+          licence: 'BC176387',
+          taille: 136,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'LEVISSE',
+          prenom: 'Elodie',
+          dateNaissance: '1989-02-01',
+          categorie: 'S',
+          licence: 'VT895676',
+          taille: 169,
+          typeLicence: '0',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'LOBJOIS',
+          prenom: 'Emilie',
+          dateNaissance: '1980-06-25',
+          categorie: 'S',
+          licence: 'JH800960',
+          taille: 172,
+          typeLicence: '0',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'LOCQUARD',
+          prenom: 'Oceanne',
+          dateNaissance: '2006-10-03',
+          categorie: 'U20',
+          licence: 'VT069466',
+          taille: 158,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'LOCQUARD',
+          prenom: 'Nathalie',
+          dateNaissance: '1976-10-03',
+          categorie: 'S',
+          licence: 'JH761025',
+          taille: 165,
+          typeLicence: '0',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'LORENT',
+          prenom: 'Honorine',
+          dateNaissance: '2012-04-18',
+          categorie: 'U14',
+          licence: 'BC128697',
+          taille: 157,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'LOUFOUA',
+          prenom: 'Lina',
+          dateNaissance: '2012-05-14',
+          categorie: 'U14',
+          licence: 'BC125012',
+          taille: 156,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'MACQUART',
+          prenom: 'Ambre',
+          dateNaissance: '2016-05-14',
+          categorie: 'U10',
+          licence: 'BC160011',
+          taille: 138,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'MALTHET',
+          prenom: 'Lalie',
+          dateNaissance: '2009-02-23',
+          categorie: 'U17',
+          licence: 'BC092486',
+          taille: 175,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'MARECHAL',
+          prenom: 'Victorine',
+          dateNaissance: '2012-05-02',
+          categorie: 'U14',
+          licence: 'BC124637',
+          taille: 150,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'MATHIOTTE',
+          prenom: 'Céline',
+          dateNaissance: '1978-12-30',
+          categorie: 'S',
+          licence: 'JH786815',
+          taille: 168,
+          typeLicence: '0',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'MATHIOTTE',
+          prenom: 'Paula',
+          dateNaissance: '2002-09-19',
+          categorie: 'S',
+          licence: 'JH027925',
+          taille: 164,
+          typeLicence: '0',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'MATHIOTTE',
+          prenom: 'Elsa',
+          dateNaissance: '2013-10-21',
+          categorie: 'U13',
+          licence: 'BC138557',
+          taille: 152,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: "M'BONGO",
+          prenom: 'Shyna',
+          dateNaissance: '2010-09-13',
+          categorie: 'U16',
+          licence: 'BC109585',
+          taille: 183,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'MERCIER',
+          prenom: 'Lydie',
+          dateNaissance: '1957-05-27',
+          categorie: 'S',
+          licence: 'VT570052',
+          taille: 170,
+          typeLicence: '0',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'MESSANGAN',
+          prenom: 'Éliana',
+          dateNaissance: '2018-02-04',
+          categorie: 'U8',
+          licence: 'BC184033',
+          taille: null,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'MICHELIN',
+          prenom: 'Sofia',
+          dateNaissance: '2014-07-04',
+          categorie: 'U12',
+          licence: 'BC148114',
+          taille: 148,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'MILI',
+          prenom: 'Emna',
+          dateNaissance: '2013-07-31',
+          categorie: 'U13',
+          licence: 'BC133719',
+          taille: 149,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'MOUY',
+          prenom: 'Lyna',
+          dateNaissance: '2015-02-14',
+          categorie: 'U11',
+          licence: 'BC152344',
+          taille: 141,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'NEBIE',
+          prenom: 'Islem',
+          dateNaissance: '2014-10-07',
+          categorie: 'U12',
+          licence: 'BC149624',
+          taille: 142,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'NEBIE',
+          prenom: 'Chédine',
+          dateNaissance: '2018-10-26',
+          categorie: 'U8',
+          licence: 'BC189183',
+          taille: null,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'NOEL',
+          prenom: 'Meledy',
+          dateNaissance: '2012-05-08',
+          categorie: 'U14',
+          licence: 'BC120660',
+          taille: 155,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'NOMEL',
+          prenom: 'Meley',
+          dateNaissance: '2009-04-10',
+          categorie: 'U17',
+          licence: 'BC096128',
+          taille: 160,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'NOMEL',
+          prenom: 'Hermesseye',
+          dateNaissance: '2013-07-24',
+          categorie: 'U13',
+          licence: 'BC136056',
+          taille: 152,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'OLIVIER',
+          prenom: 'Mélody',
+          dateNaissance: '2011-12-08',
+          categorie: 'U15',
+          licence: 'BC117389',
+          taille: 163,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'PELLOUX',
+          prenom: 'Jeanne',
+          dateNaissance: '2013-05-22',
+          categorie: 'U13',
+          licence: 'BC138450',
+          taille: 145,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'PERRIN',
+          prenom: 'Céline',
+          dateNaissance: '1974-04-06',
+          categorie: 'S',
+          licence: 'VT743082',
+          taille: 166,
+          typeLicence: '0',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'PINTO',
+          prenom: 'Inès',
+          dateNaissance: '2014-12-06',
+          categorie: 'U12',
+          licence: 'BC147492',
+          taille: 140,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'POTIER RICART',
+          prenom: 'Lilou',
+          dateNaissance: '2015-01-08',
+          categorie: 'U11',
+          licence: 'BC155054',
+          taille: 147,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'SCHAEFFER',
+          prenom: 'Andréa',
+          dateNaissance: '2012-02-06',
+          categorie: 'U14',
+          licence: 'BC125193',
+          taille: 157,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'SECK',
+          prenom: 'Maïmouna',
+          dateNaissance: '2016-06-18',
+          categorie: 'U10',
+          licence: 'BC169205',
+          taille: 155,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'SECK',
+          prenom: 'Astou',
+          dateNaissance: '2013-07-17',
+          categorie: 'U13',
+          licence: 'BC139071',
+          taille: 165,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'SECK',
+          prenom: 'Bousso',
+          dateNaissance: '2015-05-16',
+          categorie: 'U11',
+          licence: 'BC157362',
+          taille: 140,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'SEDDIK',
+          prenom: 'Maysâne',
+          dateNaissance: '2015-12-03',
+          categorie: 'U11',
+          licence: 'BC153252',
+          taille: 145,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'SERBIN',
+          prenom: 'Sarafina',
+          dateNaissance: '2014-09-08',
+          categorie: 'U12',
+          licence: 'BC145266',
+          taille: 157,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'SULMONA',
+          prenom: 'Lydie',
+          dateNaissance: '1981-12-22',
+          categorie: 'S',
+          licence: 'JH813711',
+          taille: 174,
+          typeLicence: '0',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'THOREZ',
+          prenom: 'Delenn',
+          dateNaissance: '2017-01-26',
+          categorie: 'U9',
+          licence: 'BC174804',
+          taille: 143,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'TINSEKH',
+          prenom: 'Jannat',
+          dateNaissance: '2011-10-13',
+          categorie: 'U15',
+          licence: 'BC117136',
+          taille: 158,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'TISON',
+          prenom: 'Lola',
+          dateNaissance: '2010-05-22',
+          categorie: 'U16',
+          licence: 'BC107468',
+          taille: 164,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'WAKORO',
+          prenom: 'Célestine',
+          dateNaissance: '2012-03-28',
+          categorie: 'U14',
+          licence: 'BC121388',
+          taille: 172,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'YILDIZ',
+          prenom: 'Hazal',
+          dateNaissance: '2012-03-04',
+          categorie: 'U14',
+          licence: 'BC124738',
+          taille: 160,
+          typeLicence: '0C',
+          club: 'ESPE BASKET CHALONS EN CHAMPAGNE',
+          sexe: 'F',
+          source: 'ESPE',
+        },
+        {
+          nom: 'ANTEGNARD',
+          prenom: 'Maelys',
+          dateNaissance: '2014-03-21',
+          categorie: 'U12',
+          licence: 'BC141237',
+          taille: 165,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'APPERT-RAULIN',
+          prenom: 'Barbara',
+          dateNaissance: '1971-03-05',
+          categorie: 'S',
+          licence: 'VT715845',
+          taille: 164,
+          typeLicence: '0',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'CAMARA',
+          prenom: 'Clio',
+          dateNaissance: '1984-05-02',
+          categorie: 'S',
+          licence: 'VT840313',
+          taille: 173,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'CARLIER',
+          prenom: 'Lydie',
+          dateNaissance: '1973-01-23',
+          categorie: 'S',
+          licence: 'VT733404',
+          taille: 151,
+          typeLicence: '0',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'CARLIER',
+          prenom: 'Berenice',
+          dateNaissance: '1998-07-19',
+          categorie: 'S',
+          licence: 'VT980121',
+          taille: 165,
+          typeLicence: '0',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'CELINI',
+          prenom: 'Julie',
+          dateNaissance: '2000-01-30',
+          categorie: 'S',
+          licence: 'JH001864',
+          taille: 170,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'CHANGENOT',
+          prenom: 'Clara',
+          dateNaissance: '2015-01-25',
+          categorie: 'U11',
+          licence: 'BC154136',
+          taille: 140,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'COLSON',
+          prenom: 'Zélie',
+          dateNaissance: '2008-09-05',
+          categorie: 'U18',
+          licence: 'BC082046',
+          taille: 160,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'CORRE',
+          prenom: 'Clemence',
+          dateNaissance: '2010-08-02',
+          categorie: 'U16',
+          licence: 'BC101614',
+          taille: 165,
+          typeLicence: '2C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'COUVERT',
+          prenom: 'Elise',
+          dateNaissance: '2016-11-21',
+          categorie: 'U10',
+          licence: 'BC162047',
+          taille: 132,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'DAVERDON',
+          prenom: 'Lilou',
+          dateNaissance: '2017-11-06',
+          categorie: 'U9',
+          licence: 'BC173596',
+          taille: 131,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'DE BELLU',
+          prenom: 'Jessica',
+          dateNaissance: '1984-11-21',
+          categorie: 'S',
+          licence: 'JH842440',
+          taille: 160,
+          typeLicence: '0',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'DEBES',
+          prenom: 'Candice',
+          dateNaissance: '2014-09-08',
+          categorie: 'U12',
+          licence: 'BC144842',
+          taille: 150,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'DENIS',
+          prenom: 'Siobane',
+          dateNaissance: '2015-06-11',
+          categorie: 'U11',
+          licence: 'BC152746',
+          taille: 141,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'DESCHAMPS',
+          prenom: 'Camille',
+          dateNaissance: '2008-05-29',
+          categorie: 'U18',
+          licence: 'BC083968',
+          taille: 173,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'ELISABETH D ABADIE DE LURBE',
+          prenom: 'Catharina',
+          dateNaissance: '1983-06-03',
+          categorie: 'S',
+          licence: 'VT830549',
+          taille: 183,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'FRANCART',
+          prenom: 'Severine',
+          dateNaissance: '1975-11-26',
+          categorie: 'S',
+          licence: 'VT750621',
+          taille: 165,
+          typeLicence: '0',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'FRANQUET',
+          prenom: 'Selena',
+          dateNaissance: '2013-05-05',
+          categorie: 'U13',
+          licence: 'BC130621',
+          taille: 157,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'FRANQUET',
+          prenom: 'Amandine',
+          dateNaissance: '1987-10-01',
+          categorie: 'S',
+          licence: 'JH870786',
+          taille: 167,
+          typeLicence: '0',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'Gaute',
+          prenom: 'Luna',
+          dateNaissance: '2017-01-19',
+          categorie: 'U9',
+          licence: 'BC174989',
+          taille: 135,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'GILQUIN',
+          prenom: 'Océane',
+          dateNaissance: '1991-07-26',
+          categorie: 'S',
+          licence: 'VT912044',
+          taille: 155,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'GOLOVKINE',
+          prenom: 'Elodie',
+          dateNaissance: '1977-03-25',
+          categorie: 'S',
+          licence: 'VT770396',
+          taille: 170,
+          typeLicence: '0',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'GRAMMONT',
+          prenom: 'Enora',
+          dateNaissance: '2008-07-25',
+          categorie: 'U18',
+          licence: 'BC088598',
+          taille: 166,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'GRAMMONT',
+          prenom: 'Severine',
+          dateNaissance: '1971-01-14',
+          categorie: 'S',
+          licence: 'VT713324',
+          taille: 169,
+          typeLicence: '0',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'GUILLAUME',
+          prenom: 'Aude',
+          dateNaissance: '1980-01-03',
+          categorie: 'S',
+          licence: 'JH806494',
+          taille: 162,
+          typeLicence: '0',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'HAMMAR',
+          prenom: 'Yamina',
+          dateNaissance: '1973-03-21',
+          categorie: 'S',
+          licence: 'VT733403',
+          taille: 168,
+          typeLicence: '2',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'HAUMONT',
+          prenom: 'Louise',
+          dateNaissance: '2016-09-20',
+          categorie: 'U10',
+          licence: 'BC168020',
+          taille: 124,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'HAUMONT',
+          prenom: 'Flavie',
+          dateNaissance: '1994-06-05',
+          categorie: 'S',
+          licence: 'VT940154',
+          taille: 158,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'JESSON',
+          prenom: 'Emmie',
+          dateNaissance: '2008-11-27',
+          categorie: 'U18',
+          licence: 'BC087802',
+          taille: 165,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'Kobzili',
+          prenom: 'Lynda',
+          dateNaissance: '1990-10-30',
+          categorie: 'S',
+          licence: 'JH904195',
+          taille: 175,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'KRUSZINSKI',
+          prenom: 'Sarah',
+          dateNaissance: '1983-10-04',
+          categorie: 'S',
+          licence: 'JH837744',
+          taille: 160,
+          typeLicence: '0',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'LE VERCHE',
+          prenom: 'Agathe',
+          dateNaissance: '2019-10-10',
+          categorie: 'U7',
+          licence: 'BC197807',
+          taille: null,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'LEGAT',
+          prenom: 'Lou',
+          dateNaissance: '2005-03-02',
+          categorie: 'U21',
+          licence: 'VT050186',
+          taille: 183,
+          typeLicence: '1C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'LEVISSE',
+          prenom: 'Louise',
+          dateNaissance: '2015-02-25',
+          categorie: 'U11',
+          licence: 'BC152101',
+          taille: 150,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'LUDE',
+          prenom: 'Cassandre',
+          dateNaissance: '1997-06-09',
+          categorie: 'S',
+          licence: 'VT972765',
+          taille: 170,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'MACHET',
+          prenom: 'Méloée',
+          dateNaissance: '2014-07-20',
+          categorie: 'U12',
+          licence: 'BC144900',
+          taille: 145,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'MARCHAL',
+          prenom: 'Eva',
+          dateNaissance: '2012-08-09',
+          categorie: 'U14',
+          licence: 'BC126266',
+          taille: 153,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'MATON',
+          prenom: 'Ludivine',
+          dateNaissance: '1994-10-19',
+          categorie: 'S',
+          licence: 'VT940513',
+          taille: 175,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'MILLOT',
+          prenom: 'Emma',
+          dateNaissance: '2009-10-30',
+          categorie: 'U17',
+          licence: 'BC098692',
+          taille: 163,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'MURZYN',
+          prenom: 'Maellys',
+          dateNaissance: '2009-07-02',
+          categorie: 'U17',
+          licence: 'BC097159',
+          taille: 170,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'PAGEOT',
+          prenom: 'Sacha',
+          dateNaissance: '2017-06-20',
+          categorie: 'U9',
+          licence: 'BC173491',
+          taille: 135,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'PHILIPPE',
+          prenom: 'Anna',
+          dateNaissance: '2018-02-06',
+          categorie: 'U8',
+          licence: 'BC180593',
+          taille: 130,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'PIERROT DI MASCIO',
+          prenom: 'Arianna',
+          dateNaissance: '1981-02-15',
+          categorie: 'S',
+          licence: 'JH815105',
+          taille: 167,
+          typeLicence: '0',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'PUIS',
+          prenom: 'Alyssa',
+          dateNaissance: '2013-05-16',
+          categorie: 'U13',
+          licence: 'BC135630',
+          taille: 153,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'STEVENS',
+          prenom: 'Victoire',
+          dateNaissance: '2017-02-06',
+          categorie: 'U9',
+          licence: 'BC174454',
+          taille: 130,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'SY SAVANE',
+          prenom: 'Noheylia',
+          dateNaissance: '2011-06-09',
+          categorie: 'U15',
+          licence: 'BC115759',
+          taille: 165,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'THERON',
+          prenom: 'Léa',
+          dateNaissance: '2018-08-09',
+          categorie: 'U8',
+          licence: 'BC187862',
+          taille: 117,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'TICHAND',
+          prenom: 'Eva',
+          dateNaissance: '2015-10-19',
+          categorie: 'U11',
+          licence: 'BC156008',
+          taille: 149,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'Vincent',
+          prenom: 'Soline',
+          dateNaissance: '2013-02-26',
+          categorie: 'U13',
+          licence: 'BC131593',
+          taille: 165,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'VINCENT',
+          prenom: 'Adeline',
+          dateNaissance: '1978-11-27',
+          categorie: 'S',
+          licence: 'JH783104',
+          taille: 166,
+          typeLicence: '0',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+        {
+          nom: 'WALSHOFER',
+          prenom: 'Anna',
+          dateNaissance: '2015-04-24',
+          categorie: 'U11',
+          licence: 'BC155816',
+          taille: 145,
+          typeLicence: '0C',
+          club: 'EVEIL RECY SAINT MARTIN BASKET',
+          sexe: 'F',
+          source: 'ERSM',
+        },
+      ];
+
+      function App() {
+        // ÉTATS GLOBAUX
+        const [players, setPlayers] = useState(PRELOADED_DATA);
+        const [activeTab, setActiveTab] = useState('liste');
+        const [showAddForm, setShowAddForm] = useState(false);
+        const [allowSurclassement, setAllowSurclassement] = useState(false);
+
+        // ÉTATS DE COMPOSITION D'ÉQUIPE
+        const [selectedTeam, setSelectedTeam] = useState('U11');
+        const [selectedSubTeam, setSelectedSubTeam] = useState('Équipe 1');
+        const [teamRosters, setTeamRosters] = useState({
+          U11: { 'Équipe 1': [] },
+          U13: { 'Équipe 1': [] },
+          U14: { 'Équipe 1': [] },
+          U18: { 'Équipe 1': [] },
+        });
+
+        // ÉTAT DU FORMULAIRE MANUEL
+        const [newP, setNewP] = useState({
+          nom: '',
+          prenom: '',
+          dateNaissance: '',
+          categorie: 'U11',
+          taille: '',
+        });
+        const [searchQuery, setSearchQuery] = useState('');
+
+        // --- LOGIQUE DE FILTRAGE ET REGROUPEMENT ---
+        const filteredPlayers = useMemo(() => {
+          return players
+            .filter((p) => `${p.nom} ${p.prenom}`.toLowerCase().includes(searchQuery.toLowerCase()))
+            .sort((a, b) => a.nom.localeCompare(b.nom));
+        }, [players, searchQuery]);
+
+        // Pour l'export PDF par catégorie
+        const playersByCategory = useMemo(() => {
+          const grouped = {};
+          ALL_CATEGORIES.forEach((c) => (grouped[c] = []));
+          players.forEach((p) => {
+            if (grouped[p.categorie]) {
+              grouped[p.categorie].push(p);
+            } else {
+              grouped[p.categorie] = [p];
+            }
+          });
+          return grouped;
+        }, [players]);
+
+        // --- LOGIQUE D'ÉLIGIBILITÉ ET DE ROSTER ---
+        const currentCatRosters = teamRosters[selectedTeam] || {};
+        const allRosteredInCurrentCat = Object.values(currentCatRosters).flat();
+
+        const eligiblePlayers = useMemo(() => {
+          const config = TEAM_CONFIGS[selectedTeam];
+          let allowed = [...config.baseCategories];
+          if (allowSurclassement) allowed = [...allowed, ...config.surclassementFrom];
+
+          return players
+            .filter((p) => allowed.includes(p.categorie))
+            .filter((p) => !allRosteredInCurrentCat.includes(p.licence))
+            .sort((a, b) => a.nom.localeCompare(b.nom));
+        }, [players, selectedTeam, allowSurclassement, allRosteredInCurrentCat]);
+
+        const rosterPlayers = (currentCatRosters[selectedSubTeam] || [])
+          .map((lic) => players.find((p) => p.licence === lic))
+          .filter(Boolean);
+
+        // --- FONCTIONS ACTIONS ---
+        const handleNextSeason = () => {
+          if (
+            !window.confirm(
+              "Attention, cela va augmenter la catégorie de toutes les joueuses d'un an (ex: U11 devient U12). Les compositions d'équipes seront réinitialisées. Continuer ?"
+            )
+          )
+            return;
+
+          setPlayers((prev) =>
+            prev.map((p) => {
+              if (p.categorie === 'S') return p;
+              const match = p.categorie.match(/^U(\d+)$/);
+              if (match) {
+                const nextAge = parseInt(match[1], 10) + 1;
+                return { ...p, categorie: nextAge >= 21 ? 'S' : `U${nextAge}` };
+              }
+              return p;
+            })
+          );
+
+          setTeamRosters({
+            U11: { 'Équipe 1': [] },
+            U13: { 'Équipe 1': [] },
+            U14: { 'Équipe 1': [] },
+            U18: { 'Équipe 1': [] },
+          });
+        };
+
+        const handleAddManual = (e) => {
+          e.preventDefault();
+          const id = 'MAN-' + Date.now();
+          setPlayers([
+            ...players,
+            {
+              nom: newP.nom.toUpperCase(),
+              prenom: newP.prenom,
+              dateNaissance: newP.dateNaissance,
+              categorie: newP.categorie,
+              licence: id,
+              source: 'Ajout Manuel',
+              taille: newP.taille ? parseInt(newP.taille) : null,
+            },
+          ]);
+          setShowAddForm(false);
+          setNewP({ nom: '', prenom: '', dateNaissance: '', categorie: 'U11', taille: '' });
+        };
+
+        const handleImport = async (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+          try {
+            const data = await file.arrayBuffer();
+            const wb = XLSX.read(data, { type: 'array', cellDates: true });
+            const sheet = wb.Sheets[wb.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(sheet);
+
+            const imported = rows
+              .map((r, i) => ({
+                nom: (r.Nom || r.nom || '').toUpperCase(),
+                prenom: r.Prénom || r.Prenom || r.prenom || '',
+                dateNaissance: r['Date Naissance'] || r.dateNaissance || '',
+                categorie: r.Catégorie || r.Categorie || r.categorie || 'S',
+                licence: r.Licence || r['N°Licence'] || r.licence || 'IMP-' + Date.now() + '-' + i,
+                taille: r.Taille || r.taille || null,
+                source: 'Import Excel',
+              }))
+              .filter((p) => p.nom !== '');
+
+            setPlayers((prev) => {
+              const existing = new Set(prev.map((p) => p.licence));
+              const novelties = imported.filter((p) => !existing.has(p.licence));
+              return [...prev, ...novelties];
+            });
+            alert(`${imported.length} joueuses importées avec succès !`);
+          } catch (error) {
+            alert('Erreur lors de la lecture du fichier Excel. Vérifiez le format.');
+          }
+          e.target.value = null;
+        };
+
+        const addSubTeam = () => {
+          setTeamRosters((prev) => {
+            const catTeams = prev[selectedTeam] || {};
+            const newIndex = Object.keys(catTeams).length + 1;
+            const newName = `Équipe ${newIndex}`;
+            return { ...prev, [selectedTeam]: { ...catTeams, [newName]: [] } };
+          });
+          setSelectedSubTeam(`Équipe ${Object.keys(teamRosters[selectedTeam] || {}).length + 1}`);
+        };
+
+        const addToRoster = (lic) => {
+          const config = TEAM_CONFIGS[selectedTeam];
+          if (rosterPlayers.length >= config.maxRoster) return alert('Effectif maximum atteint !');
+
+          setTeamRosters((prev) => ({
+            ...prev,
+            [selectedTeam]: {
+              ...prev[selectedTeam],
+              [selectedSubTeam]: [...(prev[selectedTeam][selectedSubTeam] || []), lic],
+            },
+          }));
+        };
+
+        const removeFromRoster = (lic) => {
+          setTeamRosters((prev) => ({
+            ...prev,
+            [selectedTeam]: {
+              ...prev[selectedTeam],
+              [selectedSubTeam]: prev[selectedTeam][selectedSubTeam].filter((l) => l !== lic),
+            },
+          }));
+        };
+
+        return (
+          <div style={{ paddingBottom: '50px' }}>
+            {/* === HEADER === */}
+            <div
+              className="no-print"
+              style={{ background: '#111827', padding: '20px', borderBottom: '1px solid #1e293b' }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  maxWidth: '1200px',
+                  margin: '0 auto',
+                  flexWrap: 'wrap',
+                  gap: '15px',
+                }}
+              >
+                <div>
+                  <h1 style={{ margin: 0, fontSize: '22px' }}>🏀 Gestionnaire FFBB</h1>
+                  <p style={{ margin: 0, color: '#64748b', fontSize: '13px' }}>Saison 2025-2026</p>
+                </div>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                  <button
+                    className="btn-secondary"
+                    onClick={handleNextSeason}
+                    style={{ borderColor: '#f59e0b', color: '#f59e0b' }}
+                  >
+                    ⏩ Saison Suivante
+                  </button>
+                  <input
+                    type="file"
+                    id="file"
+                    accept=".xlsx,.xls"
+                    onChange={handleImport}
+                    style={{ display: 'none' }}
+                  />
+                  <label
+                    htmlFor="file"
+                    className="btn-secondary"
+                    style={{ cursor: 'pointer', display: 'inline-block', textAlign: 'center' }}
+                  >
+                    📂 Excel
+                  </label>
+                  <button className="btn-primary" onClick={() => setShowAddForm(true)}>
+                    ➕ Ajouter
+                  </button>
+                </div>
+              </div>
+
+              {/* TABS */}
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '20px',
+                  marginTop: '20px',
+                  maxWidth: '1200px',
+                  margin: '20px auto 0',
+                }}
+              >
+                <button
+                  onClick={() => setActiveTab('liste')}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: activeTab === 'liste' ? '#f59e0b' : '#94a3b8',
+                    fontWeight: 700,
+                    paddingBottom: '8px',
+                    cursor: 'pointer',
+                    borderBottom:
+                      activeTab === 'liste' ? '2px solid #f59e0b' : '2px solid transparent',
+                  }}
+                >
+                  📋 Licenciées ({players.length})
+                </button>
+                <button
+                  onClick={() => setActiveTab('equipes')}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: activeTab === 'equipes' ? '#f59e0b' : '#94a3b8',
+                    fontWeight: 700,
+                    paddingBottom: '8px',
+                    cursor: 'pointer',
+                    borderBottom:
+                      activeTab === 'equipes' ? '2px solid #f59e0b' : '2px solid transparent',
+                  }}
+                >
+                  ⚙️ Composition
+                </button>
+                <button
+                  onClick={() => setActiveTab('overview')}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: activeTab === 'overview' ? '#f59e0b' : '#94a3b8',
+                    fontWeight: 700,
+                    paddingBottom: '8px',
+                    cursor: 'pointer',
+                    borderBottom:
+                      activeTab === 'overview' ? '2px solid #f59e0b' : '2px solid transparent',
+                  }}
+                >
+                  📊 Rapport d'équipes
+                </button>
+              </div>
+            </div>
+
+            <div style={{ maxWidth: '1200px', margin: '20px auto', padding: '0 20px' }}>
+              {/* === ONGLETS: LISTE === */}
+              {activeTab === 'liste' && (
+                <div>
+                  {/* Interface Écran (cachée à l'impression) */}
+                  <div className="no-print">
+                    <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+                      <input
+                        type="text"
+                        placeholder="Rechercher une joueuse..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        style={{
+                          flex: 1,
+                          padding: '12px',
+                          borderRadius: '10px',
+                          background: '#111827',
+                          border: '1px solid #1e293b',
+                          color: 'white',
+                          boxSizing: 'border-box',
+                        }}
+                      />
+                      <button className="btn-primary" onClick={() => window.print()}>
+                        🖨️ PDF par Catégorie
+                      </button>
+                    </div>
+
+                    <div
+                      style={{
+                        overflowX: 'auto',
+                        background: '#111827',
+                        borderRadius: '10px',
+                        border: '1px solid #1e293b',
+                      }}
+                    >
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr
+                            style={{
+                              textAlign: 'left',
+                              color: '#64748b',
+                              fontSize: '12px',
+                              borderBottom: '1px solid #1e293b',
+                            }}
+                          >
+                            <th style={{ padding: '15px' }}>NOM</th>
+                            <th style={{ padding: '15px' }}>PRÉNOM</th>
+                            <th>CATÉGORIE</th>
+                            <th>TAILLE</th>
+                            <th>LICENCE</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredPlayers.length === 0 ? (
+                            <tr>
+                              <td
+                                colSpan="5"
+                                style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}
+                              >
+                                Aucune joueuse trouvée.
+                              </td>
+                            </tr>
+                          ) : (
+                            filteredPlayers.map((p) => (
+                              <tr key={p.licence} style={{ borderBottom: '1px solid #1e293b' }}>
+                                <td style={{ padding: '12px 15px', fontWeight: 'bold' }}>
+                                  {p.nom}
+                                </td>
+                                <td style={{ padding: '12px 15px' }}>{p.prenom}</td>
+                                <td>
+                                  <span
+                                    style={{
+                                      padding: '4px 8px',
+                                      borderRadius: '5px',
+                                      background: '#1e293b',
+                                      fontSize: '11px',
+                                      fontWeight: 'bold',
+                                    }}
+                                  >
+                                    {p.categorie}
+                                  </span>
+                                </td>
+                                <td>{p.taille ? `${p.taille} cm` : '-'}</td>
+                                <td
+                                  style={{
+                                    color: '#64748b',
+                                    fontSize: '12px',
+                                    fontFamily: 'monospace',
+                                  }}
+                                >
+                                  {p.licence}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Interface PDF / Impression (cachée à l'écran) */}
+                  <div className="print-only">
+                    <h2
+                      style={{
+                        textAlign: 'center',
+                        marginBottom: '30px',
+                        borderBottom: '2px solid #000',
+                        paddingBottom: '10px',
+                      }}
+                    >
+                      Liste des Licenciées par Catégorie
+                    </h2>
+
+                    {ALL_CATEGORIES.map((cat) => {
+                      const catPlayers = playersByCategory[cat] || [];
+                      if (catPlayers.length === 0) return null;
+
+                      // Tri alphabétique pour le PDF
+                      catPlayers.sort((a, b) => a.nom.localeCompare(b.nom));
+
+                      return (
+                        <div
+                          key={cat}
+                          className="print-card"
+                          style={{ marginBottom: '30px', padding: '15px', borderRadius: '8px' }}
+                        >
+                          <h3 style={{ margin: '0 0 15px 0', fontSize: '20px' }}>
+                            {cat}{' '}
+                            <span style={{ fontSize: '14px', fontWeight: 'normal' }}>
+                              ({catPlayers.length} joueuses)
+                            </span>
+                          </h3>
+                          <table>
+                            <thead>
+                              <tr>
+                                <th style={{ width: '30%' }}>Nom</th>
+                                <th style={{ width: '25%' }}>Prénom</th>
+                                <th style={{ width: '15%' }}>Né(e) le</th>
+                                <th style={{ width: '10%' }}>Taille</th>
+                                <th style={{ width: '20%' }}>Licence</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {catPlayers.map((p) => (
+                                <tr key={p.licence}>
+                                  <td style={{ fontWeight: 'bold' }}>{p.nom}</td>
+                                  <td>{p.prenom}</td>
+                                  <td>
+                                    {p.dateNaissance
+                                      ? new Date(p.dateNaissance).toLocaleDateString('fr-FR')
+                                      : '-'}
+                                  </td>
+                                  <td>{p.taille ? `${p.taille} cm` : '-'}</td>
+                                  <td style={{ fontFamily: 'monospace' }}>{p.licence}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* === ONGLETS: COMPOSITION === */}
+              {activeTab === 'equipes' && (
+                <div className="no-print">
+                  <div
+                    style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}
+                  >
+                    {Object.entries(TEAM_CONFIGS).map(([id, cfg]) => (
+                      <button
+                        key={id}
+                        onClick={() => {
+                          setSelectedTeam(id);
+                          setSelectedSubTeam('Équipe 1');
+                          setAllowSurclassement(false);
+                        }}
+                        style={{
+                          flex: '1 1 150px',
+                          padding: '15px',
+                          borderRadius: '12px',
+                          border:
+                            selectedTeam === id ? `2px solid ${cfg.color}` : '1px solid #1e293b',
+                          background: selectedTeam === id ? `${cfg.color}15` : '#111827',
+                          color: selectedTeam === id ? cfg.color : 'white',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s',
+                        }}
+                      >
+                        <div style={{ fontWeight: 800, fontSize: '16px' }}>{cfg.label}</div>
+                        <div style={{ fontSize: '11px', opacity: 0.7, marginTop: '4px' }}>
+                          {cfg.desc}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div
+                    style={{
+                      background: '#111827',
+                      padding: '15px',
+                      borderRadius: '12px',
+                      marginBottom: '20px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: '15px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                      {Object.keys(teamRosters[selectedTeam] || {}).map((subTeam) => (
+                        <button
+                          key={subTeam}
+                          onClick={() => setSelectedSubTeam(subTeam)}
+                          style={{
+                            padding: '8px 16px',
+                            borderRadius: '20px',
+                            fontSize: '13px',
+                            fontWeight: 600,
+                            border: 'none',
+                            cursor: 'pointer',
+                            background:
+                              selectedSubTeam === subTeam
+                                ? TEAM_CONFIGS[selectedTeam].color
+                                : '#1e293b',
+                            color: selectedSubTeam === subTeam ? '#fff' : 'var(--text)',
+                          }}
+                        >
+                          {subTeam}
+                        </button>
+                      ))}
+                      <button
+                        onClick={addSubTeam}
+                        style={{
+                          padding: '8px 16px',
+                          borderRadius: '20px',
+                          fontSize: '13px',
+                          fontWeight: 600,
+                          border: '1px dashed #64748b',
+                          background: 'transparent',
+                          color: '#64748b',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        + Équipe
+                      </button>
+                    </div>
+
+                    <label
+                      style={{
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={allowSurclassement}
+                        onChange={(e) => setAllowSurclassement(e.target.checked)}
+                        style={{ width: '16px', height: '16px' }}
+                      />
+                      Autoriser le surclassement{' '}
+                      <span style={{ color: '#64748b', fontWeight: 'normal' }}>
+                        (
+                        {TEAM_CONFIGS[selectedTeam].surclassementFrom.join(', ') ||
+                          'aucun disponible'}
+                        )
+                      </span>
+                    </label>
+                  </div>
+
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+                      gap: '20px',
+                    }}
+                  >
+                    <div
+                      style={{
+                        background: '#111827',
+                        borderRadius: '12px',
+                        border: '1px solid #1e293b',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <div
+                        style={{
+                          padding: '15px',
+                          borderBottom: '1px solid #1e293b',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <strong style={{ fontSize: '14px' }}>Joueuses Disponibles</strong>
+                        <span
+                          style={{
+                            background: '#1e293b',
+                            padding: '2px 8px',
+                            borderRadius: '10px',
+                            fontSize: '12px',
+                            fontWeight: 'bold',
+                          }}
+                        >
+                          {eligiblePlayers.length}
+                        </span>
+                      </div>
+                      <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
+                        {eligiblePlayers.length === 0 ? (
+                          <div
+                            style={{
+                              padding: '20px',
+                              textAlign: 'center',
+                              color: '#64748b',
+                              fontSize: '13px',
+                            }}
+                          >
+                            Aucune joueuse disponible pour cette catégorie.
+                          </div>
+                        ) : (
+                          eligiblePlayers.map((p) => (
+                            <div
+                              key={p.licence}
+                              onClick={() => addToRoster(p.licence)}
+                              style={{
+                                padding: '12px 15px',
+                                borderBottom: '1px solid #0f172a',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                              }}
+                            >
+                              <div>
+                                <strong style={{ fontSize: '13px' }}>{p.nom}</strong>{' '}
+                                <span style={{ fontSize: '13px' }}>{p.prenom}</span>
+                                <div
+                                  style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}
+                                >
+                                  {p.categorie} {p.taille ? `• ${p.taille}cm` : ''}
+                                </div>
+                              </div>
+                              <span
+                                style={{
+                                  color: TEAM_CONFIGS[selectedTeam].color,
+                                  fontSize: '18px',
+                                  fontWeight: 700,
+                                  background: `${TEAM_CONFIGS[selectedTeam].color}22`,
+                                  width: '24px',
+                                  height: '24px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  borderRadius: '6px',
+                                }}
+                              >
+                                +
+                              </span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        background: '#111827',
+                        borderRadius: '12px',
+                        border: `1px solid ${TEAM_CONFIGS[selectedTeam].color}44`,
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <div
+                        style={{
+                          padding: '15px',
+                          borderBottom: '1px solid #1e293b',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <strong style={{ fontSize: '14px' }}>
+                          Effectif {selectedTeam} - {selectedSubTeam}
+                        </strong>
+                        <span
+                          style={{
+                            background:
+                              rosterPlayers.length >= TEAM_CONFIGS[selectedTeam].minRoster
+                                ? 'rgba(34,197,94,0.2)'
+                                : 'rgba(245,158,11,0.2)',
+                            color:
+                              rosterPlayers.length >= TEAM_CONFIGS[selectedTeam].minRoster
+                                ? '#22c55e'
+                                : '#f59e0b',
+                            padding: '2px 8px',
+                            borderRadius: '10px',
+                            fontSize: '12px',
+                            fontWeight: 'bold',
+                          }}
+                        >
+                          {rosterPlayers.length} / {TEAM_CONFIGS[selectedTeam].maxRoster}
+                        </span>
+                      </div>
+                      <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
+                        {rosterPlayers.length === 0 ? (
+                          <div
+                            style={{
+                              padding: '20px',
+                              textAlign: 'center',
+                              color: '#64748b',
+                              fontSize: '13px',
+                            }}
+                          >
+                            L'équipe est vide. Cliquez sur les joueuses pour les ajouter.
+                          </div>
+                        ) : (
+                          rosterPlayers.map((p, i) => (
+                            <div
+                              key={p.licence}
+                              style={{
+                                padding: '12px 15px',
+                                borderBottom: '1px solid #0f172a',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <span style={{ color: '#64748b', fontSize: '11px', width: '15px' }}>
+                                  {i + 1}.
+                                </span>
+                                <div>
+                                  <strong style={{ fontSize: '13px' }}>{p.nom}</strong>{' '}
+                                  <span style={{ fontSize: '13px' }}>{p.prenom}</span>
+                                  {TEAM_CONFIGS[selectedTeam].surclassementFrom.includes(
+                                    p.categorie
+                                  ) && (
+                                    <span
+                                      style={{
+                                        marginLeft: '8px',
+                                        background: '#f59e0b22',
+                                        color: '#f59e0b',
+                                        fontSize: '10px',
+                                        padding: '2px 6px',
+                                        borderRadius: '4px',
+                                        fontWeight: 'bold',
+                                      }}
+                                    >
+                                      Surclassée ({p.categorie})
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => removeFromRoster(p.licence)}
+                                style={{
+                                  background: 'rgba(239,68,68,0.1)',
+                                  border: 'none',
+                                  color: '#ef4444',
+                                  cursor: 'pointer',
+                                  width: '24px',
+                                  height: '24px',
+                                  borderRadius: '6px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontSize: '16px',
+                                }}
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* === ONGLETS: RAPPORT / PDF === */}
+              {activeTab === 'overview' && (
+                <div
+                  style={{ background: '#111827', padding: '30px', borderRadius: '15px' }}
+                  className="print-card"
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: '30px',
+                    }}
+                  >
+                    <h2 style={{ margin: 0 }}>Récapitulatif des compositions</h2>
+                    <button className="btn-primary no-print" onClick={() => window.print()}>
+                      🖨️ Exporter en PDF
+                    </button>
+                  </div>
+
+                  {Object.entries(teamRosters).map(([catId, subTeams]) => {
+                    const cfg = TEAM_CONFIGS[catId];
+                    return Object.entries(subTeams).map(([teamName, licences]) => {
+                      if (licences.length === 0) return null;
+                      const tPlayers = licences
+                        .map((l) => players.find((x) => x.licence === l))
+                        .filter(Boolean);
+
+                      return (
+                        <div
+                          key={`${catId}-${teamName}`}
+                          style={{
+                            marginBottom: '25px',
+                            padding: '20px',
+                            borderLeft: `5px solid ${cfg.color}`,
+                            background: '#1e293b',
+                            borderRadius: '0 10px 10px 0',
+                          }}
+                          className="print-card"
+                        >
+                          <div
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              borderBottom: '1px solid rgba(255,255,255,0.1)',
+                              paddingBottom: '10px',
+                              marginBottom: '15px',
+                            }}
+                          >
+                            <h3 style={{ margin: 0, color: cfg.color, fontSize: '18px' }}>
+                              {catId} - {teamName}
+                            </h3>
+                            <span style={{ fontSize: '13px', fontWeight: 'bold' }}>
+                              {tPlayers.length} joueuses
+                            </span>
+                          </div>
+
+                          <div
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                              gap: '10px',
+                              fontSize: '13px',
+                            }}
+                          >
+                            {tPlayers.map((p) => (
+                              <div
+                                key={p.licence}
+                                style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                              >
+                                <span
+                                  style={{
+                                    width: '6px',
+                                    height: '6px',
+                                    borderRadius: '50%',
+                                    background: cfg.color,
+                                    display: 'inline-block',
+                                  }}
+                                ></span>
+                                <strong>{p.nom}</strong> {p.prenom}
+                                <span style={{ color: '#94a3b8', fontSize: '11px' }}>
+                                  ({p.categorie})
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    });
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* === MODAL: AJOUT MANUEL === */}
+            {showAddForm && (
+              <div
+                className="no-print"
+                style={{
+                  position: 'fixed',
+                  inset: 0,
+                  background: 'rgba(0,0,0,0.8)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '20px',
+                  zIndex: 100,
+                }}
+              >
+                <form
+                  onSubmit={handleAddManual}
+                  style={{
+                    background: '#111827',
+                    padding: '30px',
+                    borderRadius: '20px',
+                    width: '100%',
+                    maxWidth: '500px',
+                    border: '1px solid #1e293b',
+                    boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)',
+                  }}
+                >
+                  <h2 style={{ marginTop: 0, marginBottom: '20px' }}>Nouvelle Licenciée</h2>
+
+                  <div style={{ display: 'grid', gap: '15px' }}>
+                    <input
+                      required
+                      placeholder="Nom de famille"
+                      value={newP.nom}
+                      onChange={(e) => setNewP({ ...newP, nom: e.target.value })}
+                      style={{
+                        padding: '12px 15px',
+                        borderRadius: '8px',
+                        background: '#0a0e17',
+                        border: '1px solid #1e293b',
+                        color: 'white',
+                      }}
+                    />
+                    <input
+                      required
+                      placeholder="Prénom"
+                      value={newP.prenom}
+                      onChange={(e) => setNewP({ ...newP, prenom: e.target.value })}
+                      style={{
+                        padding: '12px 15px',
+                        borderRadius: '8px',
+                        background: '#0a0e17',
+                        border: '1px solid #1e293b',
+                        color: 'white',
+                      }}
+                    />
+
+                    <div style={{ display: 'flex', gap: '15px' }}>
+                      <div style={{ flex: 1 }}>
+                        <label
+                          style={{
+                            display: 'block',
+                            fontSize: '12px',
+                            color: '#64748b',
+                            marginBottom: '5px',
+                          }}
+                        >
+                          Date de Naissance (Optionnel)
+                        </label>
+                        <input
+                          type="date"
+                          value={newP.dateNaissance}
+                          onChange={(e) => setNewP({ ...newP, dateNaissance: e.target.value })}
+                          style={{
+                            width: '100%',
+                            padding: '12px',
+                            borderRadius: '8px',
+                            background: '#0a0e17',
+                            border: '1px solid #1e293b',
+                            color: 'white',
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label
+                          style={{
+                            display: 'block',
+                            fontSize: '12px',
+                            color: '#64748b',
+                            marginBottom: '5px',
+                          }}
+                        >
+                          Taille en cm (Optionnel)
+                        </label>
+                        <input
+                          placeholder="ex: 165"
+                          type="number"
+                          value={newP.taille}
+                          onChange={(e) => setNewP({ ...newP, taille: e.target.value })}
+                          style={{
+                            width: '100%',
+                            padding: '12px',
+                            borderRadius: '8px',
+                            background: '#0a0e17',
+                            border: '1px solid #1e293b',
+                            color: 'white',
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label
+                        style={{
+                          display: 'block',
+                          fontSize: '12px',
+                          color: '#64748b',
+                          marginBottom: '5px',
+                        }}
+                      >
+                        Catégorie Actuelle *
+                      </label>
+                      <select
+                        required
+                        value={newP.categorie}
+                        onChange={(e) => setNewP({ ...newP, categorie: e.target.value })}
+                        style={{
+                          width: '100%',
+                          padding: '12px',
+                          borderRadius: '8px',
+                          background: '#0a0e17',
+                          border: '1px solid #1e293b',
+                          color: 'white',
+                        }}
+                      >
+                        {ALL_CATEGORIES.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '30px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddForm(false)}
+                      className="btn-secondary"
+                      style={{ flex: 1 }}
+                    >
+                      Annuler
+                    </button>
+                    <button type="submit" className="btn-primary" style={{ flex: 1 }}>
+                      Ajouter la joueuse
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(<App />);
+    </script>
+  </body>
+</html>

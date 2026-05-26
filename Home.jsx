@@ -441,7 +441,7 @@ export default function Home() {
           <button className="sc-btn-ghost" onClick={() => setView('global_stats')}>
             Stats équipe
           </button>
-          <button className="sc-btn-ghost" onClick={() => setView('global_stats')}>
+          <button className="sc-btn-ghost" onClick={() => setView('reports')}>
             Rapports
           </button>
         </div>

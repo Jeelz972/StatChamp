@@ -13,7 +13,8 @@ import {
   ReferenceArea,
 } from 'recharts';
 import { useAuthStore, useDataStore, useUIStore } from './src/stores';
-import { useFirebaseSync } from './src/db/use-firebase-sync';
+import { canAccessView, isPublicMode, PUBLIC_BLOCKED_MESSAGE } from './src/auth/public-mode';
+
 import { useDbSync } from './src/db/use-db-sync';
 import { DB } from './src/db';
 import { DebugOverlay } from './src/debug/DebugOverlay';
@@ -21,21 +22,15 @@ import Home from './Home.jsx';
 import Settings from './Settings.jsx';
 import SeasonSetup from './SeasonSetup.jsx';
 import TeamPicker from './TeamPicker.jsx';
+import { SetupPage } from './src/components/SetupPage';
+import { RootAdminPanel } from './src/components/RootAdminPanel';
+import Reports from './Reports.jsx';
 
 // ==========================================
 // ZONE DE CONFIGURATION AUTOMATIQUE
 // ==========================================
 const CLIP_SERVER_URL = 'https://clips.jeelz-software.ovh'; // Renseigner l'URL du VPS quand déployé, ex: 'https://clips.mondomaine.com'
 
-const PRECONFIGURED_FIREBASE = {
-  apiKey: 'AIzaSyBaA99che1oz9BHc23IhiFoY-nK0xvg4q4',
-  authDomain: 'statu18elite.firebaseapp.com',
-  projectId: 'statu18elite',
-  storageBucket: 'statu18elite.firebasestorage.app',
-  messagingSenderId: '862850988986',
-  appId: '1:862850988986:web:935de245b5c13e29f6fb83',
-  measurementId: 'G-ZDBRV7JEPN',
-};
 
 const parseDate = (dateStr) => {
   if (!dateStr) return new Date(0);
@@ -1282,6 +1277,7 @@ function History({
   onImportClick,
   onMultiImport,
   isAdmin,
+  isPublic = false,
 }) {
   const [selectedGame, setSelectedGame] = useState(null);
   useEffect(() => {
@@ -1291,6 +1287,14 @@ function History({
     }
   }, [games]);
   const [editingPBP, setEditingPBP] = useState(null);
+  const role = useAuthStore((s) => s.role);
+  const allPhases = useDataStore((s) => s.phases);
+  const editingPbpPhases = useMemo(
+    () => (editingPBP?.seasonId
+      ? allPhases.filter((p) => p.seasonId === editingPBP.seasonId)
+      : phases),
+    [editingPBP, allPhases, phases]
+  );
   const sortedGames = useMemo(
     () => [...games].sort((a, b) => parseDate(b.date) - parseDate(a.date)),
     [games]
@@ -1324,8 +1328,8 @@ function History({
         >
           <div className="flex justify-between items-stretch">
             <div
-              className="flex-1 p-3 md:p-4 cursor-pointer group-hover:bg-slate-800/80 transition-colors"
-              onClick={() => setSelectedGame(g)}
+              className={`flex-1 p-3 md:p-4 ${isPublic ? '' : 'cursor-pointer group-hover:bg-slate-800/80'} transition-colors`}
+              onClick={() => { if (!isPublic) setSelectedGame(g); }}
             >
               <div className="flex items-center gap-2 text-sm text-slate-400">
                 <span>{g.date}</span>
@@ -1342,9 +1346,11 @@ function History({
                   vs {g.opponent}
                 </span>
               </div>
-              <div className="text-xs text-orange-500/0 group-hover:text-orange-500 transition-all mt-2 flex items-center gap-1">
-                <Icon path={Icons.Eye} className="w-3 h-3" /> Voir stats
-              </div>
+              {!isPublic && (
+                <div className="text-xs text-orange-500/0 group-hover:text-orange-500 transition-all mt-2 flex items-center gap-1">
+                  <Icon path={Icons.Eye} className="w-3 h-3" /> Voir stats
+                </div>
+              )}
             </div>
             {isAdmin && (
               <div className="flex flex-col justify-center gap-2 p-2 bg-slate-900/50 border-l border-slate-700">
@@ -1364,7 +1370,7 @@ function History({
                     <Icon path={Icons.Play} /> Live
                   </Button>
                 )}
-                {g.actions?.length > 0 && (
+                {g.actions?.length > 0 && (role === 'coach' || role === 'root') && (
                   <Button
                     size="sm"
                     variant="ghost"
@@ -1386,11 +1392,10 @@ function History({
                         return x.id !== g.id;
                       });
                       setGames(newG);
-                      if (window.db) {
-                        window.DB.deleteGame(g.id).catch(function (e) {
-                          console.error('Delete game error:', e);
-                        });
-                      }
+
+                      DB.deleteGame(g.id).catch(function (e) {
+                        console.error('Delete game error:', e);
+                      });
                     }
                   }}
                 >
@@ -1412,16 +1417,15 @@ function History({
         <PlayByPlayEditor
           game={editingPBP}
           players={players}
-          phases={phases}
+          phases={editingPbpPhases}
           onSave={async (updatedGame) => {
             const idx = games.findIndex((g) => g.id === updatedGame.id);
             if (idx < 0) return;
             const newGames = [...games];
             newGames[idx] = updatedGame;
             setGames(newGames);
-            if (window.db) {
-              await window.DB.saveGame(updatedGame);
-            }
+
+            await DB.saveGame(updatedGame);
             setEditingPBP(null);
           }}
           onClose={() => setEditingPBP(null)}
@@ -1435,12 +1439,30 @@ function History({
 
 // --- LOGIN MODAL (B8) ---
 function LoginModal({ isOpen, onLogin, onClose }) {
+  const [tab, setTab] = useState('coach'); // 'coach' | 'player'
+  // Coach
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  // Player
+  const [playerSearch, setPlayerSearch] = useState('');
+  const [selectedPlayerId, setSelectedPlayerId] = useState(null);
+  const [playerCode, setPlayerCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const players = useDataStore((s) => s.players);
+  const loginPlayer = useAuthStore((s) => s.loginPlayer);
+
+  const filteredPlayers = players.filter(
+    (p) =>
+      playerSearch &&
+      (p.name.toLowerCase().includes(playerSearch.toLowerCase()) ||
+        p.number === playerSearch)
+  );
+
   if (!isOpen) return null;
-  const handleLogin = async () => {
+
+  const handleCoachLogin = async () => {
     if (!identifier.trim() || !password.trim()) {
       setError('Identifiant et mot de passe requis');
       return;
@@ -1448,46 +1470,119 @@ function LoginModal({ isOpen, onLogin, onClose }) {
     setLoading(true);
     setError('');
     try {
-      await onLogin(identifier.trim(), password.trim());
-      onClose();
+      const ok = await onLogin(identifier.trim(), password.trim());
+      if (ok) onClose();
+      else setError('Identifiant ou mot de passe incorrect');
     } catch {
       setError('Identifiant ou mot de passe incorrect');
-      setLoading(false);
     }
+    setLoading(false);
   };
+
+  const handlePlayerLogin = async () => {
+    if (!selectedPlayerId || !playerCode.trim()) {
+      setError('Sélectionne ton nom et saisis ton code');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      const ok = await loginPlayer(selectedPlayerId, playerCode.trim());
+      if (ok) onClose();
+      else setError('Code incorrect');
+    } catch {
+      setError('Code incorrect');
+    }
+    setLoading(false);
+  };
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Accès Coach" size="max-w-sm">
+    <Modal isOpen={isOpen} onClose={onClose} title="Connexion" size="max-w-sm">
       <div className="space-y-4 p-2">
-        <input
-          type="text"
-          className="w-full bg-slate-900 text-white p-3 rounded border border-slate-700 outline-none focus:border-orange-500"
-          placeholder="Identifiant"
-          value={identifier}
-          onChange={(e) => {
-            setIdentifier(e.target.value);
-            setError('');
-          }}
-          onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
-          autoComplete="username"
-        />
-        <input
-          type="password"
-          className="w-full bg-slate-900 text-white p-3 rounded border border-slate-700 outline-none focus:border-orange-500"
-          placeholder="Mot de passe"
-          value={password}
-          onChange={(e) => {
-            setPassword(e.target.value);
-            setError('');
-          }}
-          onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
-          autoComplete="current-password"
-        />
-        {error && <div className="text-red-500 text-xs">{error}</div>}
+        {/* Tabs */}
+        <div className="flex rounded overflow-hidden border border-slate-700">
+          {['coach', 'player'].map((t) => (
+            <button
+              key={t}
+              className={`flex-1 py-2 text-sm font-medium transition-colors ${
+                tab === t ? 'bg-orange-500 text-white' : 'bg-slate-900 text-slate-400 hover:bg-slate-800'
+              }`}
+              onClick={() => { setTab(t); setError(''); }}
+            >
+              {t === 'coach' ? 'Coach / Admin' : 'Joueur'}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'coach' && (
+          <>
+            <input
+              type="text"
+              className="w-full bg-slate-900 text-white p-3 rounded border border-slate-700 outline-none focus:border-orange-500 text-sm"
+              placeholder="Identifiant (ex: root, coach)"
+              value={identifier}
+              onChange={(e) => { setIdentifier(e.target.value); setError(''); }}
+              onKeyPress={(e) => e.key === 'Enter' && handleCoachLogin()}
+              autoComplete="username"
+            />
+            <input
+              type="password"
+              className="w-full bg-slate-900 text-white p-3 rounded border border-slate-700 outline-none focus:border-orange-500 text-sm"
+              placeholder="Mot de passe"
+              value={password}
+              onChange={(e) => { setPassword(e.target.value); setError(''); }}
+              onKeyPress={(e) => e.key === 'Enter' && handleCoachLogin()}
+              autoComplete="current-password"
+            />
+          </>
+        )}
+
+        {tab === 'player' && (
+          <>
+            <div className="relative">
+              <input
+                type="text"
+                className="w-full bg-slate-900 text-white p-3 rounded border border-slate-700 outline-none focus:border-orange-500 text-sm"
+                placeholder="Ton nom ou numéro"
+                value={playerSearch}
+                onChange={(e) => { setPlayerSearch(e.target.value); setSelectedPlayerId(null); setError(''); }}
+              />
+              {filteredPlayers.length > 0 && !selectedPlayerId && (
+                <div className="absolute z-10 w-full bg-slate-800 border border-slate-600 rounded mt-1 max-h-40 overflow-y-auto">
+                  {filteredPlayers.map((p) => (
+                    <button
+                      key={p.id}
+                      className="w-full text-left px-3 py-2 text-sm text-white hover:bg-slate-700"
+                      onClick={() => {
+                        setSelectedPlayerId(p.id);
+                        setPlayerSearch(`#${p.number} ${p.name}`);
+                      }}
+                    >
+                      #{p.number} {p.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <input
+              type="text"
+              className="w-full bg-slate-900 text-white p-3 rounded border border-slate-700 outline-none focus:border-orange-500 text-sm font-mono tracking-widest"
+              placeholder="Code d'accès (ex: DUPONT-4821)"
+              value={playerCode}
+              onChange={(e) => { setPlayerCode(e.target.value.toUpperCase()); setError(''); }}
+              onKeyPress={(e) => e.key === 'Enter' && handlePlayerLogin()}
+            />
+          </>
+        )}
+
+        {error && <div className="text-red-400 text-xs">{error}</div>}
         <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose}>
-            Annuler
-          </Button>
-          <Button variant="primary" onClick={handleLogin} disabled={loading}>
+          <Button variant="ghost" onClick={onClose}>Annuler</Button>
+          <Button
+            variant="primary"
+            onClick={tab === 'coach' ? handleCoachLogin : handlePlayerLogin}
+            disabled={loading}
+          >
             {loading ? 'Vérification…' : 'Se connecter'}
           </Button>
         </div>
@@ -1504,27 +1599,25 @@ function App() {
   const isAdmin = useAuthStore((s) => s.isAdmin);
   const isRoot = useAuthStore((s) => s.isRoot);
   const currentTeamId = useAuthStore((s) => s.currentTeamId);
-  const isPlayerMode = useAuthStore((s) => s.isPlayerMode);
+  const role = useAuthStore((s) => s.role);
   const login = useAuthStore((s) => s.login);
-  const restoreSession = useAuthStore((s) => s.restoreSession);
   const logout = useAuthStore((s) => s.logout);
+  const isPublic = isPublicMode(role);
 
   const { players, games, phases, seasons, playTypes, activeSeason } = useDataStore();
   const setGames = useDataStore((s) => s.setGames);
   const setPlayers = useDataStore((s) => s.setPlayers);
   const setPhases = useDataStore((s) => s.setPhases);
   const updateGame = useDataStore((s) => s.updateGame);
-
-  // A3/A4 — Pre-filtrage par saison active
-  const seasonFilteredGames = useMemo(() => {
-    if (!activeSeason?.phases?.length) return games;
-    return games.filter((g) => activeSeason.phases.includes(g.phase));
-  }, [games, activeSeason]);
-
-  const seasonFilteredPhases = useMemo(() => {
-    if (!activeSeason?.phases?.length) return phases;
-    return phases.filter((p) => activeSeason.phases.includes(p.id || p));
-  }, [phases, activeSeason]);
+  const activeSeasonId = activeSeason?.id;
+  const seasonGames = useMemo(
+    () => activeSeasonId ? games.filter((g) => g.seasonId === activeSeasonId) : [],
+    [games, activeSeasonId]
+  );
+  const seasonPhases = useMemo(
+    () => activeSeasonId ? phases.filter((p) => p.seasonId === activeSeasonId) : [],
+    [phases, activeSeasonId]
+  );
 
   // A0 — Condition onboarding migration
   const needsSetup =
@@ -1535,8 +1628,6 @@ function App() {
     setView,
     showLogin,
     setShowLogin,
-    showReport,
-    setShowReport,
     importData,
     setImportData,
     multiImportQueue,
@@ -1547,20 +1638,40 @@ function App() {
     setActiveGame,
   } = useUIStore();
 
-  // Init DB sync — Firebase par défaut, Supabase si VITE_DB_BACKEND=supabase
-  const _isSupabase = import.meta.env.VITE_DB_BACKEND === 'supabase';
-  useFirebaseSync();
+  // Init DB sync — Supabase uniquement
   useDbSync();
 
-  // Restore session from localStorage on mount
+  const [rootExists, setRootExists] = useState(null);
+
   useEffect(() => {
-    restoreSession();
+    const unsub = useAuthStore.getState().initSession();
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+    const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    fetch(`${SUPABASE_URL}/rest/v1/rpc/check_root_exists`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY },
+      body: JSON.stringify({}),
+    })
+      .then((r) => r.json())
+      .then((exists) => setRootExists(exists === true))
+      .catch(() => setRootExists(true));
   }, []);
 
   // Scroll reset when report opens
   useEffect(() => {
-    if (showReport && mainContentRef.current) mainContentRef.current.scrollTop = 0;
-  }, [showReport]);
+    if (view === 'report' && mainContentRef.current) mainContentRef.current.scrollTop = 0;
+  }, [view]);
+
+  // C8 — Mode public : si l'utilisateur tente une vue interdite, retour à l'accueil.
+  useEffect(() => {
+    if (isPublic && !canAccessView(role, view)) {
+      setView('home');
+    }
+  }, [isPublic, role, view, setView]);
 
   const handleSaveGame = (gameState) => {
     if (!isAdmin) return;
@@ -1571,7 +1682,7 @@ function App() {
       date: activeGame?.date || new Date().toLocaleDateString(),
     };
     updateGame(newGame);
-    if (window.db && !isPlayerMode) {
+    if (!(role === 'player')) {
       DB.saveGame(newGame).catch(function (e) {
         console.error('Save game error:', e);
         alert('Erreur sauvegarde: ' + e.message);
@@ -1584,17 +1695,17 @@ function App() {
   const handleUpdatePhases = (newPhases) => {
     if (!isAdmin) return;
     setPhases(newPhases);
-    if (window.db && !isPlayerMode) DB.savePhases(newPhases);
+    if (!(role === 'player')) DB.savePhases(newPhases);
   };
   const handleSettingsUpdate = (newPlayers) => {
     if (!isAdmin) return;
     setPlayers(newPlayers);
-    if (window.db && !isPlayerMode) DB.saveRoster(newPlayers);
+    if (!(role === 'player')) DB.saveRoster(newPlayers);
   };
   const performLogin = async (identifier, password) => {
     const ok = await login(identifier, password);
-    if (!ok) throw new Error('Identifiants invalides');
-    if (!useAuthStore.getState().isRoot) setView('home');
+    if (ok && !useAuthStore.getState().isRoot) setView('home');
+    return ok;
   };
   const performLogout = () => {
     logout();
@@ -1629,17 +1740,15 @@ function App() {
     setPlayers(updatedPlayers);
     const newGamesList = [newGame, ...games];
     setGames(newGamesList);
-    if (window.db && !isPlayerMode) {
+    if (!(role === 'player')) {
       try {
-        await window.DB.saveRoster(updatedPlayers);
-        await window.DB.saveGame(newGame);
+        await DB.saveRoster(updatedPlayers);
+        await DB.saveGame(newGame);
         alert('Importe !');
       } catch (e) {
-        console.error('Firebase write error:', e);
-        alert('Erreur Firebase : ' + e.message);
+        console.error('Import write error:', e);
+        alert('Erreur import : ' + e.message);
       }
-    } else {
-      alert('Importe (local uniquement)');
     }
     setImportData(null);
     setView('history');
@@ -1649,23 +1758,32 @@ function App() {
     setPlayers(updatedPlayers);
     const newGamesList = [newGame, ...games];
     setGames(newGamesList);
-    if (window.db && !isPlayerMode) {
+    if (!(role === 'player')) {
       try {
-        await window.DB.saveRoster(updatedPlayers);
-        await window.DB.saveGame(newGame);
+        await DB.saveRoster(updatedPlayers);
+        await DB.saveGame(newGame);
         alert('Importe !');
       } catch (e) {
-        console.error('Firebase write error:', e);
-        alert('Erreur Firebase : ' + e.message);
+        console.error('Import write error:', e);
+        alert('Erreur import : ' + e.message);
       }
-    } else {
-      alert('Importe (local uniquement)');
     }
     setImportData(null);
     setView('history');
   };
 
-  if (isPlayerMode)
+  if (rootExists === null) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="text-slate-400 text-sm">Chargement…</div>
+      </div>
+    );
+  }
+  if (rootExists === false) {
+    return <SetupPage onComplete={() => setRootExists(true)} />;
+  }
+
+  if (role === 'player')
     return (
       <div className="w-full h-screen bg-slate-950 flex flex-col font-sans text-slate-200">
         <header className="h-16 bg-slate-900 flex items-center px-6">
@@ -1676,7 +1794,7 @@ function App() {
         </header>
         <div className="flex-1 p-4 overflow-y-auto">
           {window.GlobalStats && (
-            <window.GlobalStats players={players} games={games} phases={phases} />
+            <window.GlobalStats players={players} games={seasonGames} phases={seasonPhases} />
           )}
         </div>
       </div>
@@ -1863,13 +1981,13 @@ function App() {
             <button
               onClick={() => {
                 if (window.PlayerReportModule) {
-                  setShowReport(true);
+                  setView('report');
                 } else {
                   alert("ERREUR : Le fichier reportPlayer.js n'est pas chargé.");
                   console.error('window.PlayerReportModule is undefined');
                 }
               }}
-              className={`sc-nav-item w-full ${showReport ? 'active' : ''}`}
+              className={`sc-nav-item w-full ${view === 'report' ? 'active' : ''}`}
               title="Scouting Report"
             >
               <Icon path={Icons.Target} />
@@ -1926,6 +2044,18 @@ function App() {
               <span className="sc-nav-item__label hidden md:block">Config</span>
             </button>
           )}
+
+          {/* Administration (root only) */}
+          {isRoot && (
+            <button
+              onClick={() => setView('admin')}
+              className={`sc-nav-item w-full ${view === 'admin' ? 'active' : ''}`}
+              title="Administration"
+            >
+              <Icon path={Icons.Users} />
+              <span className="sc-nav-item__label hidden md:block">Admin</span>
+            </button>
+          )}
         </div>
 
         {/* Auth — desktop */}
@@ -1975,19 +2105,29 @@ function App() {
           style={{ background: 'var(--bg-1)', borderBottom: '1px solid var(--border)', zIndex: 30 }}
         >
           <h1 className="font-bold text-lg text-white">
-            {showReport && 'Rapport'}
-            {!showReport && view === 'home' && 'Accueil'}
-            {!showReport && view === 'live' && 'Live'}
-            {!showReport && view === 'global_stats' && 'Stats'}
-            {!showReport && view === 'history' && 'Historique'}
-            {!showReport && view === 'season' && 'Saison'}
-            {!showReport && view === 'scouting' && 'Scouting'}
-            {!showReport && view === 'gameprep' && 'Préparation'}
-            {!showReport && view === 'settings' && 'Paramètres'}
-            {!showReport && view === 'training' && 'Entrainement'}
+            {view === 'report' && 'Rapport'}
+            {view === 'home' && 'Accueil'}
+            {view === 'live' && 'Live'}
+            {view === 'global_stats' && 'Stats'}
+            {view === 'history' && 'Historique'}
+            {view === 'season' && 'Saison'}
+            {view === 'scouting' && 'Scouting'}
+            {view === 'gameprep' && 'Préparation'}
+            {view === 'settings' && 'Paramètres'}
+            {view === 'training' && 'Entrainement'}
+            {view === 'reports' && 'Rapports'}
           </h1>
           <div className="ml-auto flex items-center gap-3">
-            {!isAdmin && (
+            {isPublic && (
+              <button
+                onClick={() => setShowLogin(true)}
+                className="text-xs text-slate-300 px-2 py-1 bg-slate-800 rounded border border-slate-700 hover:border-orange-500 transition-colors"
+                title={PUBLIC_BLOCKED_MESSAGE}
+              >
+                Mode public — Se connecter
+              </button>
+            )}
+            {!isAdmin && !isPublic && (
               <span className="text-xs text-slate-500 px-2 py-1 bg-slate-800 rounded border border-slate-700">
                 Public
               </span>
@@ -1997,44 +2137,43 @@ function App() {
                 Admin
               </span>
             )}
-            {window.db && (
-              <span className="text-xs text-green-400 flex items-center gap-1">
-                <Icon path={Icons.Cloud} className="w-3 h-3" /> Synchro
-              </span>
-            )}
+            <span className="text-xs text-green-400 flex items-center gap-1">
+              <Icon path={Icons.Cloud} className="w-3 h-3" /> Synchro
+            </span>
           </div>
         </header>
         <div
           ref={mainContentRef}
-          className={`flex-1 overflow-y-auto ${showReport ? '' : 'p-3 md:p-4 xl:p-6'}`}
+          className={`flex-1 overflow-y-auto ${view === 'report' ? '' : 'p-3 md:p-4 xl:p-6'}`}
           style={{ zIndex: 10 }}
         >
-          {showReport && ReportModule && (
+          {view === 'report' && ReportModule && (
             <ReportModule
               currentUser={isAdmin ? { role: 'coach' } : { role: 'guest' }}
-              onClose={() => setShowReport(false)}
+              onClose={() => setView('home')}
               games={games}
               roster={players}
               phases={phases}
               seasons={seasons}
             />
           )}
-          {!showReport && view === 'home' && <Home />}
-          {!showReport && view === 'global_stats' && window.GlobalStats && (
+          {view === 'home' && <Home />}
+          {view === 'global_stats' && window.GlobalStats && (
             <window.GlobalStats
               players={players}
-              games={seasonFilteredGames}
-              phases={seasonFilteredPhases}
+              games={seasonGames}
+              phases={seasonPhases}
               isAdmin={isAdmin}
             />
           )}
-          {!showReport && view === 'history' && (
+          {view === 'history' && (
             <History
-              games={seasonFilteredGames}
+              games={seasonGames}
               players={players}
               setGames={setGames}
-              phases={seasonFilteredPhases}
+              phases={seasonPhases}
               isAdmin={isAdmin}
+              isPublic={isPublic}
               onEditGame={(g) => {
                 setActiveGame(g);
                 setView('live');
@@ -2043,16 +2182,17 @@ function App() {
               onMultiImport={() => document.getElementById('multi-upload').click()}
             />
           )}
-          {!showReport && view === 'settings' && isAdmin && <Settings />}
-          {!showReport && view === 'season' && window.SeasonDashboard && (
+          {view === 'settings' && isAdmin && <Settings />}
+          {view === 'admin' && isRoot && <RootAdminPanel />}
+          {view === 'season' && window.SeasonDashboard && (
             <window.SeasonDashboard
-              games={games}
+              games={seasonGames}
               players={players}
-              phases={phases}
+              phases={seasonPhases}
               seasons={seasons}
             />
           )}
-          {!showReport && view === 'scouting' && !prepOpponent && window.OpponentScouting && (
+          {view === 'scouting' && !prepOpponent && window.OpponentScouting && (
             <window.OpponentScouting
               games={games}
               onPrepare={(name) => {
@@ -2061,7 +2201,7 @@ function App() {
               }}
             />
           )}
-          {!showReport && view === 'gameprep' && prepOpponent && window.GamePrep && (
+          {view === 'gameprep' && prepOpponent && window.GamePrep && (
             <window.GamePrep
               opponentName={prepOpponent}
               games={games}
@@ -2073,11 +2213,13 @@ function App() {
             />
           )}
 
-          {!showReport && view === 'training' && window.TrainingShooter && (
+          {view === 'training' && window.TrainingShooter && (
             <window.TrainingShooter players={players} />
           )}
 
-          {!showReport && !isAdmin && (view === 'live' || view === 'settings') && (
+          {view === 'reports' && <Reports />}
+
+          {!isAdmin && (view === 'live' || view === 'settings') && (
             <div className="h-full flex flex-col items-center justify-center text-slate-500">
               <Icon path={Icons.Users} className="w-16 h-16 mb-4 opacity-20" />
               <p>Acces reserve au coach.</p>

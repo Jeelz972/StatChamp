@@ -2,6 +2,7 @@
 // Dépendances : React, Recharts (globales), window.StatsEngine
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useDataStore } from './src/stores/data-store';
+import { calcImpactStatsByPlayer } from './src/utils/calc-impact-stats.js';
 import {
   LineChart,
   Line,
@@ -638,13 +639,11 @@ function getAdvancedPlayerBadges(player, teamAvgStats) {
   const blk      = n(a.blk);
   const tov      = n(a.tov);
   const pf       = n(a.pf);
-  const adjPM    = n(a.adjPM);
   const PIE      = n(a.PIE);
   const TS       = n(a.TS);
   const eFG      = n(a.eFG);
   const DRtg     = n(a.DRtg);
   const costFoul = n(a.costFoul);
-  const woba     = n(a.woba);
   const threePct = n(a.threePct);
   const ftPct    = n(a.ftPct);
 
@@ -657,7 +656,6 @@ function getAdvancedPlayerBadges(player, teamAvgStats) {
   const ta = teamAvgStats || {};
   const tPIE      = n(ta.PIE)           || 10;
   const tTS       = n(ta.TS)            || 50;
-  const tWoba     = n(ta.woba)          || 0.35;
   const tDRtg     = n(ta.DRtg)          || 105;
   const tStlBlk   = n(ta.stlBlk)       || 2;
   const tDreb     = n(ta.dreb)          || 3;
@@ -670,7 +668,7 @@ function getAdvancedPlayerBadges(player, teamAvgStats) {
   // ── BADGES DE PERFORMANCE ─────────────────────────────────────────────────
 
   // 1. Moteur Collectif
-  if (min >= 10 && PIE >= Math.max(tPIE + 4, 14) && adjPM >= 3) {
+  if (min >= 10 && PIE >= Math.max(tPIE + 4, 14)) {
     allBadges.push({
       id: 'moteur', category: 'perf', area: 'impact',
       label: 'Moteur Collectif', icon: '⚡',
@@ -768,7 +766,7 @@ function getAdvancedPlayerBadges(player, teamAvgStats) {
 
   // 9. Volume à Canaliser
   if (!perfAreas.has('shooting_eff') && !perfAreas.has('scoring_rate') &&
-      fgaPerGame >= 8 && TS < tTS - 5 && woba < tWoba) {
+      fgaPerGame >= 8 && TS < tTS - 5) {
     allBadges.push({
       id: 'volume', category: 'dev', area: 'shooting_eff',
       label: 'Volume à Canaliser', icon: '📊',
@@ -955,31 +953,26 @@ function GlobalStats({ players, games, phases, isAdmin }) {
   const [posFilter, setPosFilter] = useState('all');
   const [sortBy, setSortBy] = useState('pts');
   const [sortDir, setSortDir] = useState('desc');
-
-  // A4 — Filtrage par saison active
-  const activeSeason = useDataStore((s) => s.activeSeason);
-  const seasonGames = useMemo(() => {
-    if (!activeSeason?.phases?.length) return games;
-    return games.filter((g) => activeSeason.phases.includes(g.phase));
-  }, [games, activeSeason]);
-  const seasonPhases = useMemo(() => {
-    if (!activeSeason?.phases?.length) return phases;
-    return phases.filter((p) => activeSeason.phases.includes(p.id || p));
-  }, [phases, activeSeason]);
+  const [minGames, setMinGames] = useState(0);
+  const [per36, setPer36] = useState(false);
 
   const gamesKey = useMemo(() => {
     return (
-      seasonGames.length +
+      games.length +
       ':' +
-      seasonGames.map((g) => g.id + '_' + (g.homeScore || 0) + '_' + (g.awayScore || 0)).join(',')
+      games.map((g) => g.id + '_' + (g.homeScore || 0) + '_' + (g.awayScore || 0)).join(',')
     );
-  }, [seasonGames]);
+  }, [games]);
+
+  useEffect(() => {
+    setFilterPhase('ALL');
+  }, [phases]);
 
   const filteredGames = useMemo(() => {
     const isFinal = (g) => !g.status || g.status === 'final';
-    if (filterPhase === 'ALL') return seasonGames.filter(isFinal);
-    return seasonGames.filter((g) => g.phase === filterPhase && isFinal(g));
-  }, [gamesKey, filterPhase]);
+    if (filterPhase === 'ALL') return games.filter(isFinal);
+    return games.filter((g) => g.phase === filterPhase && isFinal(g));
+  }, [games, filterPhase]);
 
   const teamTrendsData = useMemo(() => {
     const sorted = [...filteredGames].sort(
@@ -1283,6 +1276,9 @@ function GlobalStats({ players, games, phases, isAdmin }) {
           costTov: 0,
           costFoul: 0,
           unpunishedErrors: 0,
+          stlGain: 0,
+          orebGain: 0,
+          lfGain: 0,
         },
         totalMinPlayed: 0,
         weightedORtg: 0,
@@ -1388,11 +1384,18 @@ function GlobalStats({ players, games, phases, isAdmin }) {
       const teamORtg_Game = teamPoss > 0 ? ((gamePTS - oppPTS) / teamPoss) * 100 : 0;
       const teamDRtg_Game = teamPoss > 0 ? (oppPTS / teamPoss) * 100 : 0;
 
+      // Gains générés — calculés par match, avant la boucle joueur pour injection dans les logs
+      const gainsByPid = (g.actions && Array.isArray(g.actions))
+        ? calcImpactStatsByPlayer(g.actions, players)
+        : {};
+
       Object.entries(g.playerStats).forEach(([pid, s]) => {
         const id = parseInt(pid);
         if ((s.minutes || 0) > 0 && stats[id]) {
           const t = stats[id].total;
           const playerMin = s.minutes || 0;
+          // oreb + dreb car PlayerGameStats n'expose pas de champ reb combiné
+          const reb = (s.oreb || 0) + (s.dreb || 0);
 
           stats[id].gamesPlayed += 1;
           stats[id].totalMinPlayed += playerMin;
@@ -1400,7 +1403,7 @@ function GlobalStats({ players, games, phases, isAdmin }) {
           stats[id].weightedDRtg += teamDRtg_Game * playerMin;
 
           t.pts += s.pts || 0;
-          t.reb += s.reb || 0;
+          t.reb += reb;
           t.oreb += s.oreb || 0;
           t.dreb += s.dreb || 0;
           t.ast += s.ast || 0;
@@ -1421,12 +1424,12 @@ function GlobalStats({ players, games, phases, isAdmin }) {
           const playerFGM = (s.fgm || 0) + (s.threePM || 0);
 
           const evalStat =
-            s.pts +
-            s.reb +
-            s.ast +
-            s.stl +
-            s.blk -
-            (playerFGA - playerFGM + ((s.fta || 0) - (s.ftm || 0)) + s.tov);
+            (s.pts || 0) +
+            reb +
+            (s.ast || 0) +
+            (s.stl || 0) +
+            (s.blk || 0) -
+            (playerFGA - playerFGM + ((s.fta || 0) - (s.ftm || 0)) + (s.tov || 0));
           t.eff += evalStat;
 
           const missedFG = playerFGA - playerFGM;
@@ -1436,7 +1439,7 @@ function GlobalStats({ players, games, phases, isAdmin }) {
 
           const pir =
             (s.pts || 0) +
-            (s.reb || 0) +
+            reb +
             (s.ast || 0) +
             (s.stl || 0) +
             (s.blk || 0) +
@@ -1463,10 +1466,15 @@ function GlobalStats({ players, games, phases, isAdmin }) {
           const playerPIE = gamePIEDenom !== 0 ? (playerPIENum / gamePIEDenom) * 100 : 0;
           t.pie += playerPIE;
 
+          const matchGains = gainsByPid[id] ?? { stlGain: 0, orebGain: 0, lfGain: 0 };
+          t.stlGain  += matchGains.stlGain;
+          t.orebGain += matchGains.orebGain;
+          t.lfGain   += matchGains.lfGain;
+
           const rec = stats[id].records;
           const currentStats = {
             pts: s.pts,
-            reb: s.reb,
+            reb,
             ast: s.ast,
             stl: s.stl,
             blk: s.blk,
@@ -1502,9 +1510,12 @@ function GlobalStats({ players, games, phases, isAdmin }) {
             phase: g.phase,
             min: s.minutes,
             pts: s.pts || 0,
-            reb: s.reb || 0,
+            reb,
             oreb: s.oreb || 0,
             dreb: s.dreb || 0,
+            stlGain:  matchGains.stlGain,
+            orebGain: matchGains.orebGain,
+            lfGain:   matchGains.lfGain,
             ast: s.ast || 0,
             stl: s.stl || 0,
             blk: s.blk || 0,
@@ -1671,12 +1682,19 @@ function GlobalStats({ players, games, phases, isAdmin }) {
           costTov: (t.costTov / gp).toFixed(1),
           costFoul: (t.costFoul / gp).toFixed(1),
           unpunishedErrors: (t.unpunishedErrors / gp).toFixed(1),
+          stlGain: parseFloat((t.stlGain / gp).toFixed(1)),
+          orebGain: parseFloat((t.orebGain / gp).toFixed(1)),
+          lfGain: parseFloat((t.lfGain / gp).toFixed(1)),
+          totalGain: parseFloat(((t.stlGain + t.orebGain + t.lfGain) / gp).toFixed(1)),
+          floorImpact: t.min >= 8 && t.min > 0
+            ? parseFloat((t.plusMinus / t.min * 40).toFixed(1))
+            : null,
         },
       };
     });
   }, [players, filteredGames]);
 
-  // F4 + F1 + F2 : enrichissement post-agrégation (streak, WOBA, APM)
+  // F4 + F1 + F2 : enrichissement post-agrégation (streak)
   const aggregatedEnriched = useMemo(() => {
     if (!aggregated || aggregated.length === 0) return aggregated;
     const teamAvgPM    = aggregated.reduce((s, p) => s + parseFloat(p.avg.plusMinus || 0), 0) / aggregated.length;
@@ -1685,13 +1703,6 @@ function GlobalStats({ players, games, phases, isAdmin }) {
       const t          = p.total;
       const totalFGA   = t.fga + t.threePA;
       const totalFGM   = t.fgm + t.threePM;
-      const woba       = window.StatsEngine.woba(t.pts, t.ast, t.oreb, t.tov, totalFGA, totalFGM, t.fta, t.ftm);
-      const adjPM      = window.StatsEngine.adjustedPlusMinus(
-        parseFloat(p.avg.plusMinus || 0),
-        parseFloat(p.avg.min || 0) * (p.gamesPlayed || 1),
-        teamAvgPM,
-        teamMinTotal
-      );
       const streak     = window.StatsEngine.hotColdStreak(
         (p.logs || []).slice().sort((a, b) => window.parseDate(b.date) - window.parseDate(a.date))
       );
@@ -1700,8 +1711,6 @@ function GlobalStats({ players, games, phases, isAdmin }) {
         streak,
         avg: {
           ...p.avg,
-          woba:  parseFloat(woba.toFixed(3)),
-          adjPM: parseFloat(adjPM.toFixed(1)),
         },
       };
     });
@@ -1870,7 +1879,7 @@ function GlobalStats({ players, games, phases, isAdmin }) {
               className="bg-slate-800 text-white border border-slate-700 rounded p-2 text-sm"
             >
               <option value="ALL">Toutes les phases</option>
-              {seasonPhases.map((p) => (
+              {phases.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
                 </option>
@@ -1909,7 +1918,8 @@ function GlobalStats({ players, games, phases, isAdmin }) {
             const filtered = aggregatedEnriched.filter((p) => {
               const matchName = p.info.name.toLowerCase().includes(searchFilter.toLowerCase());
               const matchPos = posFilter === 'all' || p.info.pos === posFilter;
-              return matchName && matchPos;
+              const matchMin = minGames === 0 || p.gamesPlayed >= minGames;
+              return matchName && matchPos && matchMin;
             });
             const handleSort = (col) => {
               if (sortBy === col) setSortDir(sortDir === 'desc' ? 'asc' : 'desc');
@@ -1940,7 +1950,18 @@ function GlobalStats({ players, games, phases, isAdmin }) {
             const maxPts = sorted.length > 0 ? Math.max(...sorted.map((p) => parseFloat(p.avg.pts) || 0)) : 1;
             const maxReb = sorted.length > 0 ? Math.max(...sorted.map((p) => parseFloat(p.avg.reb) || 0)) : 1;
             const maxEval = sorted.length > 0 ? Math.max(...sorted.map((p) => parseFloat(p.avg.eff) || 0)) : 1;
+            const RANK_STATS = ['pts', 'reb', 'ast'];
+            const rankMaps = {};
+            RANK_STATS.forEach((stat) => {
+              const byVal = [...sorted].sort((a, b) => (parseFloat(b.avg[stat]) || 0) - (parseFloat(a.avg[stat]) || 0));
+              rankMaps[stat] = {};
+              byVal.forEach((p, i) => { rankMaps[stat][p.info.id] = i + 1; });
+            });
             const arrow = (col) => (sortBy === col ? (sortDir === 'desc' ? ' ▼' : ' ▲') : '');
+            const per36Val = (total, totalMin) => {
+              if (!per36 || !totalMin || parseFloat(totalMin) === 0) return parseFloat(total) || 0;
+              return parseFloat(((parseFloat(total) / parseFloat(totalMin)) * 36).toFixed(1));
+            };
             const thStyle = 'cursor-pointer hover:text-orange-400 transition-colors';
             const exportCSV = () => {
               const headers = [
@@ -1958,8 +1979,6 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                 'BP',
                 '+/-',
                 'EVAL',
-                'WOBA',
-                'APM',
               ];
               const rows = sorted.map((p) => [
                 p.info.name,
@@ -1976,8 +1995,6 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                 p.avg.tov,
                 p.avg.plusMinus,
                 p.avg.eff,
-                p.avg.woba != null ? p.avg.woba.toFixed(3) : '',
-                p.avg.adjPM != null ? p.avg.adjPM.toFixed(1) : '',
               ]);
               const csv = [headers, ...rows].map((r) => r.join(';')).join('\n');
               const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
@@ -2034,6 +2051,22 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                       </button>
                     ))}
                   </div>
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-xs text-slate-500">Min. MJ</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={minGames}
+                      onChange={(e) => setMinGames(Number(e.target.value))}
+                      className="w-14 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-300"
+                    />
+                  </div>
+                  <button
+                    onClick={() => setPer36((v) => !v)}
+                    className={`text-xs px-3 py-1 rounded border transition-colors ${per36 ? 'bg-orange-500 border-orange-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400'}`}
+                  >
+                    Per-36
+                  </button>
                   <button
                     onClick={exportCSV}
                     className="ml-auto px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs transition-colors border border-slate-700 font-bold"
@@ -2122,20 +2155,6 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                           +/-{arrow('plusMinus')}
                         </th>
                         <th
-                          className={`p-3 text-center text-violet-400 font-bold ${thStyle}`}
-                          onClick={() => handleSort('adjPM')}
-                          title="Adjusted Plus/Minus — +/- ajusté par volume de minutes (régression bayésienne)"
-                        >
-                          APM{arrow('adjPM')}
-                        </th>
-                        <th
-                          className={`p-3 text-center text-cyan-400 font-bold ${thStyle}`}
-                          onClick={() => handleSort('woba')}
-                          title="WOBA Basketball — valeur offensive nette par possession. Repères : >0.45 élite · 0.30-0.40 correct · <0.25 faible"
-                        >
-                          WOBA{arrow('woba')}
-                        </th>
-                        <th
                           className="p-3 text-center text-slate-500 text-[10px]"
                           style={{ minWidth: '70px' }}
                         >
@@ -2191,7 +2210,8 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                           <td className="p-3 text-center text-slate-400">{p.gamesPlayed}</td>
                           <td className="p-3 text-center text-slate-500">{p.avg.min}</td>
                           <td className="p-3 text-center">
-                            {StatCell ? <StatCell value={p.avg.pts} stat="pts" format="dec1" showBar barMax={maxPts} /> : <span className="font-bold text-orange-400">{p.avg.pts}</span>}
+                            {StatCell ? <StatCell value={per36Val(p.avg.pts, p.avg.min)} stat="pts" format="dec1" showBar barMax={maxPts} /> : <span className="font-bold text-orange-400">{per36Val(p.avg.pts, p.avg.min).toFixed(1)}</span>}
+                            {rankMaps.pts?.[p.info.id] <= 3 && <span className="ml-1 text-[9px] text-yellow-500">#{rankMaps.pts[p.info.id]}</span>}
                           </td>
                           <td className="p-3 text-center">
                             {StatCell ? <StatCell value={p.avg.fgPct} stat="fg_pct" format="pct" /> : <span>{p.avg.fgPct}%</span>}
@@ -2203,25 +2223,21 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                             {StatCell && p.stats.fta > 0 ? <StatCell value={p.avg.ftPct} stat="ft_pct" format="pct" /> : <span className="text-slate-500">{p.avg.ftPct}%</span>}
                           </td>
                           <td className="p-3 text-center">
-                            {StatCell ? <StatCell value={p.avg.reb} stat="reb" format="dec1" showBar barMax={maxReb} /> : <span className="font-bold text-white">{p.avg.reb}</span>}
+                            {StatCell ? <StatCell value={per36Val(p.avg.reb, p.avg.min)} stat="reb" format="dec1" showBar barMax={maxReb} /> : <span className="font-bold text-white">{per36Val(p.avg.reb, p.avg.min).toFixed(1)}</span>}
+                            {rankMaps.reb?.[p.info.id] <= 3 && <span className="ml-1 text-[9px] text-yellow-500">#{rankMaps.reb[p.info.id]}</span>}
                           </td>
                           <td className="p-3 text-center">
-                            {StatCell ? <StatCell value={p.avg.ast} stat="ast" format="dec1" /> : p.avg.ast}
+                            {StatCell ? <StatCell value={per36Val(p.avg.ast, p.avg.min)} stat="ast" format="dec1" /> : per36Val(p.avg.ast, p.avg.min).toFixed(1)}
+                            {rankMaps.ast?.[p.info.id] <= 3 && <span className="ml-1 text-[9px] text-yellow-500">#{rankMaps.ast[p.info.id]}</span>}
                           </td>
                           <td className="p-3 text-center">
-                            {StatCell ? <StatCell value={p.avg.stl} stat="stl" format="dec1" /> : p.avg.stl}
+                            {StatCell ? <StatCell value={per36Val(p.avg.stl, p.avg.min)} stat="stl" format="dec1" /> : per36Val(p.avg.stl, p.avg.min).toFixed(1)}
                           </td>
                           <td className="p-3 text-center">
-                            {StatCell ? <StatCell value={p.avg.tov} stat="tov" format="dec1" /> : p.avg.tov}
+                            {StatCell ? <StatCell value={per36Val(p.avg.tov, p.avg.min)} stat="tov" format="dec1" /> : per36Val(p.avg.tov, p.avg.min).toFixed(1)}
                           </td>
                           <td className="p-3 text-center">
                             {StatCell ? <StatCell value={p.avg.plusMinus} stat="plus_minus" format="plusminus" /> : <span className={parseFloat(p.avg.plusMinus) >= 0 ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}>{parseFloat(p.avg.plusMinus) > 0 ? '+' : ''}{p.avg.plusMinus}</span>}
-                          </td>
-                          <td className="p-3 text-center text-xs">
-                            {StatCell ? <StatCell value={p.avg.adjPM} stat="adj_pm" format="plusminus" /> : <span>{p.avg.adjPM}</span>}
-                          </td>
-                          <td className="p-3 text-center text-xs">
-                            {StatCell ? <StatCell value={p.avg.woba} stat="woba" format="dec2" /> : <span>{parseFloat(p.avg.woba).toFixed(3)}</span>}
                           </td>
                           <td className="p-3 text-center">
                             <div className="flex flex-col items-center gap-0.5">
@@ -2275,7 +2291,7 @@ function GlobalStats({ players, games, phases, isAdmin }) {
           }
           size="max-w-5xl"
         >
-          <div className="space-y-5">
+          <div id="player-report-content" className="space-y-5">
 
             {/* ── S1 HERO HEADER ────────────────────────────────────────────── */}
             <div className="space-y-4">
@@ -2284,6 +2300,26 @@ function GlobalStats({ players, games, phases, isAdmin }) {
               <div className="flex flex-wrap items-center gap-3">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xl font-bold text-white">{selectedPlayer.info.name}</span>
+                  <button
+                    onClick={async () => {
+                      const { default: html2canvas } = await import('html2canvas');
+                      const { default: jsPDF } = await import('jspdf');
+                      const el = document.getElementById('player-report-content');
+                      if (!el) return;
+                      const canvas = await html2canvas(el, { backgroundColor: '#0a0f1e', scale: 2 });
+                      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+                      const imgData = canvas.toDataURL('image/png');
+                      const w = pdf.internal.pageSize.getWidth();
+                      const h = (canvas.height * w) / canvas.width;
+                      pdf.addImage(imgData, 'PNG', 0, 0, w, h);
+                      const name = selectedPlayer.info.name.replace(/\s+/g, '_');
+                      const date = new Date().toLocaleDateString('fr-FR').replace(/\//g, '-');
+                      pdf.save(`rapport-${name}-${date}.pdf`);
+                    }}
+                    className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700 transition-colors"
+                  >
+                    Export PDF
+                  </button>
                   <span className="text-sm" style={{ color: 'var(--text-3)' }}>
                     #{selectedPlayer.info.number} · {selectedPlayer.info.pos || '—'}
                   </span>
@@ -2299,7 +2335,6 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                   const teamAvg = ct > 0 ? {
                     PIE:    qualPlayers.reduce((s, p) => s + (parseFloat(p.avg.PIE)      || 0), 0) / ct,
                     TS:     qualPlayers.reduce((s, p) => s + (parseFloat(p.avg.TS)       || 0), 0) / ct,
-                    woba:   qualPlayers.reduce((s, p) => s + (parseFloat(p.avg.woba)     || 0), 0) / ct,
                     DRtg:   qualPlayers.reduce((s, p) => s + (parseFloat(p.avg.DRtg)     || 0), 0) / ct,
                     stlBlk: qualPlayers.reduce((s, p) => s + (parseFloat(p.avg.stl) || 0) + (parseFloat(p.avg.blk) || 0), 0) / ct,
                     dreb:   qualPlayers.reduce((s, p) => s + (parseFloat(p.avg.dreb)     || 0), 0) / ct,
@@ -2522,6 +2557,35 @@ function GlobalStats({ players, games, phases, isAdmin }) {
               </div>
             )}
 
+            {/* ── S3.6 GAINS GÉNÉRÉS ───────────────────────────────────────── */}
+            {selectedPlayer.gamesPlayed > 0 && (
+              <div className="rounded-lg p-4 border" style={{ background: 'var(--bg-3)', borderColor: 'var(--border)' }}>
+                <div className="text-xs uppercase font-bold tracking-wider mb-3" style={{ color: 'var(--text-3)' }}>
+                  Gains générés&nbsp;
+                  <span className="font-normal lowercase" style={{ color: 'var(--text-3)' }}>(Moyenne / Total)</span>
+                </div>
+                <div className="space-y-1">
+                  {[
+                    { label: 'Pts après interception',    avg: selectedPlayer.avg.stlGain,  total: selectedPlayer.total.stlGain },
+                    { label: 'Pts sur rebond offensif',   avg: selectedPlayer.avg.orebGain, total: selectedPlayer.total.orebGain },
+                    { label: 'LF gagnés sur faute adv',   avg: selectedPlayer.avg.lfGain,   total: selectedPlayer.total.lfGain },
+                  ].map((row) => (
+                    <div key={row.label} className="flex items-center justify-between py-2 border-b" style={{ borderColor: 'var(--border)' }}>
+                      <span className="text-xs" style={{ color: 'var(--text-2)' }}>{row.label}</span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-bold stat-num" style={{ color: 'var(--made)' }}>
+                          +{row.avg ?? 0}/m
+                        </span>
+                        <span className="text-xs" style={{ color: 'var(--text-3)' }}>
+                          (Total&nbsp;: {row.total ?? 0})
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* ── S4 RECORDS DE LA SAISON ───────────────────────────────────── */}
             {(selectedPlayer.logs || []).length >= 3 && (
               <div className="space-y-2">
@@ -2576,16 +2640,16 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                       { label: 'ORtg',   val: selectedPlayer.avg.ORtg,       stat: 'ortg',       tooltip: "Rating offensif : points produits par 100 possessions" },
                       { label: 'DRtg',   val: selectedPlayer.avg.DRtg,       stat: 'drtg',       tooltip: "Rating défensif : points encaissés par 100 possessions (bas = bon)" },
                       { label: 'NetRtg', val: selectedPlayer.avg.netRtg,     stat: 'net_rtg',    pm: true, tooltip: "Différentiel offensif/défensif sur 100 possessions" },
+                      { label: 'Floor Impact', val: selectedPlayer.avg.floorImpact, stat: null, fmt: (v) => v != null ? `${v >= 0 ? '+' : ''}${v.toFixed(1)}` : '—', tooltip: "Différentiel de score de l'équipe normalisé sur 40 min de jeu du joueur (min. 8 min ON)" },
                       { label: 'MIN/m',  val: selectedPlayer.avg.min,        stat: null,         tooltip: "Minutes moyennes par match" },
                       { label: 'FTE/m',  val: selectedPlayer.avg.pf,         stat: 'pf',         tooltip: "Fautes commises par match" },
                       { label: 'RO/m',   val: selectedPlayer.avg.oreb,       stat: 'oreb',       tooltip: "Rebonds offensifs par match : secondes chances créées" },
                       { label: 'RD/m',   val: selectedPlayer.avg.dreb,       stat: null,         tooltip: "Rebonds défensifs par match : possessions sécurisées" },
-                      { label: 'WOBA',   val: selectedPlayer.avg.woba,       stat: 'woba',       dec3: true, tooltip: "Weighted On-Base Average adapté au basket : valeur offensive par possession (>0.35 bon)" },
-                      { label: 'APM',    val: selectedPlayer.avg.adjPM,      stat: 'adj_pm',     pm: true, tooltip: "Adjusted Plus/Minus : impact lissé par le volume de minutes jouées" },
                     ].map((item) => {
                       const color   = item.stat ? getStatColor(parseFloat(item.val) || 0, item.stat) : 'text-slate-300';
                       const v       = parseFloat(item.val) || 0;
-                      const display = item.dec3 ? v.toFixed(3)
+                      const display = item.fmt  ? item.fmt(item.val)
+                                    : item.dec3 ? v.toFixed(3)
                                     : item.pm   ? (v > 0 ? '+' : '') + v.toFixed(1)
                                     :             v.toFixed(1) + (item.suffix || '');
                       return (
@@ -2654,6 +2718,22 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                       </div>
                       <GhostSeasonChart logs={selectedPlayer.logs} currentGame={null} />
                       <ArchetypeRadar player={selectedPlayer} allPlayers={aggregated} />
+                      <div className="bg-slate-900 rounded-lg p-3 border border-slate-700 md:col-span-2">
+                        <h4 className="text-xs text-slate-400 uppercase mb-2 font-bold">Évolution PIR</h4>
+                        <div className="h-32 w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={selectedPlayer.logs.map((l, i) => ({ name: l.opponent || `M${i + 1}`, pir: l.pir || 0 }))}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                              <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#64748b' }} />
+                              <YAxis tick={{ fontSize: 9, fill: '#64748b' }} />
+                              <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid #334155', fontSize: '11px' }} />
+                              <Line type="monotone" dataKey="pir" name="PIR" stroke="#a78bfa" strokeWidth={2} dot={{ r: 2 }} />
+                              <ReferenceLine y={parseFloat(selectedPlayer.avg.pir)} stroke="#a78bfa" strokeDasharray="4 2" strokeOpacity={0.45}
+                                label={{ value: `Moy ${selectedPlayer.avg.pir}`, fill: '#a78bfa', fontSize: 9, position: 'insideTopRight' }} />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
                     </div>
                   )}
 
@@ -2668,6 +2748,7 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                           <thead className="bg-slate-800 text-white uppercase text-[10px] sticky top-0 z-10">
                             <tr>
                               <th className="p-2 text-left sticky left-0 bg-slate-800 z-20">Adversaire</th>
+                              <th className="p-2 text-center text-slate-500">Phase</th>
                               <th className="p-2 text-center">Score</th>
                               <th className="p-2 text-center">MIN</th>
                               <th className="p-2 text-center text-orange-400">PTS</th>
@@ -2687,6 +2768,9 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                                 <td className="p-2 font-bold text-white sticky left-0 bg-slate-900 z-10 border-r border-slate-800">
                                   <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 ${log.isWin ? 'bg-green-500' : 'bg-red-500'}`}></span>
                                   {log.opponent}
+                                </td>
+                                <td className="p-2 text-center text-slate-500 text-[10px]">
+                                  {phases.find((p) => p.id === log.phase)?.name ?? ''}
                                 </td>
                                 <td className="p-2 text-center">
                                   <span className="text-green-400">{log.score}</span>
@@ -2718,15 +2802,15 @@ function GlobalStats({ players, games, phases, isAdmin }) {
                       value={playerNotes}
                       onChange={(e) => setPlayerNotes(e.target.value)}
                       onBlur={() => {
-                        if (window.db && selectedPlayer) {
-                          window.DB.getRoster().then(function (doc) {
-                            if (doc.exists) {
-                              var list = doc.data().list || [];
-                              var idx = list.findIndex(function (p) { return p.id === selectedPlayer.info.id; });
-                              if (idx >= 0) { list[idx].coachNotes = playerNotes; window.DB.saveRoster(list); }
-                            }
-                          });
-                        }
+                        if (!selectedPlayer) return;
+                        const roster = useDataStore.getState().players;
+                        const updated = roster.map((p) =>
+                          String(p.id) === String(selectedPlayer.info.id)
+                            ? { ...p, coachNotes: playerNotes }
+                            : p
+                        );
+                        useDataStore.getState().setPlayers(updated);
+                        window.DB.saveRoster(updated).catch(console.error);
                       }}
                       placeholder="Notes du coach..."
                       className="bg-slate-900 border border-slate-700 rounded text-sm text-slate-300 p-3 w-full min-h-[80px] outline-none focus:border-orange-500"

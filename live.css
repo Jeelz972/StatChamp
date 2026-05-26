@@ -1950,3 +1950,17 @@ canvas {
         transition-duration: 0.01ms !important;
     }
 }
+
+/* --- C5 : Joueur disqualifié --- */
+.p-card.disqualified {
+    opacity: 0.55;
+    background: rgba(239, 68, 68, 0.12);
+    border-color: rgba(239, 68, 68, 0.5);
+}
+.dq-badge {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    font-size: 0.9rem;
+    filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.8));
+}

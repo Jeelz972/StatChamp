@@ -8,19 +8,21 @@
 // 4. StartersEditorModal : reçoit quarterOptions en prop au lieu de hardcoder [1,2,3,4]
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { createPortal } from 'react-dom'; // LIGNE À AJOUTER
+import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
-
-// Normalizer SUB : convention canonique pid=SORTANT, inId=ENTRANT
-const normalizeSub = window.normalizeSub || function(action) {
-  if (action.inId != null && action.inId !== '') {
-    return { outId: String(action.pid), inId: String(action.inId) };
-  }
-  if (action.subOut != null && action.subOut !== '') {
-    return { outId: String(action.subOut), inId: String(action.pid) };
-  }
-  return { outId: String(action.pid), inId: '' };
-};
+import { normalizeSub } from './src/utils/normalize-sub';
+import { useIsSeasonEditable } from './src/hooks/useIsSeasonEditable';
+import { PbpEditorHeader } from './src/components/pbp/PbpEditorHeader.jsx';
+import { PbpActionList } from './src/components/pbp/PbpActionList.jsx';
+import { PbpActionForm } from './src/components/pbp/PbpActionForm.jsx';
+import { PbpCourtLive } from './src/components/pbp/PbpCourtLive.jsx';
+import { PbpVideoPanel } from './src/components/pbp/PbpVideoPanel.jsx';
+import { actionToVideoTs } from './src/utils/action-to-video-ts';
+import {
+  getEditorMode, setEditorMode,
+  getFullLayout, setFullLayout,
+  getVideoSource, setVideoSource,
+} from './src/components/pbp/pbp-storage';
 
 (function () {
   // ========================================================
@@ -50,6 +52,7 @@ const normalizeSub = window.normalizeSub || function(action) {
     { value: 'OFFENSIVE', label: 'Offensive', short: 'O', color: 'bg-orange-700' },
     { value: 'TECHNICAL', label: 'Technique', short: 'T', color: 'bg-yellow-700' },
     { value: 'UNSPORTSMANLIKE', label: 'Antisportive', short: 'U', color: 'bg-purple-700' },
+    { value: 'disqualifying', label: 'Disqualifiante', short: 'D', color: 'bg-red-900' },
   ];
 
   const SHOT_ZONES = [
@@ -1353,11 +1356,13 @@ const normalizeSub = window.normalizeSub || function(action) {
     }
     if (action.type === 'FOUL') {
       icon =
-        action.foulType === 'TECHNICAL'
+        action.foulType === 'TECHNICAL' || action.foulType === 'technical'
           ? '🟡'
-          : action.foulType === 'UNSPORTSMANLIKE'
+          : action.foulType === 'UNSPORTSMANLIKE' || action.foulType === 'unsportsmanlike'
             ? '🟥'
-            : '🚨';
+            : action.foulType === 'disqualifying'
+              ? '🚫'
+              : '🚨';
       label = (action.foulType || 'PERSONAL').toLowerCase();
       bgClass = 'bg-orange-950/20';
       borderClass = 'border-l-orange-500';
@@ -1514,6 +1519,7 @@ const normalizeSub = window.normalizeSub || function(action) {
     filterType,
     filterPlay,
     playOptions,
+    canEdit,
     onFilterQ,
     onFilterPid,
     onFilterType,
@@ -1603,7 +1609,9 @@ const normalizeSub = window.normalizeSub || function(action) {
         )}
         <button
           onClick={onAdd}
-          className="ml-auto px-3 py-1 rounded text-[10px] font-bold bg-orange-500 hover:bg-orange-600 text-white whitespace-nowrap shrink-0"
+          disabled={!canEdit}
+          title={!canEdit ? 'Saison archivée — lecture seule' : undefined}
+          className="ml-auto px-3 py-1 rounded text-[10px] font-bold bg-orange-500 hover:bg-orange-600 text-white whitespace-nowrap shrink-0 disabled:opacity-40"
         >
           + Action
         </button>
@@ -1614,7 +1622,7 @@ const normalizeSub = window.normalizeSub || function(action) {
   // ========================================================
   // EDIT PANEL (bottom sheet — édition et ajout)
   // ========================================================
-  function EditPanel({ action, players, oppPlayers, quarters, onSave, onDelete, onCancel }) {
+  function EditPanel({ action, players, oppPlayers, quarters, canEdit, onSave, onDelete, onCancel }) {
     var isNew = !!(action && action._new);
     const defaultPlayTypes = [
       'Transition',
@@ -2043,7 +2051,7 @@ const normalizeSub = window.normalizeSub || function(action) {
           )}
 
           <div className="flex gap-2 justify-end mt-4 pt-3 border-t border-slate-700">
-            {!isNew && (
+            {!isNew && canEdit && (
               <button
                 onClick={() => {
                   if (confirm('Supprimer ?')) onDelete(action.id);
@@ -2061,7 +2069,9 @@ const normalizeSub = window.normalizeSub || function(action) {
             </button>
             <button
               onClick={() => onSave(data)}
-              className="px-4 py-2 rounded bg-green-600 text-white text-xs font-bold"
+              disabled={!canEdit}
+              title={!canEdit ? 'Saison archivée — lecture seule' : undefined}
+              className="px-4 py-2 rounded bg-green-600 text-white text-xs font-bold disabled:opacity-40"
             >
               OK
             </button>
@@ -2075,6 +2085,7 @@ const normalizeSub = window.normalizeSub || function(action) {
   // COMPOSANT PRINCIPAL
   // ========================================================
   function PlayByPlayEditor({ game, players, phases = [], onSave, onClose }) {
+    const canEdit = useIsSeasonEditable();
     const [actions, setActions] = useState([]);
     const [currentStarters, setCurrentStarters] = useState({});
     const [currentOppStarters, setCurrentOppStarters] = useState({});
@@ -2094,6 +2105,39 @@ const normalizeSub = window.normalizeSub || function(action) {
     const [showStarters, setShowStarters] = useState(false);
 
     const oppPlayers = useMemo(() => extractOppPlayers(game), [game]);
+
+    // --- PBP compact/full shell state ---
+    const [pbpMode, setPbpMode] = useState(getEditorMode());
+    const [pbpLayout, setPbpLayout] = useState(getFullLayout());
+
+    useEffect(() => { setEditorMode(pbpMode); }, [pbpMode]);
+    useEffect(() => { setFullLayout(pbpLayout); }, [pbpLayout]);
+
+    const videoRef = useRef(null);
+    const [videoSource, setVideoSourceState] = useState(() => getVideoSource(game?.id));
+    const [videoAnchors, setVideoAnchors] = useState(game?.videoSync?.anchors ?? []);
+    const [videoPreRoll, setVideoPreRoll] = useState(game?.videoSync?.preRoll ?? 3);
+
+    const pickVideoSource = (src) => {
+      setVideoSourceState(src);
+      if (src && game?.id) setVideoSource(game.id, { sourceType: src.sourceType, sourceRef: src.sourceRef });
+    };
+
+    const onSelectAction = (a) => {
+      setEditingAction(a);
+      if (pbpMode === 'full' && videoRef.current) {
+        const ts = actionToVideoTs(a, {
+          ...(game?.videoSync ?? {}),
+          anchors: videoAnchors,
+          preRoll: videoPreRoll,
+          sourceType: videoSource?.sourceType,
+          sourceRef: videoSource?.sourceRef,
+        });
+        if (ts != null && typeof videoRef.current.seekTo === 'function') {
+          videoRef.current.seekTo(Math.max(0, ts - videoPreRoll), true);
+        }
+      }
+    };
 
     useEffect(() => {
       if (game?.actions?.length) setActions(deduplicateIds(game.actions));
@@ -2404,6 +2448,10 @@ const normalizeSub = window.normalizeSub || function(action) {
       oppPlayers.forEach((p) => {
         m[p.id] = p;
       });
+      m['__coach_home__'] = { id: '__coach_home__', number: 'C', name: 'Coach (Nous)', team: 'home', isPseudo: true };
+      m['__coach_away__'] = { id: '__coach_away__', number: 'C', name: 'Coach (Eux)', team: 'away', isPseudo: true };
+      m['__bench_home__'] = { id: '__bench_home__', number: 'B', name: 'Banc (Nous)', team: 'home', isPseudo: true };
+      m['__bench_away__'] = { id: '__bench_away__', number: 'B', name: 'Banc (Eux)', team: 'away', isPseudo: true };
       return m;
     }, [players, oppPlayers]);
 
@@ -2559,6 +2607,14 @@ const normalizeSub = window.normalizeSub || function(action) {
         showToast('Action ajoutée');
       } else {
         const actionId = editingAction.id;
+        // MERGE-PRESERVE: si data porte deja un id (formulaire merge-preserve PbpActionForm),
+        // on remplace l'action telle quelle sans stripper les champs avances.
+        if (data && data.id === actionId) {
+          setActions((prev) => prev.map((a) => (a.id === actionId ? { ...a, ...data } : a)));
+          setEditingAction(null);
+          setDirty(true);
+          return;
+        }
         setActions((prev) =>
           prev.map((a) => {
             if (a.id !== actionId) return a;
@@ -2710,10 +2766,13 @@ const normalizeSub = window.normalizeSub || function(action) {
         const freshScoreHistory = (typeof window.buildScoreHistoryFromActions === 'function')
           ? window.buildScoreHistoryFromActions(cleanActions, players)
           : game.scoreHistory;
+        const matchingPhase = phases.find((p) => p.id === editPhase);
+        const nextSeasonId = matchingPhase?.seasonId ?? game.seasonId ?? null;
         const updatedGame = {
           ...game,
           date: formattedDate,
           phase: editPhase,
+          seasonId: nextSeasonId,
           actions: cleanActions,
           starters: currentStarters,
           opponentStarters: currentOppStarters,
@@ -2724,6 +2783,14 @@ const normalizeSub = window.normalizeSub || function(action) {
           awayScore: finalStats.awayScore,
           scoreHistory: freshScoreHistory,
         };
+        if (videoSource && videoAnchors?.length > 0) {
+          updatedGame.videoSync = {
+            sourceType: videoSource.sourceType,
+            sourceRef: videoSource.sourceRef,
+            anchors: videoAnchors,
+            preRoll: videoPreRoll ?? 3,
+          };
+        }
         await onSave(updatedGame);
         setDirty(false);
         showToast('Sauvegarde OK');
@@ -2774,21 +2841,25 @@ const normalizeSub = window.normalizeSub || function(action) {
           />
         )}
 
-        {/* HEADER */}
+        <PbpEditorHeader
+          mode={pbpMode}
+          onModeChange={setPbpMode}
+          fullLayout={pbpLayout}
+          onFullLayoutChange={setPbpLayout}
+          onClose={() => {
+            if (dirty && !confirm('Modifications non sauvegardees. Quitter ?')) return;
+            onClose();
+          }}
+          onSave={handleSave}
+          isSaving={saving}
+          hasUnsavedChanges={dirty}
+        />
+
+        {/* LEGACY TOOLBAR — date/phase/Starters/Audit/CSV (conserve les fonctions) */}
         <div
-          className="flex items-center justify-between px-4 py-3 shrink-0"
-          style={{ background: '#111827', borderBottom: '2px solid #f97316' }}
+          className="flex items-center justify-between px-4 py-2 shrink-0 bg-slate-900 border-b border-slate-800"
         >
           <div className="flex items-center gap-3">
-            <button
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-700 hover:bg-red-600 text-white text-sm font-bold cursor-pointer"
-              onClick={() => {
-                if (dirty && !confirm('Modifications non sauvegardees. Quitter ?')) return;
-                onClose();
-              }}
-            >
-              X Fermer
-            </button>
             <div className="hidden md:flex items-center gap-3">
               <span className="text-slate-400 text-xs font-bold uppercase">PBP</span>
               <input
@@ -2814,151 +2885,77 @@ const normalizeSub = window.normalizeSub || function(action) {
               )}
               <span className="text-slate-400 text-sm font-bold">{`vs ${game?.opponent || 'Match'}`}</span>
             </div>
-            {dirty && (
-              <span className="text-orange-400 text-[10px] font-bold bg-orange-900 px-2 py-0.5 rounded-full animate-pulse">
-                Modifie
-              </span>
-            )}
           </div>
           <div className="flex items-center gap-2">
+            <span className="text-blue-400 text-xs font-bold mr-2">NOUS {stats.homeScore}</span>
+            <span className="text-slate-500 text-xs">—</span>
+            <span className="text-red-400 text-xs font-bold mr-3">{stats.awayScore} ADV</span>
             <button
-              className="px-3 py-2 rounded bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold"
+              className="px-3 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold"
               onClick={() => exportMatchLogsCSV(actions, players, oppPlayers)}
             >
               CSV
             </button>
             <button
-              className="px-3 py-2 rounded bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold"
+              className="px-3 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold"
               onClick={() => setShowStarters(true)}
             >
               Starters
             </button>
             <button
-              className="px-3 py-2 rounded bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold"
+              className="px-3 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold"
               onClick={() => setShowAudit(true)}
             >
               Verif.
             </button>
             <button
-              className="px-5 py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white text-sm font-bold cursor-pointer disabled:opacity-40 flex items-center gap-2"
-              onClick={handleSave}
-              disabled={!dirty || saving}
+              className="px-3 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold"
+              onClick={() =>
+                setEditingAction({
+                  _new: true,
+                  type: 'SHOT',
+                  pid: '',
+                  q: quarterOptions[0] || 1,
+                  time: 600,
+                })
+              }
+              disabled={!canEdit}
             >
-              {saving ? '...' : 'Sauver'}
+              + Action
             </button>
           </div>
         </div>
 
-        {/* SCORE BANDEAU */}
-        <div className="bg-slate-800 border-b border-slate-700 px-4 py-1.5 flex items-center justify-between text-xs shrink-0">
-          <span className="text-blue-400 font-bold">NOUS {stats.homeScore}</span>
-          <span className="text-slate-500">—</span>
-          <span className="text-red-400 font-bold">{stats.awayScore} ADV</span>
-          <span className="text-slate-600 font-mono text-[10px]">
-            {filteredActions.length} actions
-          </span>
-        </div>
-
-        {/* FILTER BAR */}
-        <FilterBar
-          quarters={quarterOptions}
-          players={players}
-          filterQ={filterQ}
-          filterPid={filterPid}
-          filterType={filterType}
-          filterPlay={filterPlay}
-          playOptions={playOptions}
-          onFilterQ={setFilterQ}
-          onFilterPid={setFilterPid}
-          onFilterType={setFilterType}
-          onFilterPlay={setFilterPlay}
-          onReset={() => {
-            setFilterQ(0);
-            setFilterPid('all');
-            setFilterType('all');
-            setFilterPlay('all');
-          }}
-          onAdd={() =>
-            setEditingAction({
-              _new: true,
-              type: 'SHOT',
-              pid: '',
-              q: quarterOptions[0] || 1,
-              time: 600,
-            })
-          }
-        />
-
-        <MiniBoxscore
-          stats={stats}
-          players={players}
-          oppPlayers={oppPlayers}
-          playerMap={playerMap}
-          minutesFromSubs={minutesFromSubs}
-          hasSubs={hasSubs}
-        />
-
-        {/* ACTIONS LIST */}
-        <div className="flex-1 overflow-y-auto px-2 py-1">
-          {filteredActions.length === 0 ? (
-            <div className="text-center text-slate-500 py-10 text-sm">Aucune action</div>
+        <div className="flex-1 min-h-0">
+          {pbpMode === 'compact' ? (
+            <CompactBody
+              actions={filteredActions}
+              editingAction={editingAction}
+              onSelectAction={onSelectAction}
+              onPanelSave={handlePanelSave}
+              onPanelCancel={() => setEditingAction(null)}
+              players={players}
+              oppPlayers={oppPlayers}
+            />
           ) : (
-            (() => {
-              const items = [];
-              let lastQ = null;
-              filteredActions.forEach((act) => {
-                const q = act.q || 1;
-                if (q !== lastQ) {
-                  if (filterQ === 0) {
-                    const qScore = scoreByQ[q] || { home: 0, away: 0 };
-                    items.push({
-                      _sep: true,
-                      quarter: q,
-                      homeScore: qScore.home,
-                      awayScore: qScore.away,
-                    });
-                  }
-                  lastQ = q;
-                }
-                items.push(act);
-              });
-              return items.map((item) => {
-                if (item._sep) {
-                  return (
-                    <QuarterSeparator
-                      key={'sep_' + item.quarter}
-                      quarter={item.quarter}
-                      homeScore={item.homeScore}
-                      awayScore={item.awayScore}
-                    />
-                  );
-                }
-                return (
-                  <ActionCard
-                    key={item.id}
-                    action={item}
-                    playerMap={playerMap}
-                    onEdit={(act) => setEditingAction(act)}
-                    onDelete={handleDelete}
-                  />
-                );
-              });
-            })()
+            <FullBody
+              layout={pbpLayout}
+              actions={filteredActions}
+              editingAction={editingAction}
+              onSelectAction={onSelectAction}
+              onPanelSave={handlePanelSave}
+              onPanelCancel={() => setEditingAction(null)}
+              players={players}
+              oppPlayers={oppPlayers}
+              videoRef={videoRef}
+              videoSource={videoSource}
+              onVideoSourceChange={pickVideoSource}
+              videoAnchors={videoAnchors}
+              onVideoAnchorsChange={setVideoAnchors}
+              videoPreRoll={videoPreRoll}
+            />
           )}
         </div>
-
-        {/* EDIT PANEL */}
-        {editingAction && (
-          <EditPanel
-            action={editingAction}
-            players={players}
-            oppPlayers={oppPlayers}
-            quarters={quarterOptions}
-            onSave={handlePanelSave}
-            onDelete={handlePanelDelete}
-            onCancel={() => setEditingAction(null)}
-          />
-        )}
       </div>
     );
   }
@@ -3123,6 +3120,112 @@ const normalizeSub = window.normalizeSub || function(action) {
     }, []);
     return createPortal(<PlayByPlayEditor {...props} />, containerRef.current);
   }
+
+  // ========================================================
+  // COMPACT / FULL BODIES
+  // ========================================================
+  function CompactBody({ actions, editingAction, onSelectAction, onPanelSave, onPanelCancel, players, oppPlayers }) {
+    return (
+      <div className="grid h-full min-h-0" style={{ gridTemplateColumns: '380px 1fr' }}>
+        <div className="border-r border-slate-800 min-h-0 overflow-hidden">
+          <PbpActionList
+            actions={actions}
+            mode="compact"
+            selectedId={editingAction?.id ?? null}
+            onSelect={onSelectAction}
+          />
+        </div>
+        <div className="min-h-0 overflow-auto">
+          {editingAction ? (
+            <PbpActionForm
+              action={editingAction}
+              mode="compact"
+              players={players}
+              oppPlayers={oppPlayers}
+              onSave={onPanelSave}
+              onCancel={onPanelCancel}
+            />
+          ) : (
+            <div className="p-4 text-xs text-slate-400">Selectionnez une action.</div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function FullBody({
+    layout, actions, editingAction, onSelectAction, onPanelSave, onPanelCancel,
+    players, oppPlayers, videoRef, videoSource, onVideoSourceChange,
+    videoAnchors, onVideoAnchorsChange, videoPreRoll,
+  }) {
+    const handleCourtUpdate = (patch) => {
+      if (!editingAction) return;
+      onPanelSave({ ...editingAction, ...patch });
+    };
+
+    const handleVideoTsCapture = (writeBack) => {
+      const ts = videoRef?.current?.getCurrentTs?.() ?? null;
+      if (ts != null) writeBack(ts);
+    };
+
+    const listEl = (
+      <PbpActionList
+        actions={actions}
+        mode="full"
+        selectedId={editingAction?.id ?? null}
+        onSelect={onSelectAction}
+      />
+    );
+    const videoEl = (
+      <PbpVideoPanel
+        ref={videoRef}
+        source={videoSource}
+        onSourceChange={onVideoSourceChange}
+        anchors={videoAnchors}
+        onAnchorsChange={onVideoAnchorsChange}
+        preRoll={videoPreRoll}
+      />
+    );
+    const courtEl = <PbpCourtLive action={editingAction} actions={actions} onUpdate={handleCourtUpdate} />;
+    const formEl = editingAction ? (
+      <PbpActionForm
+        action={editingAction}
+        mode="full"
+        players={players}
+        oppPlayers={oppPlayers}
+        onSave={onPanelSave}
+        onCancel={onPanelCancel}
+        onVideoTsCapture={handleVideoTsCapture}
+      />
+    ) : (
+      <div className="p-4 text-xs text-slate-400">Selectionnez une action.</div>
+    );
+
+    if (layout === 'cockpit') {
+      return (
+        <div className="grid h-full min-h-0" style={{ gridTemplateColumns: '320px 1fr 320px' }}>
+          <div className="border-r border-slate-800 min-h-0 overflow-hidden">{listEl}</div>
+          <div className="grid min-h-0" style={{ gridTemplateRows: '1fr 1fr' }}>
+            <div className="border-b border-slate-800 min-h-0">{videoEl}</div>
+            <div className="min-h-0">{courtEl}</div>
+          </div>
+          <div className="border-l border-slate-800 min-h-0 overflow-auto">{formEl}</div>
+        </div>
+      );
+    }
+    // video-first
+    return (
+      <div className="grid h-full min-h-0" style={{ gridTemplateColumns: '1fr 380px' }}>
+        <div className="min-h-0">{videoEl}</div>
+        <div className="grid min-h-0 border-l border-slate-800" style={{ gridTemplateRows: '30% 35% 35%' }}>
+          <div className="min-h-0 border-b border-slate-800">{courtEl}</div>
+          <div className="min-h-0 border-b border-slate-800 overflow-hidden">{listEl}</div>
+          <div className="min-h-0 overflow-auto">{formEl}</div>
+        </div>
+      </div>
+    );
+  }
+
   window.PlayByPlayEditor = PlayByPlayEditorPortal;
   window.recalcFullGame = recalcFullGame;
 })();

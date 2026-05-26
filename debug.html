@@ -3,57 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>StatChamp — DB Debug</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #0a0f1e; color: #e2e8f0; font-family: monospace; font-size: 13px; padding: 24px; }
-    h1 { font-size: 18px; font-weight: 800; color: #38bdf8; margin-bottom: 4px; }
-    .subtitle { color: #64748b; font-size: 11px; margin-bottom: 24px; }
-    .section { background: #0f172a; border: 1px solid #1e293b; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
-    .section-title { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin-bottom: 12px; }
-    .row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid #1e293b; gap: 12px; }
-    .row:last-child { border-bottom: none; }
-    .label { color: #94a3b8; flex: 1; }
-    .value { color: #e2e8f0; text-align: right; }
-    .ok { color: #4ade80; }
-    .error { color: #f87171; }
-    .empty { color: #fb923c; }
-    .pending { color: #94a3b8; }
-    .btn { background: #1e293b; border: 1px solid #334155; color: #94a3b8; border-radius: 6px; padding: 6px 14px; font-size: 12px; cursor: pointer; margin-right: 8px; margin-top: 8px; }
-    .btn:hover { background: #334155; }
-    .btn-primary { background: #0ea5e9; border-color: #0ea5e9; color: white; }
-    details summary { cursor: pointer; color: #64748b; font-size: 11px; margin-top: 4px; }
-    pre { background: #020617; padding: 8px; border-radius: 6px; font-size: 11px; overflow-x: auto; margin-top: 6px; color: #7dd3fc; }
-    #log { color: #64748b; font-size: 11px; line-height: 1.6; }
-  </style>
+  <title>StatChamp — Debug</title>
 </head>
 <body>
-  <h1>StatChamp — DB Debug</h1>
-  <div class="subtitle" id="subtitle">Chargement…</div>
-
-  <div class="section">
-    <div class="section-title">Team ID</div>
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;">
-      <input id="teamIdInput" type="text" placeholder="ex: champagne_u18"
-        style="background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:6px 10px;font-family:monospace;font-size:12px;flex:1;" />
-      <button class="btn btn-primary" id="btnRun">Relancer diagnostic</button>
-    </div>
-    <div style="font-size:10px;color:#475569;margin-top:2px;">Valeur actuelle localStorage : <span id="lsTeamId" style="color:#94a3b8"></span></div>
-  </div>
-
-  <div class="section">
-    <div class="section-title">Actions</div>
-    <button class="btn" id="btnCompare">Comparer Firebase vs Supabase</button>
-    <button class="btn" id="btnCopy">Copier JSON</button>
-  </div>
-
-  <div id="results"></div>
-
-  <div class="section">
-    <div class="section-title">Journal</div>
-    <div id="log">—</div>
-  </div>
-
-  <script type="module" src="/src/debug/debug-page.ts"></script>
+  <div id="debug-root"></div>
+  <script type="module" src="/src/debug/debug-main.tsx"></script>
 </body>
 </html>

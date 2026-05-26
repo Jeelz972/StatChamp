@@ -2066,7 +2066,7 @@ const ScoutingRadar = ({ avg }) => {
         <polygon
           key={i}
           points={poly(stats, () => r * k)}
-          fill={i % 2 ? '#0f172a' : '#1e1e3a'}
+          fill={i % 2 ? 'var(--bg-1)' : '#1e1e3a'}
           stroke="#334155"
           strokeWidth="0.5"
         />
@@ -2327,7 +2327,13 @@ function ExpertTabs({ player, allPlayers, propGames, propRoster, propPhases, pro
       Math.max(0, (l.reb || 0) - (l.oreb || 0)), l.stl, l.ast, l.blk, l.fouls || 0, l.tov);
   }, 0) / Math.max(gp, 1);
 
-  var wobaVal = a.woba != null ? a.woba : window.StatsEngine.woba(a.pts, a.ast, a.oreb, a.tov, a.fga, a.fgm, a.fta, a.ftm);
+  var floorImpact = (function() {
+    if (!onOff || (onOff.on?.poss ?? 0) < 20) return null;
+    var ortg = onOff.on?.ortg ?? null;
+    var drtg = onOff.on?.drtg ?? null;
+    if (ortg == null || drtg == null) return null;
+    return parseFloat((ortg - drtg).toFixed(1));
+  })();
 
   var METRICS = [
     { label: 'ORtg', value: onOff ? onOff.on.ortg : null, tip: 'ORtg', fmt: function(v) { return v != null ? v.toFixed(0) : '—'; } },
@@ -2339,7 +2345,12 @@ function ExpertTabs({ player, allPlayers, propGames, propRoster, propPhases, pro
     { label: 'AST%', value: a.astPct, tip: 'AST%', fmt: function(v) { return (v || 0).toFixed(1) + '%'; } },
     { label: 'TOV%', value: a.tovPct, tip: 'TOV%', fmt: function(v) { return (v || 0).toFixed(1) + '%'; } },
     { label: 'GameScore', value: avgGameScore, tip: 'GameScore', fmt: function(v) { return (v || 0).toFixed(2); } },
-    { label: 'WOBA', value: wobaVal, tip: null, fmt: function(v) { return (v || 0).toFixed(3); } },
+    {
+      label: 'Floor Impact',
+      value: floorImpact,
+      tip: null,
+      fmt: function(v) { return v != null ? (v >= 0 ? '+' : '') + v.toFixed(1) : '—'; },
+    },
   ];
 
   var TREND_COLORS = {
@@ -2728,6 +2739,34 @@ function calcFiveManLineups(playerId, games, roster) {
 // =================================================================================
 // 4. COMPOSANT PRINCIPAL
 // =================================================================================
+
+function calcPlayerRankings(player, allPlayers, minGames = 3) {
+  const qualified = allPlayers.filter((p) => (p.logs?.length ?? 0) >= minGames);
+  const total = qualified.length;
+  if (total === 0) return [];
+
+  const stats = [
+    { key: 'pts',  label: 'Points',         fmt: (v) => `${v.toFixed(1)} pts`,  inverse: false },
+    { key: 'reb',  label: 'Rebonds',         fmt: (v) => `${v.toFixed(1)} reb`,  inverse: false },
+    { key: 'ast',  label: 'Passes déc.',     fmt: (v) => `${v.toFixed(1)} pd`,   inverse: false },
+    { key: 'stl',  label: 'Interceptions',   fmt: (v) => `${v.toFixed(1)} int`,  inverse: false },
+    { key: 'blk',  label: 'Contres',         fmt: (v) => `${v.toFixed(1)} ctrs`, inverse: false },
+    { key: 'TS',   label: 'TS%',             fmt: (v) => `${v.toFixed(1)}%`,     inverse: false },
+    { key: 'tov',  label: 'Balles perdues',  fmt: (v) => `${v.toFixed(1)} bp`,   inverse: true },
+  ];
+
+  return stats.map(({ key, label, fmt, inverse }) => {
+    const value = player.avg?.[key] ?? null;
+    if (value == null) return null;
+    const betterCount = qualified.filter((p) => {
+      const v = p.avg?.[key] ?? 0;
+      return inverse ? v < value : v > value;
+    }).length;
+    const finalRank = betterCount + 1;
+    return { key, label, value, displayValue: fmt(value), rank: finalRank, total, inverse };
+  }).filter(Boolean);
+}
+
 const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: propRoster, phases: propPhases, seasons: propSeasons }) => {
   const [players, setPlayers] = React.useState([]);
   const [selectedId, setSelectedId] = React.useState(null);
@@ -3274,70 +3313,61 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
               </div>
             </div>
 
-            {/* Shooting profile */}
-            <div className="sc-card p-5 space-y-4" style={{ borderTop: '3px solid var(--made)' }}>
-              <div className="sc-section-label--accent sc-section-label">Profil de tir</div>
-              <div className="flex justify-around flex-wrap gap-3">
-                {[
-                  { label: 'FG%', value: fgPctGlobal, color: 'var(--accent)' },
-                  { label: '3P%', value: a.threePct || 0, color: 'var(--data)' },
-                  { label: 'FT%', value: a.ftPct || 0, color: 'var(--made)' },
-                  { label: 'TS%', value: a.TS || 0, color: 'var(--sys-warn)' },
-                ].map(function(ring) {
-                  return (
-                    <div key={ring.label} className="text-center">
-                      <PercentRing value={ring.value} size={64} color={ring.color} />
-                      <div className="sc-section-label mt-1">{ring.label}</div>
-                    </div>
-                  );
-                })}
-              </div>
-              {p.shotProfile && p.shotProfile.totalShots > 0 && (
-                <div>
-                  <div className="text-[10px] uppercase tracking-widest mb-2" style={{ color: 'var(--text-3)' }}>Zones de tir</div>
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {(function() {
-                      var zones = [
-                        { label: 'Raquette', val: p.shotProfile.paintPct },
-                        { label: 'Mi-dist', val: p.shotProfile.midPct },
-                        { label: 'Corner', val: p.shotProfile.cornerPct },
-                        { label: 'Au-dessus', val: p.shotProfile.abPct },
-                      ];
-                      var maxVal = Math.max.apply(null, zones.map(function(z) { return z.val || 0; }));
-                      return zones.map(function(z) {
-                        var isPrimary = (z.val || 0) === maxVal && maxVal > 0;
-                        return (
-                          <div key={z.label} className="sc-stat-block text-center py-2" style={isPrimary ? { borderColor: 'rgba(249,115,22,0.35)', background: 'rgba(249,115,22,0.06)' } : {}}>
-                            <div className="sc-stat-value text-base font-bold" style={{ color: isPrimary ? 'var(--accent)' : 'var(--text-1)' }}>{(z.val || 0).toFixed(0)}%</div>
-                            <div className="text-[9px] mt-0.5" style={{ color: isPrimary ? 'var(--accent)' : 'var(--text-3)', opacity: isPrimary ? 0.8 : 1 }}>{z.label}</div>
-                          </div>
-                        );
-                      });
-                    })()}
-                  </div>
-                </div>
-              )}
-              <div>
-                <div className="text-[10px] uppercase tracking-widest mb-2" style={{ color: 'var(--text-3)' }}>Hustle / Défense</div>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { label: 'STL', val: a.stl, teamAvg: teamAvgStl, icon: 'steal' },
-                    { label: 'BLK', val: a.blk, teamAvg: teamAvgBlk, icon: 'block' },
-                    { label: 'DRB', val: (a.reb || 0) - (a.oreb || 0), teamAvg: null, icon: 'rebound' },
-                  ].map(function(h) {
-                    var aboveAvg = h.teamAvg !== null && h.val > h.teamAvg;
-                    return (
-                      <div key={h.label} className="sc-stat-block text-center">
-                        <HeroIcon name={h.icon} size={14} />
-                        <div className="sc-stat-value text-base font-bold mt-1" style={{ color: aboveAvg ? 'var(--made)' : 'var(--text-1)' }}>
-                          {(h.val || 0).toFixed(1)}
-                        </div>
-                        <div className="text-[9px]" style={{ color: 'var(--text-3)' }}>{h.label}</div>
+            {/* ─── Classement dans l'équipe ─── */}
+            <div className="sc-card">
+              <div className="sc-section-label">Classement dans l'équipe</div>
+              {(() => {
+                const rankings = calcPlayerRankings(p, players, 3);
+                const topRankings = rankings.filter((r) => r.rank <= 3).sort((a, b) => a.rank - b.rank);
+                const bottomRankings = rankings.filter((r) => r.total >= 4 && r.rank >= r.total - 2 && r.rank > 3).sort((a, b) => a.rank - b.rank);
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem', marginTop: '0.75rem' }}>
+                    {rankings.length === 0 && (
+                      <div style={{ color: 'var(--text-3)', fontSize: '0.8125rem', textAlign: 'center', padding: '1rem' }}>
+                        Pas assez de matchs (min. 3).
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
+                    )}
+                    {topRankings.map(({ key, label, displayValue, rank, total }) => {
+                      const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : '🥉';
+                      const badgeBg = rank === 1 ? '#f97316' : rank === 2 ? '#3b82f6' : '#22c55e';
+                      return (
+                        <div key={key} style={{ background: 'var(--bg-2)', borderRadius: '0.375rem', padding: '0.5rem 0.75rem', display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                          <span style={{ fontSize: '1rem', flexShrink: 0 }}>{medal}</span>
+                          <div style={{ flex: 1 }}>
+                            <span style={{ color: 'var(--text-1)', fontWeight: 700, fontSize: '0.875rem' }}>{label}</span>
+                            <span style={{ color: 'var(--text-3)', fontSize: '0.75rem' }}> · {displayValue}</span>
+                          </div>
+                          <span style={{ background: badgeBg, color: '#fff', borderRadius: '0.25rem', padding: '0.125rem 0.5rem', fontSize: '0.6875rem', fontWeight: 800 }}>
+                            {rank}e / {total}
+                          </span>
+                        </div>
+                      );
+                    })}
+                    {bottomRankings.length > 0 && (
+                      <>
+                        <div style={{ height: '1px', background: 'var(--border)', margin: '0.25rem 0' }} />
+                        {bottomRankings.map(({ key, label, displayValue, rank, total }) => (
+                          <div key={key} style={{ background: 'var(--bg-2)', borderRadius: '0.375rem', padding: '0.5rem 0.75rem', display: 'flex', alignItems: 'center', gap: '0.625rem', opacity: 0.75 }}>
+                            <span style={{ fontSize: '1rem', flexShrink: 0 }}>⚠️</span>
+                            <div style={{ flex: 1 }}>
+                              <span style={{ color: 'var(--text-1)', fontWeight: 700, fontSize: '0.875rem' }}>{label}</span>
+                              <span style={{ color: 'var(--text-3)', fontSize: '0.75rem' }}> · {displayValue}</span>
+                            </div>
+                            <span style={{ background: '#7f1d1d', color: '#fca5a5', borderRadius: '0.25rem', padding: '0.125rem 0.5rem', fontSize: '0.6875rem', fontWeight: 800 }}>
+                              {rank}e / {total}
+                            </span>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                    {rankings.length > 0 && (
+                      <div style={{ color: 'var(--text-3)', fontSize: '0.6875rem', marginTop: '0.25rem' }}>
+                        Forces (top 3) · Axes d'amélioration (bas de classement) · Qualif. min. 3 matchs
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}
@@ -3409,15 +3439,15 @@ const PlayerReportModule = ({ currentUser, onClose, games: propGames, roster: pr
                     {swot.strengths && swot.strengths.length > 0 && (
                       <div className="rounded-lg p-3" style={{ background: 'rgba(52,211,153,0.10)', border: '1px solid rgba(52,211,153,0.28)' }}>
                         <div className="text-[9px] font-bold uppercase tracking-widest mb-1.5" style={{ color: 'var(--made)' }}>Points forts</div>
-                        {swot.strengths.slice(0, 2).map(function(s, i) {
+                        {swot.strengths.slice(0, 3).map(function(s, i) {
                           return <div key={i} className="text-xs leading-snug mb-1" style={{ color: 'var(--text-1)' }}>{s.text || s}</div>;
                         })}
                       </div>
                     )}
-                    {swot.improvements && swot.improvements.length > 0 && (
+                    {swot.weaknesses && swot.weaknesses.length > 0 && (
                       <div className="rounded-lg p-3" style={{ background: 'rgba(248,113,113,0.10)', border: '1px solid rgba(248,113,113,0.28)' }}>
                         <div className="text-[9px] font-bold uppercase tracking-widest mb-1.5" style={{ color: 'var(--miss)' }}>Axes d'amélioration</div>
-                        {swot.improvements.slice(0, 2).map(function(s, i) {
+                        {swot.weaknesses.slice(0, 3).map(function(s, i) {
                           return <div key={i} className="text-xs leading-snug mb-1" style={{ color: 'var(--text-1)' }}>{s.text || s}</div>;
                         })}
                       </div>
